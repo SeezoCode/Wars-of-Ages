@@ -1,13 +1,32 @@
 console.log('hello world')
 
-// let ctx = document.querySelector('canvas')
-// let canvasWidth = ctx.width = 1000
-// let canvasHeight = ctx.height = 250
-// console.log(ctx)
-// let cx = ctx.getContext('2d')
+let ctx = document.querySelector('canvas')
+let canvasWidth = ctx.width = 1000
+let canvasHeight = ctx.height = 250
+console.log(ctx)
+let cx = ctx.getContext('2d')
 
+let basicTroop = {
+    health: 100, damage: 10, castingTime: 1, position: 0, price: 50, color: 'green', speed: 1, span: 20
+}
+let advancedTroop = {
+    health: 150, damage: 15, castingTime: 1.2, position: 0, price: 75, color: 'blue', speed: 1, span: 20
+}
+let bestTroop = {
+    health: 220, damage: 20, castingTime: 1.6, position: 0, price: 100, color: 'red', speed: 1, span: 20
+}
 
-class Trooper{
+interface trooperStatsInterface {
+    health: number
+    damage: number
+    castingTime: number
+    position: number
+    color: string
+    speed: number
+    span: number
+}
+
+class Trooper implements trooperStatsInterface{
     health: number
     damage: number
     castingTime: number
@@ -16,39 +35,44 @@ class Trooper{
     speed: number
     span: number
 
-    constructor(health = 100, damage = 10, castingTime = 1, position = 20,
-                color = 'green', speed = 1, span = 20) {
-        this.health = health
-        this.damage = damage
-        this.castingTime = castingTime
-        this.position = position
-        this.color = color
-        this.speed = speed
-        this.span = span
+    constructor(stats: trooperStatsInterface, side: string) {
+        this.health = stats.health
+        this.damage = stats.damage
+        this.castingTime = stats.castingTime
+        this.color = stats.color
+        this.speed = stats.speed
+        this.span = stats.span
+        if (side === 'left') this.position = 20
+        if (side === 'right') this.position = canvasWidth - 20
     }
 
-    attack(enemyTrooper: Array<object>): void {
-        // @ts-ignore
+    attack(enemyTrooper: Array<trooperStatsInterface>): void {
         enemyTrooper[0].health -= this.damage
-        // @ts-ignore
         if (enemyTrooper[0].health <= 0) enemyTrooper.shift()
     }
 }
 
 
 class Game {
-    playerOneUnits: Array<object>
-    playerTwoUnits: Array<object>
+    playerOneUnits: Array<trooperStatsInterface>
+    playerTwoUnits: Array<trooperStatsInterface>
     // money: number
     // score: number
 
     constructor() {
-        this.playerOneUnits = [new Trooper, new Trooper]
-        this.playerTwoUnits = [new Trooper, new Trooper]
+        this.playerOneUnits = [new Trooper(bestTroop, 'left'), new Trooper(basicTroop, 'left')]
+        this.playerTwoUnits = [new Trooper(basicTroop, 'right'), new Trooper(basicTroop, 'right')]
     }
 
-    move() {
-
+    move(players: Array<playerInterface>) {
+        for (let player of players) {
+            if (player.side === 'left') {
+                player.playerUnits.forEach(troop => {troop.position += 1})
+            }
+            if (player.side === 'right') {
+                player.playerUnits.forEach(troop => {troop.position -= 1})
+            }
+        }
     }
 
     display() {
@@ -56,22 +80,31 @@ class Game {
     }
 }
 
-
-class Player {
+interface playerInterface {
     money: number
     score: number
-    playerUnits: Array<object>
-    enemyUnits: Array<object>
+    side: string
+    playerUnits: Array<trooperStatsInterface>
+    enemyUnits: Array<trooperStatsInterface>
+}
 
-    constructor(money = 0, playerUnits: Array<object>, enemyUnits: Array<object>) {
+class Player implements playerInterface{
+    money: number
+    score: number
+    side: string
+    playerUnits: Array<trooperStatsInterface>
+    enemyUnits: Array<trooperStatsInterface>
+
+    constructor(money = 0, side: string, playerUnits: Array<trooperStatsInterface>, enemyUnits: Array<trooperStatsInterface>) {
         this.money = money
+        this.side = side
         this.score = 0
         this.playerUnits = playerUnits
         this.enemyUnits = enemyUnits
     }
 
-    addTroop(stats: object) {
-        this.playerUnits.push(new Trooper())
+    addTroop(stats: trooperStatsInterface) {
+        this.playerUnits.push(new Trooper(stats, this.side))
     }
 
     attackEnemyTroop() {
@@ -83,17 +116,17 @@ class Player {
 
 
 let game = new Game()
-let player1 = new Player(0, game.playerOneUnits, game.playerTwoUnits)
-let player2 = new Player(0, game.playerTwoUnits, game.playerOneUnits)
+console.log(game.playerOneUnits)
+let players = [new Player(0, 'left', game.playerOneUnits, game.playerTwoUnits),
+    new Player(0, 'right', game.playerTwoUnits, game.playerOneUnits)]
 
-player1.addTroop({})
+players[0].addTroop(bestTroop)
 
-// for (let i = 0; i < 15; i++){
-//     player1.attackEnemyTroop()
-//     console.log(player1)
-// }
-// player2.addTroop({})
+for (let i = 0; i < 6; i++){
+    players[0].attackEnemyTroop()
+    game.move(players)
+    console.log(players[0])
+}
 
-console.log(player1)
 
 
