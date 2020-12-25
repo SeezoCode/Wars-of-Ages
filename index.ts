@@ -15,6 +15,9 @@ let advancedTroop = {
 let bestTroop = {
     health: 220, damage: 20, attackSpeed: 90, castingTime: 1.6, position: 0, price: 100, color: 'red', speed: 1, span: 20
 }
+let baseStats = {
+    health: 5000, position: 0, color: 'royalblue', span: 45
+}
 
 interface trooperStatsInterface {
     health: number
@@ -26,6 +29,7 @@ interface trooperStatsInterface {
     span: number
     attack?: (enemyTroopers: Array<trooperStatsInterface>) => void
     isInFront?: (playerUnits: Array<trooperStatsInterface>, index: number) => boolean
+    draw?: () => void
 }
 
 class Trooper implements trooperStatsInterface{
@@ -53,10 +57,10 @@ class Trooper implements trooperStatsInterface{
     attack(enemyTroopers: Array<trooperStatsInterface>): void {
         console.log('attacked enemy: ', enemyTroopers)
         enemyTroopers[0].health -= this.damage
-        if (enemyTroopers[0].health <= 0) {
-            console.log('enemy', enemyTroopers[0], 'died')
-            enemyTroopers.shift()
-        }
+        // if (enemyTroopers[0].health <= 0) {
+        //     console.log('enemy', enemyTroopers[0], 'died')
+        //     enemyTroopers.shift()
+        // }
     }
 
     isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
@@ -68,14 +72,14 @@ class Trooper implements trooperStatsInterface{
         if (playerUnits.length === 0) return false
         if (this.side === 'left') {
             for (let i = index - 1; i >= 0; i--) {
-                if (this.position < playerUnits[i].position && this.position + this.span / 2 + 1 > playerUnits[i].position) {
+                if (this.position < playerUnits[i].position && this.position + this.span / 2 + 12 > playerUnits[i].position) {
                     return true
                 }
             }
         }
         if (this.side === 'right') {
             for (let i = index - 1; i >= 0; i--) {
-                if (this.position > playerUnits[i].position && this.position - this.span / 2 - 1 < playerUnits[i].position) {
+                if (this.position > playerUnits[i].position && this.position - this.span / 2 - 12 < playerUnits[i].position) {
                     return true
                 }
             }
@@ -83,7 +87,46 @@ class Trooper implements trooperStatsInterface{
         return false
     }
 
+    draw() {
+        cx.fillStyle = this.color
+        cx.fillRect(this.position - this.span / 2, 35, this.span, 35)
+    }
 }
+
+
+interface baseInterface {
+    health: number
+    position: number
+    color: string
+    span: number
+    side?: string
+    draw?: () => void
+}
+
+class Base implements baseInterface {
+    health: number
+    position: number
+    color: string
+    span: number
+
+    constructor(stats: baseInterface, side: string) {
+        this.health = stats.health
+        this.position = stats.position
+        this.color = stats.color
+        this.span = stats.span
+        if (side === 'left') this.position = 5
+        if (side === 'right') this.position = canvasWidth - 80
+    }
+
+    attack() {}
+    isInFront() {}
+    draw(): void {
+        cx.fillStyle = this.color
+        cx.fillRect(this.position - this.span / 2, 75, this.span, 75)
+    }
+}
+
+
 
 
 class Game {
@@ -94,13 +137,28 @@ class Game {
     // score: number
 
     constructor() {
-        this.playerOneUnits = [new Trooper(bestTroop, 'left'), new Trooper(basicTroop, 'left'), new Trooper(basicTroop, 'left')]
-        this.playerTwoUnits = [new Trooper(advancedTroop, 'right'), new Trooper(basicTroop, 'right')]
+        this.playerOneUnits = [new Trooper(bestTroop, 'left'), new Trooper(basicTroop, 'left')]
+        this.playerTwoUnits = [new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right')]
     }
 
     move(players: Array<playerInterface>) {
         this.time += 1
         console.log(this.time, '---Move---')
+        this.movement()
+
+        if (players[0].isEnemyInFront()) console.log('-------enemy in front of player 1', game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
+        if (players[1].isEnemyInFront()) console.log('-------enemy in front of player 2', game.playerTwoUnits[0].position, game.playerOneUnits[0].position)
+
+        if (players[0].isEnemyInFront()) players[0].attackEnemyTroop()
+        if (players[1].isEnemyInFront()) players[1].attackEnemyTroop()
+
+        players[0].checkForDeath()
+        players[1].checkForDeath()
+
+        this.display()
+    }
+
+    movement(): void {
         for (let player of players) {
             if (player.playerUnits.length === 0) continue
             if (player.side === 'left') {
@@ -122,26 +180,33 @@ class Game {
                 })
             }
         }
-        if (players[0].isEnemyInFront()) console.log('-------enemy in front of player 1', game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
-        if (players[1].isEnemyInFront()) console.log('-------enemy in front of player 2', game.playerTwoUnits[0].position, game.playerOneUnits[0].position)
-
-        if (players[0].isEnemyInFront()) players[0].attackEnemyTroop()
-        if (players[1].isEnemyInFront()) players[0].attackEnemyTroop()
     }
 
-    attack(players: Array<playerInterface>) {
-        console.log(this.time, 'Attack')
-    }
+    // attack(players: Array<playerInterface>) {
+    //     console.log(this.time, 'Attack')
+    // }
 
     private timeAttack(player: playerInterface) {
 
     }
 
-
-
-
     display() {
+        cx.clearRect(0, 0, canvasWidth, canvasHeight)
+        for (let unit of this.playerOneUnits) {
+            unit.draw()
+        }
+        for (let unit of this.playerTwoUnits) {
+            unit.draw()
+        }
+    }
 
+    animation(): void {
+        requestAnimationFrame(hold)
+        function hold(): void {
+            game.move(players)
+            game.display()
+            requestAnimationFrame(hold)
+        }
     }
 }
 
@@ -154,6 +219,8 @@ interface playerInterface {
     isEnemyInFront: () => boolean
     attackEnemyTroop: () => void
     addTroop: (stats: trooperStatsInterface) => void
+    checkForDeath: () => void
+
 }
 
 class Player implements playerInterface{
@@ -183,6 +250,13 @@ class Player implements playerInterface{
         if (this.playerUnits.length === 0) return false
         return this.playerUnits[0].isInFront(this.enemyUnits, 1)
     }
+
+    checkForDeath(): void {
+        if (this.playerUnits[0].health <= 0) {
+            console.log(this.side, 'died', this.playerUnits[0])
+            this.playerUnits.shift()
+        }
+    }
 }
 
 
@@ -192,15 +266,16 @@ console.log(game.playerOneUnits)
 let players = [new Player(0, 'left', game.playerOneUnits, game.playerTwoUnits),
     new Player(0, 'right', game.playerTwoUnits, game.playerOneUnits)]
 
-players[0].addTroop(bestTroop)
+// players[0].addTroop(bestTroop)
 
-for (let i = 0; i < 484; i++){
+for (let i = 0; i < 464; i++){
     // players[0].attackEnemyTroop()
     // players[1].attackEnemyTroop()
     game.move(players)
     // if (players[0].isEnemyInFront()) console.log('-------enemy in front of me', game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
     console.log(players[0])
+    game.display()
 }
-
+// game.animation()
 
 
