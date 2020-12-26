@@ -1,5 +1,3 @@
-// import * as Vue from 'vue';
-
 let ctx = document.querySelector('canvas')
 let canvasWidth = ctx.width = 600
 let canvasHeight = ctx.height = 250
@@ -10,7 +8,7 @@ let basicTroop = {
     health: 100, damage: 30, attackSpeed: 50, castingTime: 1, position: 0, price: 50, color: 'green', speed: 1, span: 20, range: 0
 }
 let advancedTroop = {
-    health: 150, damage: 50, attackSpeed: 60, castingTime: 1.2, position: 0, price: 75, color: 'blue', speed: 1, span: 20, range: 80
+    health: 150, damage: 50, attackSpeed: 60, castingTime: 1.2, position: 0, price: 75, color: 'blue', speed: 1, span: 20, range: 60
 }
 let bestTroop = {
     health: 250, damage: 80, attackSpeed: 90, castingTime: 1.6, position: 0, price: 100, color: 'red', speed: 1, span: 20, range: 0
@@ -29,6 +27,7 @@ interface trooperStatsInterface {
     speed: number
     span: number
     attackSpeed: number
+    price?: number
     side?: string
     targetTime?: number
     maxHealth?: number
@@ -50,6 +49,7 @@ class Trooper implements trooperStatsInterface{
     span: number
     side: string
     range: number
+    price: number
     attackSpeed: number
     targetTime: number
     maxHealth: number
@@ -66,6 +66,7 @@ class Trooper implements trooperStatsInterface{
         this.targetTime = null
         this.maxHealth = stats.health
         this.range = stats.range
+        this.price = stats.price
         if (side === 'left') this.position = 20
         if (side === 'right') this.position = canvasWidth - 20
     }
@@ -204,11 +205,12 @@ class Game {
         //new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right')
         this.playerOneBase = new Base(baseStats, 'left')
         this.playerTwoBase = new Base(baseStats, 'right')
+        this.controls()
     }
 
     move(players: Array<playerInterface>) {
         this.time += 1
-        console.log(this.time, '---Move---')
+        // console.log(this.time, '---Move---')
         this.movement()
 
         if (players[0].isEnemyInFront()) console.log('-------enemy in front of player 1', game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
@@ -226,6 +228,7 @@ class Game {
         players[0].checkForDeath()
         players[1].checkForDeath()
 
+        this.displayMoney()
         this.display()
     }
 
@@ -235,23 +238,28 @@ class Game {
                 player.playerUnits.forEach((troop, i) => {
                     if (!troop.isInFront(player.playerUnits, i) && !troop.isInFront(this.playerTwoUnits, 1) &&
                         troop.position < canvasWidth - baseStats.span - 10) {
-                        console.log('moved to right', troop.position)
+                        // console.log('moved to right', troop.position)
                         troop.position += 1
                     }
-                    else console.log('no movement to right', troop.position)
+                    // else console.log('no movement to right', troop.position)
                 })
             }
             if (player.side === 'right') {
                 player.playerUnits.forEach((troop, i) => {
                     if (!troop.isInFront(player.playerUnits, i) && !troop.isInFront(this.playerOneUnits, 1) &&
                         troop.position > baseStats.span + 10) {
-                        console.log('moved to left', troop.position)
+                        // console.log('moved to left', troop.position)
                         troop.position -= 1
                     }
-                    else console.log('no movement to left', troop.position)
+                    // else console.log('no movement to left', troop.position)
                 })
             }
         }
+    }
+
+    displayMoney() {
+        document.getElementById('pLeft').innerHTML = `money: ${players[0].money}`
+        document.getElementById('pRight').innerHTML = `money: ${players[1].money}`
     }
 
     display() {
@@ -273,8 +281,18 @@ class Game {
         function hold(): void {
             game.move(players)
             game.display()
-            if (1 < 1500) requestAnimationFrame(hold)
+            requestAnimationFrame(hold)
         }
+    }
+
+    controls() {
+        document.getElementById('left-basic').addEventListener('click', () => { players[0].addTroop(basicTroop) })
+        document.getElementById('left-advanced').addEventListener('click', () => { players[0].addTroop(advancedTroop) })
+        document.getElementById('left-best').addEventListener('click', () => { players[0].addTroop(bestTroop) })
+
+        document.getElementById('right-basic').addEventListener('click', () => { players[1].addTroop(basicTroop) })
+        document.getElementById('right-advanced').addEventListener('click', () => { players[1].addTroop(advancedTroop) })
+        document.getElementById('right-best').addEventListener('click', () => { players[1].addTroop(bestTroop) })
     }
 }
 
@@ -296,6 +314,7 @@ interface playerInterface {
     handleRangeAttack: (time: number) => void
     checkForTroops: () => boolean
     attackBase: (time: number, enemyBase: baseInterface) => void
+    // addTroopTimed: (stats: trooperStatsInterface) => void
 
 }
 
@@ -315,16 +334,16 @@ class Player implements playerInterface{
     }
 
     addTroop(stats: trooperStatsInterface): void {
+        this.money -= stats.price
         this.playerUnits.push(new Trooper(stats, this.side))
     }
 
+    // addTroopTimed(stats: trooperStatsInterface): void {
+    //
+    // }
+
     attackEnemyTroop(time: number): void {
         this.playerUnits[0].timeAttack(time, this.enemyUnits)
-        // for (let i = this.playerUnits.length - 1; i > 0; i--) {
-        //     if (this.playerUnits[i].range) {
-        //         if (this.playerUnits[i].isInFront(this.enemyUnits, i)) this.playerUnits[i].timeAttack(time, this.enemyUnits)
-        //     }
-        // }
     }
 
     handleRangeAttack(time: number): void {
@@ -342,10 +361,6 @@ class Player implements playerInterface{
         }
     }
 
-    rangeBaseAttack() {
-
-    }
-
     isEnemyInFront(): boolean {
         if (this.playerUnits.length === 0) return false
         return this.playerUnits[0].isInFront(this.enemyUnits, 1)
@@ -355,6 +370,8 @@ class Player implements playerInterface{
         if (this.playerUnits.length) {
             if (this.playerUnits[0].health <= 0) {
                 console.log(this.side, 'died', this.playerUnits[0])
+                if (this.side === 'left') players[0].money += this.playerUnits[0].price * 1.2
+                if (this.side === 'right') players[1].money += this.playerUnits[0].price * 1.2
                 this.playerUnits.shift()
             }
         }
@@ -367,7 +384,6 @@ class Player implements playerInterface{
     attackBase(time: number, enemyBase: baseInterface): void {
         if (this.playerUnits.length) {
             for (let unit of this.playerUnits) {
-                console.log(unit.position, unit.range, canvasWidth - 55 - unit.range, unit.position <= 55 + unit.range)
                 if (this.side === 'left' && unit.position >= canvasWidth - 55 - unit.range) {unit.timeAttackBase(time, enemyBase)}
                 if (this.side === 'right' && unit.position <= 55 + unit.range) unit.timeAttackBase(time, enemyBase)
             }
@@ -377,23 +393,16 @@ class Player implements playerInterface{
 
 
 
-const EventHandling = {
-    data() {
-        return {
-            message: 'Hello Vue.js!'
-        }
-    },
-    methods: {
-        reverseMessage() {
-            this.message = this.message
-                .split('')
-                .reverse()
-                .join('')
-        }
-    }
+
+
+interface botInterface extends playerInterface {
+
 }
 
-// Vue.createApp(EventHandling).mount('#event-handling')
+class Bot extends Player implements botInterface{
+
+}
+
 
 
 let game = new Game()
