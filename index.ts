@@ -1,25 +1,26 @@
-console.log('hello world')
+// import * as Vue from 'vue';
 
 let ctx = document.querySelector('canvas')
-let canvasWidth = ctx.width = 1000
+let canvasWidth = ctx.width = 600
 let canvasHeight = ctx.height = 250
 console.log(ctx)
 let cx = ctx.getContext('2d')
 
 let basicTroop = {
-    health: 100, damage: 30, attackSpeed: 50, castingTime: 1, position: 0, price: 50, color: 'green', speed: 1, span: 20
+    health: 100, damage: 30, attackSpeed: 50, castingTime: 1, position: 0, price: 50, color: 'green', speed: 1, span: 20, range: 0
 }
 let advancedTroop = {
-    health: 150, damage: 50, attackSpeed: 60, castingTime: 1.2, position: 0, price: 75, color: 'blue', speed: 1, span: 20
+    health: 150, damage: 50, attackSpeed: 60, castingTime: 1.2, position: 0, price: 75, color: 'blue', speed: 1, span: 20, range: 80
 }
 let bestTroop = {
-    health: 250, damage: 80, attackSpeed: 90, castingTime: 1.6, position: 0, price: 100, color: 'red', speed: 1, span: 20
+    health: 250, damage: 80, attackSpeed: 90, castingTime: 1.6, position: 0, price: 100, color: 'red', speed: 1, span: 20, range: 0
 }
 let baseStats = {
     health: 5000, position: 0, color: 'royalblue', span: 45
 }
 
 interface trooperStatsInterface {
+    range: number;
     health: number
     damage: number
     castingTime: number
@@ -28,6 +29,7 @@ interface trooperStatsInterface {
     speed: number
     span: number
     attackSpeed: number
+    side?: string
     targetTime?: number
     maxHealth?: number
     attack?: (enemyTroopers: Array<trooperStatsInterface>) => void
@@ -35,6 +37,7 @@ interface trooperStatsInterface {
     draw?: () => void
     timeAttack?: (time: number, enemyTroopers: Array<trooperStatsInterface>) => void
     timeAttackBase?: (time: number, base: baseInterface) => void
+    drawAttack?: (time: number) => void
 }
 
 class Trooper implements trooperStatsInterface{
@@ -46,6 +49,7 @@ class Trooper implements trooperStatsInterface{
     speed: number
     span: number
     side: string
+    range: number
     attackSpeed: number
     targetTime: number
     maxHealth: number
@@ -61,6 +65,7 @@ class Trooper implements trooperStatsInterface{
         this.attackSpeed = stats.attackSpeed
         this.targetTime = null
         this.maxHealth = stats.health
+        this.range = stats.range
         if (side === 'left') this.position = 20
         if (side === 'right') this.position = canvasWidth - 20
     }
@@ -85,21 +90,20 @@ class Trooper implements trooperStatsInterface{
 
     isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
         // takes an array and queue number to find out if one in front of him is '11' near
-        // maps if troop has enough space around itself
-        // has to check units only in front of him
-        // checks players own, then enemy's, then returns false
         if (index === 0) return false
         if (playerUnits.length === 0) return false
         if (this.side === 'left') {
             for (let i = index - 1; i >= 0; i--) {
-                if (this.position < playerUnits[i].position && this.position + this.span / 2 + 12 > playerUnits[i].position) {
+                if (this.position < playerUnits[i].position &&
+                    this.position + this.span / 2 + 12 > playerUnits[i].position) {
                     return true
                 }
             }
         }
         if (this.side === 'right') {
             for (let i = index - 1; i >= 0; i--) {
-                if (this.position > playerUnits[i].position && this.position - this.span / 2 - 12 < playerUnits[i].position) {
+                if (this.position > playerUnits[i].position &&
+                    this.position - this.span / 2 - 12 < playerUnits[i].position) {
                     return true
                 }
             }
@@ -108,15 +112,13 @@ class Trooper implements trooperStatsInterface{
     }
 
     timeAttackBase(time: number, base: baseInterface): void {
-        console.log(this.position)
-        // if (this.position >= 940 || this.position <= 60) {
-            if (this.targetTime === null) this.targetTime = time + this.attackSpeed
-            else if (time === this.targetTime) {
-                base.health -= this.damage
-                console.log('Attack Base !!!!!!!!')
-                this.targetTime = null
-            }
-        // }
+        console.log('attacking base')
+        if (this.targetTime === null) this.targetTime = time + this.attackSpeed
+        else if (time >= this.targetTime) {
+            base.health -= this.damage
+            console.log('Attack Base !!!!!!!!')
+            this.targetTime = null
+        }
     }
 
     draw() {
@@ -130,6 +132,14 @@ class Trooper implements trooperStatsInterface{
         cx.fillRect(this.position - this.span / 2, canvasHeight - 75, this.span, 5)
         cx.fillStyle = 'red'
         cx.fillRect(this.position - this.span / 2, canvasHeight - 75, this.health / this.maxHealth * this.span, 5)
+    }
+
+    drawAttack(time: number): void {
+        if (this.targetTime !== null) {
+            // console.log((1 / (this.targetTime - time)) * 255, 'xxxxxxxxxxx')
+            cx.fillStyle = `rgb(${255 - (1 / (this.targetTime - time)) * 255}, ${255 - (1 / (this.targetTime - time)) * 255}, 255)`
+            cx.fillRect(this.position - this.span / 2, canvasHeight - 85, this.span, 5)
+        }
     }
 }
 
@@ -162,8 +172,6 @@ class Base implements baseInterface {
         if (side === 'right') this.position = canvasWidth - 50
     }
 
-    attack() {}
-    isInFront() {}
     draw(): void {
         cx.fillStyle = this.color
         cx.fillRect(this.position, canvasHeight - 105, this.span, 75)
@@ -191,8 +199,9 @@ class Game {
     // score: number
 
     constructor() {
-        this.playerOneUnits = [new Trooper(advancedTroop, 'left'), new Trooper(bestTroop, 'left')]
-        this.playerTwoUnits = [new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right')] //new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right')
+        this.playerOneUnits = [new Trooper(advancedTroop, 'left'), new Trooper(bestTroop, 'left'), new Trooper(advancedTroop, 'left')]
+        this.playerTwoUnits = [new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right'), new Trooper(advancedTroop, 'right')]
+        //new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right')
         this.playerOneBase = new Base(baseStats, 'left')
         this.playerTwoBase = new Base(baseStats, 'right')
     }
@@ -210,6 +219,9 @@ class Game {
 
         if (!players[0].checkForTroops()) {players[1].attackBase(this.time, this.playerOneBase)}
         if (!players[1].checkForTroops()) {players[0].attackBase(this.time, this.playerTwoBase)}
+
+        if (players[0].checkForTroops()) players[1].handleRangeAttack(this.time)
+        if (players[1].checkForTroops()) players[0].handleRangeAttack(this.time)
 
         players[0].checkForDeath()
         players[1].checkForDeath()
@@ -248,9 +260,11 @@ class Game {
         this.playerTwoBase.draw()
         for (let unit of this.playerOneUnits) {
             unit.draw()
+            unit.drawAttack(this.time)
         }
         for (let unit of this.playerTwoUnits) {
             unit.draw()
+            unit.drawAttack(this.time)
         }
     }
 
@@ -259,7 +273,7 @@ class Game {
         function hold(): void {
             game.move(players)
             game.display()
-            requestAnimationFrame(hold)
+            if (1 < 1500) requestAnimationFrame(hold)
         }
     }
 }
@@ -279,8 +293,10 @@ interface playerInterface {
     attackEnemyTroop: (time: number) => void
     addTroop: (stats: trooperStatsInterface) => void
     checkForDeath: () => void
+    handleRangeAttack: (time: number) => void
     checkForTroops: () => boolean
     attackBase: (time: number, enemyBase: baseInterface) => void
+
 }
 
 class Player implements playerInterface{
@@ -304,6 +320,30 @@ class Player implements playerInterface{
 
     attackEnemyTroop(time: number): void {
         this.playerUnits[0].timeAttack(time, this.enemyUnits)
+        // for (let i = this.playerUnits.length - 1; i > 0; i--) {
+        //     if (this.playerUnits[i].range) {
+        //         if (this.playerUnits[i].isInFront(this.enemyUnits, i)) this.playerUnits[i].timeAttack(time, this.enemyUnits)
+        //     }
+        // }
+    }
+
+    handleRangeAttack(time: number): void {
+        for (let unit of this.playerUnits) {
+            if (unit.range) {
+                if (this.side === 'left' && unit.position + unit.range >= this.enemyUnits[0].position) {
+                    unit.timeAttack(time, this.enemyUnits)
+                }
+            }
+            if (unit.range) {
+                if (this.side === 'right' && unit.position - unit.range <= this.enemyUnits[0].position) {
+                    unit.timeAttack(time, this.enemyUnits)
+                }
+            }
+        }
+    }
+
+    rangeBaseAttack() {
+
     }
 
     isEnemyInFront(): boolean {
@@ -325,14 +365,35 @@ class Player implements playerInterface{
     }
 
     attackBase(time: number, enemyBase: baseInterface): void {
-        console.log('can attack')
         if (this.playerUnits.length) {
-            if (this.side === 'left' && this.playerUnits[0].position >= 945) this.playerUnits[0].timeAttackBase(time, enemyBase)
-            if (this.side === 'right' && this.playerUnits[0].position <= 65) this.playerUnits[0].timeAttackBase(time, enemyBase)
+            for (let unit of this.playerUnits) {
+                console.log(unit.position, unit.range, canvasWidth - 55 - unit.range, unit.position <= 55 + unit.range)
+                if (this.side === 'left' && unit.position >= canvasWidth - 55 - unit.range) {unit.timeAttackBase(time, enemyBase)}
+                if (this.side === 'right' && unit.position <= 55 + unit.range) unit.timeAttackBase(time, enemyBase)
+            }
         }
     }
 }
 
+
+
+const EventHandling = {
+    data() {
+        return {
+            message: 'Hello Vue.js!'
+        }
+    },
+    methods: {
+        reverseMessage() {
+            this.message = this.message
+                .split('')
+                .reverse()
+                .join('')
+        }
+    }
+}
+
+// Vue.createApp(EventHandling).mount('#event-handling')
 
 
 let game = new Game()
