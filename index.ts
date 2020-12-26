@@ -113,7 +113,6 @@ class Trooper implements trooperStatsInterface{
     }
 
     timeAttackBase(time: number, base: baseInterface): void {
-        console.log('attacking base')
         if (this.targetTime === null) this.targetTime = time + this.attackSpeed
         else if (time >= this.targetTime) {
             base.health -= this.damage
@@ -137,7 +136,6 @@ class Trooper implements trooperStatsInterface{
 
     drawAttack(time: number): void {
         if (this.targetTime !== null) {
-            // console.log((1 / (this.targetTime - time)) * 255, 'xxxxxxxxxxx')
             cx.fillStyle = `rgb(${255 - (1 / (this.targetTime - time)) * 255}, ${255 - (1 / (this.targetTime - time)) * 255}, 255)`
             cx.fillRect(this.position - this.span / 2, canvasHeight - 85, this.span, 5)
         }
@@ -195,45 +193,51 @@ class Game {
     playerTwoUnits: Array<trooperStatsInterface>
     playerOneBase: baseInterface
     playerTwoBase: baseInterface
+    players: Array<playerInterface>
     time: number = 0
     // money: number
     // score: number
 
     constructor() {
-        this.playerOneUnits = [new Trooper(advancedTroop, 'left'), new Trooper(bestTroop, 'left'), new Trooper(advancedTroop, 'left')]
-        this.playerTwoUnits = [new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right'), new Trooper(advancedTroop, 'right')]
+        this.playerOneUnits = [new Trooper(advancedTroop, 'left')]
+        this.playerTwoUnits = [new Trooper(advancedTroop, 'right')]
         //new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right')
         this.playerOneBase = new Base(baseStats, 'left')
         this.playerTwoBase = new Base(baseStats, 'right')
         this.controls()
+
+        this.players = [new Player(0, 'left', this.playerOneUnits, this.playerTwoUnits),
+            new Player(0, 'right', this.playerTwoUnits, this.playerOneUnits)]
     }
 
-    move(players: Array<playerInterface>) {
+    move() {
         this.time += 1
         // console.log(this.time, '---Move---')
         this.movement()
 
-        if (players[0].isEnemyInFront()) console.log('-------enemy in front of player 1', game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
-        if (players[1].isEnemyInFront()) console.log('-------enemy in front of player 2', game.playerTwoUnits[0].position, game.playerOneUnits[0].position)
+        if (this.players[0].isEnemyInFront()) console.log('-------enemy in front of player 1',
+            game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
+        if (this.players[1].isEnemyInFront()) console.log('-------enemy in front of player 2',
+            game.playerTwoUnits[0].position, game.playerOneUnits[0].position)
 
-        if (players[0].isEnemyInFront()) players[0].attackEnemyTroop(this.time)
-        if (players[1].isEnemyInFront()) players[1].attackEnemyTroop(this.time)
+        if (this.players[0].isEnemyInFront()) this.players[0].attackEnemyTroop(this.time)
+        if (this.players[1].isEnemyInFront()) this.players[1].attackEnemyTroop(this.time)
 
-        if (!players[0].checkForTroops()) {players[1].attackBase(this.time, this.playerOneBase)}
-        if (!players[1].checkForTroops()) {players[0].attackBase(this.time, this.playerTwoBase)}
+        if (!this.players[0].checkForTroops()) {this.players[1].attackBase(this.time, this.playerOneBase)}
+        if (!this.players[1].checkForTroops()) {this.players[0].attackBase(this.time, this.playerTwoBase)}
 
-        if (players[0].checkForTroops()) players[1].handleRangeAttack(this.time)
-        if (players[1].checkForTroops()) players[0].handleRangeAttack(this.time)
+        if (this.players[0].checkForTroops()) this.players[1].handleRangeAttack(this.time)
+        if (this.players[1].checkForTroops()) this.players[0].handleRangeAttack(this.time)
 
-        players[0].checkForDeath()
-        players[1].checkForDeath()
+        this.players[0].checkForDeath(this.players)
+        this.players[1].checkForDeath(this.players)
 
         this.displayMoney()
         this.display()
     }
 
     movement(): void {
-        for (let player of players) {
+        for (let player of this.players) {
             if (player.side === 'left') {
                 player.playerUnits.forEach((troop, i) => {
                     if (!troop.isInFront(player.playerUnits, i) && !troop.isInFront(this.playerTwoUnits, 1) &&
@@ -258,8 +262,8 @@ class Game {
     }
 
     displayMoney() {
-        document.getElementById('pLeft').innerHTML = `money: ${players[0].money}`
-        document.getElementById('pRight').innerHTML = `money: ${players[1].money}`
+        document.getElementById('pLeft').innerHTML = `money: ${this.players[0].money}`
+        document.getElementById('pRight').innerHTML = `money: ${this.players[1].money}`
     }
 
     display() {
@@ -279,20 +283,20 @@ class Game {
     animation(): void {
         requestAnimationFrame(hold)
         function hold(): void {
-            game.move(players)
+            game.move()
             game.display()
             requestAnimationFrame(hold)
         }
     }
 
     controls() {
-        document.getElementById('left-basic').addEventListener('click', () => { players[0].addTroop(basicTroop) })
-        document.getElementById('left-advanced').addEventListener('click', () => { players[0].addTroop(advancedTroop) })
-        document.getElementById('left-best').addEventListener('click', () => { players[0].addTroop(bestTroop) })
+        document.getElementById('left-basic').addEventListener('click', () => { this.players[0].addTroop(basicTroop) })
+        document.getElementById('left-advanced').addEventListener('click', () => { this.players[0].addTroop(advancedTroop) })
+        document.getElementById('left-best').addEventListener('click', () => { this.players[0].addTroop(bestTroop) })
 
-        document.getElementById('right-basic').addEventListener('click', () => { players[1].addTroop(basicTroop) })
-        document.getElementById('right-advanced').addEventListener('click', () => { players[1].addTroop(advancedTroop) })
-        document.getElementById('right-best').addEventListener('click', () => { players[1].addTroop(bestTroop) })
+        document.getElementById('right-basic').addEventListener('click', () => { this.players[1].addTroop(basicTroop) })
+        document.getElementById('right-advanced').addEventListener('click', () => { this.players[1].addTroop(advancedTroop) })
+        document.getElementById('right-best').addEventListener('click', () => { this.players[1].addTroop(bestTroop) })
     }
 }
 
@@ -310,7 +314,7 @@ interface playerInterface {
     isEnemyInFront: () => boolean
     attackEnemyTroop: (time: number) => void
     addTroop: (stats: trooperStatsInterface) => void
-    checkForDeath: () => void
+    checkForDeath: (players: Array<playerInterface>) => void
     handleRangeAttack: (time: number) => void
     checkForTroops: () => boolean
     attackBase: (time: number, enemyBase: baseInterface) => void
@@ -366,7 +370,7 @@ class Player implements playerInterface{
         return this.playerUnits[0].isInFront(this.enemyUnits, 1)
     }
 
-    checkForDeath(): void {
+    checkForDeath(players: Array<playerInterface>): void {
         if (this.playerUnits.length) {
             if (this.playerUnits[0].health <= 0) {
                 console.log(this.side, 'died', this.playerUnits[0])
@@ -400,15 +404,12 @@ interface botInterface extends playerInterface {
 }
 
 class Bot extends Player implements botInterface{
-
 }
 
 
 
 let game = new Game()
 console.log(game.playerOneUnits)
-let players = [new Player(0, 'left', game.playerOneUnits, game.playerTwoUnits),
-    new Player(0, 'right', game.playerTwoUnits, game.playerOneUnits)]
 
 // players[0].addTroop(bestTroop)
 
