@@ -8,24 +8,48 @@
         #cx {
             border: 1px solid lightgray;
         }
+        button {
+            width: 200px;
+            padding: 7px;
+            border-radius: 100px;
+            border:0;
+        }
+        body {
+            text-align: center;
+        }
+        @media (prefers-color-scheme: dark) {
+            button {
+                box-shadow:0 0 15px 4px rgb(14, 14, 14);
+                background-color: #1c1c1c;
+                color: darkgray
+            }
+            body {
+                background: rgb(24, 26, 27);
+                color: rgb(241, 241, 241);
+            }
+        }
     </style>
 
 </head>
-<body>
+<!--; -->
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
     <canvas id="cx"></canvas>
     <script type="module" src="index.js"></script>
 
     <div id="basic-event">
-        <p id="pLeft"></p>
-        <button id="left-basic">Basic Troop</button>
-        <button id="left-advanced">Advanced Troop</button>
-        <button id="left-best">Best Troop</button>
+        <div id="left">
+            <p id="leftMoney">Money: </p>
+            <button class="left" id="left-basic">Basic Troop</button>
+            <button class="left" id="left-advanced">Advanced Troop</button>
+            <button class="left" id="left-best">Best Troop</button>
+        </div>
         <br>
-        <p id="pRight"></p>
-        <button id="right-basic">Basic Troop</button>
-        <button id="right-advanced">Advanced Troop</button>
-        <button id="right-best">Best Troop</button>
-        <p>The button above has been clicked {{ counter }} times.</p>
+        <div id="right">
+            <p id="rightMoney">Money: </p>
+            <button class="right" id="right-basic">Basic Troop</button>
+            <button class="right" id="right-advanced">Advanced Troop</button>
+            <button class="right" id="right-best">Best Troop</button>
+        </div>
     </div>
 </body>
 </html>

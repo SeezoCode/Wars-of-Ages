@@ -4,17 +4,19 @@ let canvasHeight = ctx.height = 250
 console.log(ctx)
 let cx = ctx.getContext('2d')
 
-let basicTroop = {
-    health: 100, damage: 30, attackSpeed: 50, castingTime: 1, position: 0, price: 50, color: 'green', speed: 1, span: 20, range: 0
-}
-let advancedTroop = {
-    health: 150, damage: 50, attackSpeed: 60, castingTime: 1.2, position: 0, price: 75, color: 'blue', speed: 1, span: 20, range: 60
-}
-let bestTroop = {
-    health: 250, damage: 80, attackSpeed: 90, castingTime: 1.6, position: 0, price: 100, color: 'red', speed: 1, span: 20, range: 0
-}
+let troopArr = [
+{
+    name: 'Basic Troop', health: 20, damage: 4.5, attackSpeed: 40, castingTime: 1, position: 0, price: 5, color: 'green', speed: 1, span: 20, range: 0, researchPrice: 0
+},
+{
+    name: 'Advanced Troop', health: 20, damage: 3, attackSpeed: 50, castingTime: 1.2, position: 0, price: 10, color: 'blue', speed: 1, span: 20, range: 60, researchPrice: 100
+},
+{
+    name: 'Best Troop', health: 30, damage: 10, attackSpeed: 80, castingTime: 1.6, position: 0, price: 12, color: 'red', speed: 1, span: 20, range: 0, researchPrice: 200
+}]
+
 let baseStats = {
-    health: 5000, position: 0, color: 'royalblue', span: 45
+    health: 800, position: 0, color: 'royalblue', span: 45
 }
 
 interface trooperStatsInterface {
@@ -27,6 +29,8 @@ interface trooperStatsInterface {
     speed: number
     span: number
     attackSpeed: number
+    name?: string
+    researchPrice?: number
     price?: number
     side?: string
     targetTime?: number
@@ -199,15 +203,14 @@ class Game {
     // score: number
 
     constructor() {
-        this.playerOneUnits = [new Trooper(advancedTroop, 'left')]
-        this.playerTwoUnits = [new Trooper(advancedTroop, 'right')]
+        this.playerOneUnits = []
+        this.playerTwoUnits = []
         //new Trooper(advancedTroop, 'right'), new Trooper(bestTroop, 'right')
         this.playerOneBase = new Base(baseStats, 'left')
         this.playerTwoBase = new Base(baseStats, 'right')
-        this.controls()
 
-        this.players = [new Player(0, 'left', this.playerOneUnits, this.playerTwoUnits),
-            new Player(0, 'right', this.playerTwoUnits, this.playerOneUnits)]
+        this.players = [new Player(50, 'left', this.playerOneUnits, this.playerTwoUnits),
+            new Player(50, 'right', this.playerTwoUnits, this.playerOneUnits)]
     }
 
     move() {
@@ -215,10 +218,10 @@ class Game {
         // console.log(this.time, '---Move---')
         this.movement()
 
-        if (this.players[0].isEnemyInFront()) console.log('-------enemy in front of player 1',
-            game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
-        if (this.players[1].isEnemyInFront()) console.log('-------enemy in front of player 2',
-            game.playerTwoUnits[0].position, game.playerOneUnits[0].position)
+        // if (this.players[0].isEnemyInFront()) console.log('-------enemy in front of player 1',
+        //     game.playerOneUnits[0].position, game.playerTwoUnits[0].position)
+        // if (this.players[1].isEnemyInFront()) console.log('-------enemy in front of player 2',
+        //     game.playerTwoUnits[0].position, game.playerOneUnits[0].position)
 
         if (this.players[0].isEnemyInFront()) this.players[0].attackEnemyTroop(this.time)
         if (this.players[1].isEnemyInFront()) this.players[1].attackEnemyTroop(this.time)
@@ -229,10 +232,9 @@ class Game {
         if (this.players[0].checkForTroops()) this.players[1].handleRangeAttack(this.time)
         if (this.players[1].checkForTroops()) this.players[0].handleRangeAttack(this.time)
 
-        this.players[0].checkForDeath(this.players)
-        this.players[1].checkForDeath(this.players)
+        this.players[0].checkForDeath(this.players[1])
+        this.players[1].checkForDeath(this.players[0])
 
-        this.displayMoney()
         this.display()
     }
 
@@ -288,16 +290,6 @@ class Game {
             requestAnimationFrame(hold)
         }
     }
-
-    controls() {
-        document.getElementById('left-basic').addEventListener('click', () => { this.players[0].addTroop(basicTroop) })
-        document.getElementById('left-advanced').addEventListener('click', () => { this.players[0].addTroop(advancedTroop) })
-        document.getElementById('left-best').addEventListener('click', () => { this.players[0].addTroop(bestTroop) })
-
-        document.getElementById('right-basic').addEventListener('click', () => { this.players[1].addTroop(basicTroop) })
-        document.getElementById('right-advanced').addEventListener('click', () => { this.players[1].addTroop(advancedTroop) })
-        document.getElementById('right-best').addEventListener('click', () => { this.players[1].addTroop(bestTroop) })
-    }
 }
 
 
@@ -309,15 +301,19 @@ interface playerInterface {
     money: number
     score: number
     side: string
+    exp: number
+    unlockedUnits: Array<boolean>
     playerUnits: Array<trooperStatsInterface>
     enemyUnits: Array<trooperStatsInterface>
     isEnemyInFront: () => boolean
     attackEnemyTroop: (time: number) => void
     addTroop: (stats: trooperStatsInterface) => void
-    checkForDeath: (players: Array<playerInterface>) => void
+    checkForDeath: (enemy: playerInterface) => void
     handleRangeAttack: (time: number) => void
     checkForTroops: () => boolean
     attackBase: (time: number, enemyBase: baseInterface) => void
+    addFunds: (amount: number) => void
+    // unlockUnits: () => void
     // addTroopTimed: (stats: trooperStatsInterface) => void
 
 }
@@ -326,6 +322,8 @@ class Player implements playerInterface{
     money: number
     score: number
     side: string
+    exp: number
+    unlockedUnits: Array<boolean>
     playerUnits: Array<trooperStatsInterface>
     enemyUnits: Array<trooperStatsInterface>
 
@@ -333,8 +331,11 @@ class Player implements playerInterface{
         this.money = money
         this.side = side
         this.score = 0
+        this.exp = 0
         this.playerUnits = playerUnits
         this.enemyUnits = enemyUnits
+        this.unlockedUnits = [true, false, false]
+        this.unlockUnits()
     }
 
     addTroop(stats: trooperStatsInterface): void {
@@ -370,15 +371,19 @@ class Player implements playerInterface{
         return this.playerUnits[0].isInFront(this.enemyUnits, 1)
     }
 
-    checkForDeath(players: Array<playerInterface>): void {
+    checkForDeath(enemy: playerInterface): void {
         if (this.playerUnits.length) {
             if (this.playerUnits[0].health <= 0) {
                 console.log(this.side, 'died', this.playerUnits[0])
-                if (this.side === 'left') players[0].money += this.playerUnits[0].price * 1.2
-                if (this.side === 'right') players[1].money += this.playerUnits[0].price * 1.2
+                enemy.addFunds(this.playerUnits[0].price * 1.2)
                 this.playerUnits.shift()
             }
         }
+    }
+
+    addFunds(amount: number): void {
+        this.money += amount
+        document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
     }
 
     checkForTroops(): boolean {
@@ -393,6 +398,34 @@ class Player implements playerInterface{
             }
         }
     }
+
+    inferMenace() {
+        let troopAttackPerRound = 0
+        for (let unit of this.playerUnits) {
+            troopAttackPerRound += unit.damage / unit.attackSpeed
+        }
+    }
+
+    private unlockUnits() {
+        let elements = document.querySelectorAll(`.${this.side}`)
+        elements.forEach((elem, i) => {
+            // if (!this.unlockedUnits[i]) elem.setAttribute( "disabled", 'true' )
+            if (!this.unlockedUnits[i]) elem.innerHTML = `Purchase for ${troopArr[i].researchPrice}`
+            elem.addEventListener('mousedown', () => {
+                if (this.unlockedUnits[i]) this.addTroop(troopArr[i])
+                else this.purchaseUnit(i)
+                document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
+            })
+        })
+    }
+
+    private purchaseUnit(index: number) {
+        // if (this.money)age
+        this.money -= troopArr[index].researchPrice
+        this.unlockedUnits[index] = true
+        document.querySelectorAll(`.${this.side}`)[index].innerHTML = troopArr[index].name
+        // document.querySelectorAll(`.${this.side}`)[index].removeAttribute('disabled')
+    }
 }
 
 
@@ -404,6 +437,11 @@ interface botInterface extends playerInterface {
 }
 
 class Bot extends Player implements botInterface{
+    constructor(money = 0, side: string, playerUnits: Array<trooperStatsInterface>, enemyUnits: Array<trooperStatsInterface>) {
+        super(money, side, playerUnits, enemyUnits);
+    }
+
+
 }
 
 
