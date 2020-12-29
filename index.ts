@@ -92,6 +92,7 @@ class Trooper implements trooperStatsInterface{
     side: string
     range: number
     price: number
+    name: string
     attackSpeed: number
     targetTime: number
     maxHealth: number
@@ -113,6 +114,7 @@ class Trooper implements trooperStatsInterface{
         this.price = stats.price
         this.baseDamage = stats.baseDamage
         this.visualize = visualize
+        this.name = stats.name
         if (side === 'left') this.position = 20
         if (side === 'right') this.position = canvasWidth - 20
     }
@@ -549,7 +551,6 @@ class Player implements playerInterface{
         // this.playerUnits = playerUnits
         // this.enemyUnits = enemyUnits
         this.unlockedUnits = [true, false, false]
-        this.unlockUnits()
     }
 
     map(enemy: playerInterface, visualize:boolean, playerUnits: Array<trooperStatsInterface>, startingPlayerUnits: Array<number>,
@@ -563,6 +564,7 @@ class Player implements playerInterface{
             startingPlayerUnits.forEach(i => this.addTroop(i))
         }
         this.enemyUnits = enemyUnits
+        this.unlockUnits()
     }
 
     addTroop(index: number): void {
@@ -614,7 +616,7 @@ class Player implements playerInterface{
                 if (playerUnit.health <= 0) {
                     console.log(this.side, 'died', playerUnit)
                     playerUnit.deleteAnim()
-                    enemy.addFunds(playerUnit.price * 1.4)
+                    enemy.addFunds(playerUnit.price * 10)
                     this.playerUnits.splice(i, 1)
                 }
             })
@@ -665,9 +667,15 @@ class Player implements playerInterface{
                 // else console.log('no movement to left', troop.position)
             })
         }
-        }
+        this.afterMoveArmy()
+    }
+    
+    protected afterMoveArmy() {
+        
+    }
 
     private unlockUnits() {
+        console.log(this.visualize)
         // needs to create buttons for the length of troopArr
         if (this.visualize) {
             let div = document.getElementById(this.side)
@@ -675,6 +683,7 @@ class Player implements playerInterface{
                 let button = document.createElement('button')
                 button.innerHTML = `${stat.name}: ${stat.price}`
                 div.appendChild(button)
+                button.className = this.side
                 div.appendChild(document.createElement('br'))
                 if (!this.unlockedUnits[i]) button.innerHTML = `Purchase for ${troopArr[i].researchPrice}`
                 button.addEventListener('click', () => {
@@ -687,13 +696,13 @@ class Player implements playerInterface{
         }
     }
 
-    private purchaseUnit(index: number, element: object) {
+    protected purchaseUnit(index: number, element: object) {
         // if (this.money)age
         if (this.isEnoughMoney(troopArr[index].researchPrice)) {
             this.money -= troopArr[index].researchPrice - 5
             this.unlockedUnits[index] = true
             // @ts-ignore
-            element.innerHTML = `${troopArr[index].name}: ${troopArr[index].price}`
+            if (this.visualize) element.innerHTML = `${troopArr[index].name}: ${troopArr[index].price}`
             // document.querySelectorAll(`.${this.side}`)[index].removeAttribute('disabled')
         }
         else {
@@ -710,26 +719,84 @@ interface botInterface extends playerInterface {
 
 }
 
-class Bot extends Player implements botInterface{
-    constructor(money = 0, side: string, playerUnits: Array<trooperStatsInterface>,
-                enemyUnits: Array<trooperStatsInterface>, enemy: playerInterface) {
-        super(money, side);
+class CalculatingBot extends Player implements botInterface{
+    toUnlockUnit: number
+    cooldown: number = 0
+    constructor(money = 0, side: string) {
+        super(money, side, );
+        this.toUnlockUnit = 1
     }
 
-    inferMenace() {
-        let troopAttackPerRound = 0
-        for (let unit of this.playerUnits) {
-            troopAttackPerRound += unit.damage / unit.attackSpeed
+    protected afterMoveArmy() {
+        if (this.cooldown <= 0) {
+            if (this.DPR(this.enemyUnits) >= this.DPR(this.playerUnits) ||
+                this.healthOverall(this.enemyUnits) / 10 * 7 > this.healthOverall(this.playerUnits)) {
+                let i = this.neededUnit(this.DPR(this.enemyUnits) - this.DPR(this.playerUnits),
+                    this.healthOverall(this.enemyUnits) / 10 * 9 - this.healthOverall(this.playerUnits))
+                if (i) this.addTroop(i)
+                else this.addTroop(0)
+            }
+
+            if (this.money > troopArr[this.toUnlockUnit].researchPrice * 2) {
+                this.purchaseUnit(this.toUnlockUnit, document.getElementsByClassName(this.side)[this.toUnlockUnit])
+                this.toUnlockUnit++
+            }
         }
+        this.cooldown--
     }
 
+    addTroop(index: number) {
+        super.addTroop(index);
+        this.cooldown = 30
+    }
 
+    DPR(units: Array<trooperStatsInterface>): number {
+        let troopAttackPerRound = 0
+        for (let unit of units) {
+            if (unit.name === troopArr[2].name) troopAttackPerRound += unit.damage * 2 / unit.attackSpeed
+            else if (unit.name != troopArr[5].name) troopAttackPerRound += unit.damage / unit.attackSpeed
+        }
+        return troopAttackPerRound
+    }
+
+    DPH(damage: number, health: number) { // damage per health
+        return damage / health
+    }
+
+    DPHPP() { // damage per health per money
+
+    }
+
+    healthOverall(units: Array<trooperStatsInterface>): number {
+        let healthOfTroops = 0
+        for (let unit of units) {
+            healthOfTroops += unit.health
+        }
+        return healthOfTroops
+    }
+
+    neededUnit(damage: number, health: number): number {
+        let mostSuitable = {
+            DPH: null,
+            index: null
+        }
+        troopArr.forEach((elem, i) => {
+            if (elem.price < this.money && this.unlockedUnits[i]) {
+                if (this.DPH(elem.damage, elem.health) >= mostSuitable.DPH) {
+                    mostSuitable.DPH = this.DPH(elem.damage, elem.health)
+                    mostSuitable.index = i
+                }
+            }
+        })
+        return mostSuitable.index
+    }
 
 }
 
 
 
-new Game(new Player(55, 'left'), new Player(55, 'right'),
+new Game(new Player(55, 'left'),
+         new CalculatingBot(55, 'right'),
     true, [1], [1])
 
 
