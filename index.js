@@ -81,6 +81,7 @@ var Trooper = /** @class */ (function () {
         this.price = stats.price;
         this.baseDamage = stats.baseDamage;
         this.visualize = visualize;
+        this.name = stats.name;
         if (side === 'left')
             this.position = 20;
         if (side === 'right')
@@ -444,7 +445,6 @@ var Player = /** @class */ (function () {
         // this.playerUnits = playerUnits
         // this.enemyUnits = enemyUnits
         this.unlockedUnits = [true, false, false];
-        this.unlockUnits();
     }
     Player.prototype.map = function (enemy, visualize, playerUnits, startingPlayerUnits, enemyUnits, enemyBase, playerBase) {
         var _this = this;
@@ -457,6 +457,7 @@ var Player = /** @class */ (function () {
             startingPlayerUnits.forEach(function (i) { return _this.addTroop(i); });
         }
         this.enemyUnits = enemyUnits;
+        this.unlockUnits();
     };
     Player.prototype.addTroop = function (index) {
         if (this.isEnoughMoney(troopArr[index].price)) {
@@ -504,7 +505,7 @@ var Player = /** @class */ (function () {
                 if (playerUnit.health <= 0) {
                     console.log(_this.side, 'died', playerUnit);
                     playerUnit.deleteAnim();
-                    enemy.addFunds(playerUnit.price * 1.4);
+                    enemy.addFunds(playerUnit.price * 10);
                     _this.playerUnits.splice(i, 1);
                 }
             });
@@ -557,9 +558,13 @@ var Player = /** @class */ (function () {
                 // else console.log('no movement to left', troop.position)
             });
         }
+        this.afterMoveArmy();
+    };
+    Player.prototype.afterMoveArmy = function () {
     };
     Player.prototype.unlockUnits = function () {
         var _this = this;
+        console.log(this.visualize);
         // needs to create buttons for the length of troopArr
         if (this.visualize) {
             var div_1 = document.getElementById(this.side);
@@ -567,6 +572,7 @@ var Player = /** @class */ (function () {
                 var button = document.createElement('button');
                 button.innerHTML = stat.name + ": " + stat.price;
                 div_1.appendChild(button);
+                button.className = _this.side;
                 div_1.appendChild(document.createElement('br'));
                 if (!_this.unlockedUnits[i])
                     button.innerHTML = "Purchase for " + troopArr[i].researchPrice;
@@ -586,7 +592,8 @@ var Player = /** @class */ (function () {
             this.money -= troopArr[index].researchPrice - 5;
             this.unlockedUnits[index] = true;
             // @ts-ignore
-            element.innerHTML = troopArr[index].name + ": " + troopArr[index].price;
+            if (this.visualize)
+                element.innerHTML = troopArr[index].name + ": " + troopArr[index].price;
             // document.querySelectorAll(`.${this.side}`)[index].removeAttribute('disabled')
         }
         else {
@@ -595,20 +602,77 @@ var Player = /** @class */ (function () {
     };
     return Player;
 }());
-var Bot = /** @class */ (function (_super) {
-    __extends(Bot, _super);
-    function Bot(money, side, playerUnits, enemyUnits, enemy) {
+var CalculatingBot = /** @class */ (function (_super) {
+    __extends(CalculatingBot, _super);
+    function CalculatingBot(money, side) {
         if (money === void 0) { money = 0; }
-        return _super.call(this, money, side) || this;
+        var _this = _super.call(this, money, side) || this;
+        _this.cooldown = 0;
+        _this.toUnlockUnit = 1;
+        return _this;
     }
-    Bot.prototype.inferMenace = function () {
-        var troopAttackPerRound = 0;
-        for (var _i = 0, _a = this.playerUnits; _i < _a.length; _i++) {
-            var unit = _a[_i];
-            troopAttackPerRound += unit.damage / unit.attackSpeed;
+    CalculatingBot.prototype.afterMoveArmy = function () {
+        if (this.cooldown <= 0) {
+            if (this.DPR(this.enemyUnits) >= this.DPR(this.playerUnits) ||
+                this.healthOverall(this.enemyUnits) / 10 * 7 > this.healthOverall(this.playerUnits)) {
+                var i = this.neededUnit(this.DPR(this.enemyUnits) - this.DPR(this.playerUnits), this.healthOverall(this.enemyUnits) / 10 * 9 - this.healthOverall(this.playerUnits));
+                if (i)
+                    this.addTroop(i);
+                else
+                    this.addTroop(0);
+            }
+            if (this.money > troopArr[this.toUnlockUnit].researchPrice * 2) {
+                this.purchaseUnit(this.toUnlockUnit, document.getElementsByClassName(this.side)[this.toUnlockUnit]);
+                this.toUnlockUnit++;
+            }
         }
+        this.cooldown--;
     };
-    return Bot;
+    CalculatingBot.prototype.addTroop = function (index) {
+        _super.prototype.addTroop.call(this, index);
+        this.cooldown = 30;
+    };
+    CalculatingBot.prototype.DPR = function (units) {
+        var troopAttackPerRound = 0;
+        for (var _i = 0, units_1 = units; _i < units_1.length; _i++) {
+            var unit = units_1[_i];
+            if (unit.name === troopArr[2].name)
+                troopAttackPerRound += unit.damage * 2 / unit.attackSpeed;
+            else if (unit.name != troopArr[5].name)
+                troopAttackPerRound += unit.damage / unit.attackSpeed;
+        }
+        return troopAttackPerRound;
+    };
+    CalculatingBot.prototype.DPH = function (damage, health) {
+        return damage / health;
+    };
+    CalculatingBot.prototype.DPHPP = function () {
+    };
+    CalculatingBot.prototype.healthOverall = function (units) {
+        var healthOfTroops = 0;
+        for (var _i = 0, units_2 = units; _i < units_2.length; _i++) {
+            var unit = units_2[_i];
+            healthOfTroops += unit.health;
+        }
+        return healthOfTroops;
+    };
+    CalculatingBot.prototype.neededUnit = function (damage, health) {
+        var _this = this;
+        var mostSuitable = {
+            DPH: null,
+            index: null
+        };
+        troopArr.forEach(function (elem, i) {
+            if (elem.price < _this.money && _this.unlockedUnits[i]) {
+                if (_this.DPH(elem.damage, elem.health) >= mostSuitable.DPH) {
+                    mostSuitable.DPH = _this.DPH(elem.damage, elem.health);
+                    mostSuitable.index = i;
+                }
+            }
+        });
+        return mostSuitable.index;
+    };
+    return CalculatingBot;
 }(Player));
-new Game(new Player(55, 'left'), new Player(55, 'right'), true, [1], [1]);
+new Game(new Player(55, 'left'), new CalculatingBot(55, 'right'), true, [1], [1]);
 //# sourceMappingURL=index.js.map
