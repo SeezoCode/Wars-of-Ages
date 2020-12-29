@@ -797,7 +797,7 @@ class CalculatingBot extends Player implements botInterface{
 
 new Game(new Player(55, 'left'),
          new CalculatingBot(55, 'right'),
-    true, [1], [1])
+    true, [], [])
 
 
 

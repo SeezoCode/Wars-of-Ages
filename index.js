@@ -674,5 +674,5 @@ var CalculatingBot = /** @class */ (function (_super) {
     };
     return CalculatingBot;
 }(Player));
-new Game(new Player(55, 'left'), new CalculatingBot(55, 'right'), true, [1], [1]);
+new Game(new Player(55, 'left'), new CalculatingBot(55, 'right'), true, [], []);
 //# sourceMappingURL=index.js.map
