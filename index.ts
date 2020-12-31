@@ -29,13 +29,13 @@ const troopArr = [
         name: 'Advanced Troop', health: 30, damage: 10, baseDamage: 5, attackSpeed: 80, castingTime: 1.6, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
-        name: 'Base Destroyer Troop', health: 50, damage: 2, baseDamage: 35, attackSpeed: 140, castingTime: 3, price: 50, color: 'yellow', speed: .5, span: 45, range: 0, researchPrice: 400
+        name: 'Base Destroyer Troop', health: 40, damage: 2, baseDamage: 35, attackSpeed: 140, castingTime: 3, price: 50, color: 'yellow', speed: .5, span: 45, range: 0, researchPrice: 400
     },
     {
-        name: 'Boomer Troop', health: 1, damage: 49, baseDamage: 30, attackSpeed: 17, castingTime: 1.6, price: 40, color: 'red', speed: 1, span: 20, range: 21, researchPrice: 550
+        name: 'Boomer Troop', health: 1, damage: 49, baseDamage: 30, attackSpeed: 17, castingTime: 1.6, price: 60, color: 'red', speed: 1, span: 20, range: 21, researchPrice: 550
     },
     {
-        name: 'Shield Troop', health: 98, damage: .5, baseDamage: 1, attackSpeed: 50, castingTime: 3, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
+        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 50, castingTime: 3, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
     },
     {
         name: 'Healer Troop', health: 4, damage: 5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 25, color: 'hotpink', speed: 1.5, span: 20, range: 100, researchPrice: 800
@@ -441,8 +441,8 @@ class Game implements gameInterface{
         this.players = [player1, player2]
             // new Player(55, 'right', this.playerTwoUnits, this.playerOneUnits)
 
-        this.players[0].map(this.players[1], visualize, this.playerOneUnits, playerUnits1, this.playerTwoUnits, this.playerTwoBase, this.playerOneBase)
-        this.players[1].map(this.players[0], visualize, this.playerTwoUnits, playerUnits2, this.playerOneUnits, this.playerOneBase, this.playerTwoBase)
+        this.players[0].map(this.players[1], visualize, this.playerOneUnits, playerUnits1, this.playerTwoUnits, this.playerTwoBase, this.playerOneBase, this)
+        this.players[1].map(this.players[0], visualize, this.playerTwoUnits, playerUnits2, this.playerOneUnits, this.playerOneBase, this.playerTwoBase, this)
 
         this.animation()
     }
@@ -556,7 +556,7 @@ interface playerInterface {
     moveArmy: () => void
     purchasableUnits?: Array<trooperStatsInterface>
     map: (enemy: playerInterface, visualize: boolean, playerUnits: Array<trooperStatsInterface>, startingPlayerUnits: Array<number>,
-          enemyUnits: Array<trooperStatsInterface>, enemyBase: baseInterface, playerBase: baseInterface) => void
+          enemyUnits: Array<trooperStatsInterface>, enemyBase: baseInterface, playerBase: baseInterface, game: gameInterface) => void
     isEnoughMoney: (amount: number) => boolean
     doesBaseHaveHealth: () => boolean
     stats: statsInterface
@@ -579,6 +579,7 @@ class Player implements playerInterface{
     playerUnits: Array<trooperStatsInterface>
     enemyUnits: Array<trooperStatsInterface>
     playerBase: baseInterface
+    game: gameInterface
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean) {
         this.money = money
@@ -596,7 +597,7 @@ class Player implements playerInterface{
     }
 
     map(enemy: playerInterface, visualize:boolean, playerUnits: Array<trooperStatsInterface>, startingPlayerUnits: Array<number>,
-        enemyUnits: Array<trooperStatsInterface>, enemyBase: baseInterface, playerBase: baseInterface) {
+        enemyUnits: Array<trooperStatsInterface>, enemyBase: baseInterface, playerBase: baseInterface, game: gameInterface) {
         this.enemy = enemy
         this.visualize = visualize
         this.enemyBase = enemyBase
@@ -606,6 +607,7 @@ class Player implements playerInterface{
             startingPlayerUnits.forEach(i => this.addTroop(i))
         }
         this.enemyUnits = enemyUnits
+        this.game = game
         this.unlockUnits()
     }
 
@@ -623,7 +625,7 @@ class Player implements playerInterface{
 
     doesBaseHaveHealth(): boolean {
         if (this.playerBase.health <= 0) {
-            console.log('Base destroyed: ', this.playerBase)
+            if (this.visualize) console.log('Base destroyed: ', this.playerBase)
             return false
         }
         return true
@@ -742,8 +744,11 @@ class Player implements playerInterface{
         if (this.isEnoughMoney(troopArr[index].researchPrice)) {
             this.money -= troopArr[index].researchPrice - 5
             this.unlockedUnits[index] = true
-            // @ts-ignore
-            if (this.visualize) element.innerHTML = `${troopArr[index].name}: ${troopArr[index].price}`
+            try {
+                // @ts-ignore
+                if (this.visualize) element.innerHTML = `${troopArr[index].name}: ${troopArr[index].price}`
+            }
+            catch (e) {}
             // document.querySelectorAll(`.${this.side}`)[index].removeAttribute('disabled')
         }
         else {
@@ -766,7 +771,7 @@ interface botInterface extends playerInterface {
 
 }
 
-class CalculatingBot extends Player implements botInterface{
+class CalculatingBot extends Player implements botInterface {
     toUnlockUnit: number
     cooldown: number = 0
     constructor(money = 0, side: string, checkForAvailMoney: boolean) {
@@ -842,17 +847,53 @@ class CalculatingBot extends Player implements botInterface{
 
 
 class SimulatingBot extends Player {
-    cooldown: number = 45
+    cooldown: number = 100
+    toUnlockUnit = 1
 
     // constructor(money = 0, side: string, checkForAvailMoney: boolean) {
     //     super(money, side, checkForAvailMoney);
     // }
 
-    protected afterMoveArmy() {
+    afterMoveArmy() {
+        let enc = this.encouragement()
         if (this.cooldown <= 0) {
-            let stats = this.bruteforce([0,0,0], [1,1,1,1,1])
+            // console.log(enc)
+            if (enc >= .50) {
+                let bestTroops = this.bruteforce(this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits))
+                // console.log(bestTroops)
+                if (bestTroops.length && this.playerUnits.length < 10) this.addTroop(bestTroops[0])
+
+                this.cooldown = 100
+            }
+            this.shouldSpawnBaseDestroyer(enc)
+            if (!this.unlockedUnits[this.unlockedUnits.length - 1] && this.money > troopArr[this.toUnlockUnit].researchPrice * 1.5) {
+                this.purchaseUnit(this.toUnlockUnit, document.getElementsByClassName(this.side)[this.toUnlockUnit])
+                this.toUnlockUnit++ // should be done better
+            }
         }
         this.cooldown--
+    }
+
+    shouldSpawnBaseDestroyer(enc: number) {
+        this.playerUnits.forEach(e => {
+            if (e.name === troopArr[4].name || e.name === troopArr[8].name) enc = 1
+        })
+        if (enc <= .1) {
+            // console.log('trooper doomer')
+            if (Math.random() < .8 && this.unlockedUnits[8] && this.unlockedUnits[6] && this.unlockedUnits[2]) {
+                if (this.isEnoughMoney(troopArr[6].price + troopArr[2].price + troopArr[8].price)) {
+                    this.addTroop(6)
+                    this.addTroop(2)
+                    this.addTroop(8)
+                    this.cooldown = 300
+                }
+            }
+            else if (this.unlockedUnits[4] && enc === 0 && this.unlockedUnits[3]) {
+                this.addTroop(3)
+                this.addTroop(4)
+                this.cooldown = 250
+            }
+        }
     }
 
     simulate(units1: Array<number>, units2: Array<number>): gameInterface {
@@ -862,34 +903,22 @@ class SimulatingBot extends Player {
             false, units1, units2)
     }
 
-    bruteforce(playerTroops: Array<number>, enemyTroops: Array<number>) {
-        // let mostSuitedTroops: Array<number> = []
-        // let getStats = this.getGameStats
-        // let DPM = this.DPM
-        // let simulate = this.simulate
-        // has to be changed to number array
-        // let enemyTroops = this.enemyUnits
-        // let playerTroops = this.playerUnits
+    bruteforce(playerTroops: Array<number>, enemyTroops: Array<number>): Array<number> {
         let bestDPM = null
         let bestStats
         let bestTroops = []
-        // test(0, [], 0)
-        // function test(depth: number, arr: Array<number>, i:number) {
-        //     if (depth < deepness) {
-        //             arr = arr.slice()
-        //             arr.push(i)
-        //         for (let i = 0; i < deepness; i++) {
-        //             test(depth + 1, arr, i)
-        //         }
-        //     }
-        //     else {
-        //         console.log(arr)
-        //     }
-        // }
+        // let workerArr: Array<object> = []
+        // let workerResults: Array<extendedStatsInterface>
+        let numberOfUnlockedUnits = 0
+        this.unlockedUnits.forEach(e => e ? numberOfUnlockedUnits++ : 0)
+
         let p = performance.now()
-        for (let i = 0; i < troopArr.length - 2; i++) { // - trebuchet
-            for (let j = 0; j < troopArr.length - 1; j++) {
-                for (let k = 0; k < troopArr.length - 1; k++) {
+        for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
+            if (i === 4 || i === 8) continue
+            for (let j = 0; j < numberOfUnlockedUnits; j++) {
+                if (j === 4 || j === 8) continue
+                for (let k = 0; k < numberOfUnlockedUnits; k++) {
+                    if (k === 4 || k === 8) continue
                     let plTroops: Array<number> = playerTroops.slice()
                     plTroops.push(i)
                     plTroops.push(j)
@@ -900,16 +929,26 @@ class SimulatingBot extends Player {
                     stats.enemyUnitsLength = game.players[this.side === 'left' ? 0 : 1].enemyUnits.length
                     stats.playerUnitsLength = game.players[this.side === 'left' ? 0 : 1].playerUnits.length
 
+                    // workerArr[i*j*k] = new Worker('webworker.js')
+                    // // @ts-ignore
+                    // workerArr[i*j*k].postMessage([plTroops, enemyTroops.slice()])
+                    // // @ts-ignore
+                    // workerArr[i*j*k].onmessage = function (e) {
+                    //     workerResults = e[0]
+                    //     console.log('done')
+                    //     console.log(performance.now() - p, 'ms')
+                    // }
+
                     if (this.damageCalc(stats) > bestDPM) {
                         bestDPM = this.damageCalc(stats)
                         bestStats = stats
-                        bestTroops = plTroops
+                        bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]]
                         // console.log('!!!!!!!!!!!!', bestStats)
                     }
                 }
             }
         }
-        console.log(bestTroops, 'in', performance.now() - p, 'ms')
+        // console.log(bestTroops, 'in', performance.now() - p, 'ms')
         return bestTroops
     }
 
@@ -925,8 +964,11 @@ class SimulatingBot extends Player {
 
     damageCalc(stats: extendedStatsInterface): number {
         if (stats.playerSpending === 0) return -1
-        if (stats.playerUnitsLength) return (stats.playerUnitsLength / stats.playerDamage) / stats.playerSpending
-        if (stats.enemyUnitsLength) return (stats.playerDamage / stats.enemyUnitsLength) / stats.playerSpending
+        else if (stats.playerUnitsLength) return (stats.playerUnitsLength / stats.playerDamage) / (stats.playerSpending * this.encouragement())
+        else if (stats.enemyUnitsLength) return (stats.playerDamage / stats.enemyUnitsLength) / (stats.playerSpending / this.encouragement())
+        else {
+            return stats.playerDamage / stats.playerSpending
+        }
     }
 
     getGameStats(game: gameInterface): extendedStatsInterface {
@@ -943,15 +985,37 @@ class SimulatingBot extends Player {
         stats.enemyDamage = game.players[this.side === 'left' ? 0 : 1].stats.damageDealt
         return stats
     }
+
+    encouragement(): number {
+        let stats = {
+            playerUnitsDamage: 0,
+            enemyUnitsDamage: 0,
+            playerUnitsLength: 0,
+            enemyUnitsLength: 0
+        }
+        this.game.players[this.side === 'left' ? 0 : 1].playerUnits.forEach(e => stats.playerUnitsDamage += e.damage)
+        this.game.players[this.side === 'left' ? 0 : 1].enemyUnits.forEach(e => stats.enemyUnitsDamage += e.damage)
+        stats.playerUnitsLength = this.game.players[this.side === 'left' ? 0 : 1].playerUnits.length
+        stats.enemyUnitsLength = this.game.players[this.side === 'left' ? 0 : 1].enemyUnits.length
+
+        // console.log(stats)
+        // console.log('enc:', (stats.enemyUnitsLength / stats.playerUnitsLength) / (stats.playerUnitsDamage / stats.enemyUnitsDamage))
+        if (stats.playerUnitsLength && stats.enemyUnitsDamage) {
+            return ((stats.enemyUnitsLength / stats.playerUnitsLength) / (stats.playerUnitsDamage / stats.enemyUnitsDamage))
+        }
+        else if (!stats.enemyUnitsLength) return 0
+        else return 100
+    }
+
 }
 
 
-let s = new SimulatingBot(0, 'left', false)
-s.bruteforce( [], [0,1])
+// let s = new SimulatingBot(0, 'left', false)
+// s.afterMoveArmy()
 
-// new Game(new Player(55, 'left', true),
-//          new SimulatingBot(55, 'right', true),
-//     true, [], [])
+new Game(new Player(55, 'left', true),
+         new SimulatingBot(55, 'right', true),
+    true, [], [])
 
 
 
