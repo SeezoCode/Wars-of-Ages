@@ -26,7 +26,7 @@ const troopArr = [
         name: 'Range Troop', health: 20, damage: 3, baseDamage: 3, attackSpeed: 50, castingTime: 1.2, price: 10, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 100
     },
     {
-        name: 'Advanced Troop', health: 30, damage: 10, baseDamage: 5, attackSpeed: 80, castingTime: 1.6, price: 12, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Advanced Troop', health: 30, damage: 10, baseDamage: 5, attackSpeed: 80, castingTime: 1.6, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
         name: 'Base Destroyer Troop', health: 50, damage: 2, baseDamage: 35, attackSpeed: 140, castingTime: 3, price: 50, color: 'yellow', speed: .5, span: 45, range: 0, researchPrice: 400
@@ -38,7 +38,7 @@ const troopArr = [
         name: 'Shield Troop', health: 98, damage: .5, baseDamage: 1, attackSpeed: 50, castingTime: 3, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
     },
     {
-        name: 'Healer Troop', health: 3, damage: 5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 25, color: 'hotpink', speed: 1.5, span: 20, range: 100, researchPrice: 800
+        name: 'Healer Troop', health: 4, damage: 5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 25, color: 'hotpink', speed: 1.5, span: 20, range: 100, researchPrice: 800
     },
     {
         name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, castingTime: 3, price: 50, color: 'brown', speed: .3, span: 50, range: 200, researchPrice: 2000
@@ -498,7 +498,7 @@ class Game implements gameInterface{
         }
         if (this.visualize) requestAnimationFrame(hold)
         else {
-            while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 10000) {
+            while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 10000) { //
                 move()
             }
             console.log('Game ended,',
@@ -527,9 +527,9 @@ interface statsInterface {
 interface extendedStatsInterface {
     playerSpending: number
     playerDamage: number,
-    playerUnitsStats: Array<number>,
+    playerUnitsLength: number,
     enemyDamage: number,
-    enemyUnitsStats: Array<number>
+    enemyUnitsLength: number
 }
 
 interface playerInterface {
@@ -850,7 +850,7 @@ class SimulatingBot extends Player {
 
     protected afterMoveArmy() {
         if (this.cooldown <= 0) {
-            let stats = this.bruteforce(0,[0,0,0], [1,1,1,1,1])
+            let stats = this.bruteforce([0,0,0], [1,1,1,1,1])
         }
         this.cooldown--
     }
@@ -862,7 +862,7 @@ class SimulatingBot extends Player {
             false, units1, units2)
     }
 
-    bruteforce(deepness: number, playerTroops: Array<number>, enemyTroops: Array<number>) {
+    bruteforce(playerTroops: Array<number>, enemyTroops: Array<number>) {
         // let mostSuitedTroops: Array<number> = []
         // let getStats = this.getGameStats
         // let DPM = this.DPM
@@ -872,25 +872,64 @@ class SimulatingBot extends Player {
         // let playerTroops = this.playerUnits
         let bestDPM = null
         let bestStats
+        let bestTroops = []
+        // test(0, [], 0)
+        // function test(depth: number, arr: Array<number>, i:number) {
+        //     if (depth < deepness) {
+        //             arr = arr.slice()
+        //             arr.push(i)
+        //         for (let i = 0; i < deepness; i++) {
+        //             test(depth + 1, arr, i)
+        //         }
+        //     }
+        //     else {
+        //         console.log(arr)
+        //     }
+        // }
+        let p = performance.now()
+        for (let i = 0; i < troopArr.length - 2; i++) { // - trebuchet
+            for (let j = 0; j < troopArr.length - 1; j++) {
+                for (let k = 0; k < troopArr.length - 1; k++) {
+                    let plTroops: Array<number> = playerTroops.slice()
+                    plTroops.push(i)
+                    plTroops.push(j)
+                    plTroops.push(k)
+                    console.log(plTroops)
+                    let game = this.simulate(plTroops, enemyTroops.slice())
+                    let stats = this.getGameStats(game)
+                    stats.enemyUnitsLength = game.players[this.side === 'left' ? 0 : 1].enemyUnits.length
+                    stats.playerUnitsLength = game.players[this.side === 'left' ? 0 : 1].playerUnits.length
 
-        // works but really clumsily
-        let playerTroopsLength = playerTroops.length
-        for (let i = 0; i < troopArr.length; i++) {
-            playerTroops[playerTroopsLength] = i
-            for (let i = 0; i < troopArr.length; i++) {
-                // could check for current money situation
-                playerTroops[playerTroopsLength + 1] = i
-                console.log(playerTroops)
-                let stats = this.getGameStats(this.simulate(enemyTroops, playerTroops))
-                if (this.DPM(stats.playerDamage, stats.playerSpending) > bestDPM) {
-                    bestDPM = this.DPM(stats.playerDamage, stats.playerSpending)
-                    bestStats = stats
-                    console.log('!!!!!!!!!!!!', bestStats)
+                    if (this.damageCalc(stats) > bestDPM) {
+                        bestDPM = this.damageCalc(stats)
+                        bestStats = stats
+                        bestTroops = plTroops
+                        console.log('!!!!!!!!!!!!', bestStats)
+                    }
                 }
             }
         }
-        console.log(bestStats)
-        return bestStats
+        console.log(bestTroops, 'in', performance.now() - p, 'ms')
+        return bestTroops
+
+        // works but really clumsily
+        // let playerTroopsLength = playerTroops.length
+        // for (let i = 0; i < troopArr.length; i++) {
+        //     playerTroops[playerTroopsLength] = i
+        //     for (let i = 0; i < troopArr.length; i++) {
+        //         // could check for current money situation
+        //         playerTroops[playerTroopsLength + 1] = i
+        //         console.log(playerTroops)
+        //         let stats = this.getGameStats(this.simulate(enemyTroops, playerTroops))
+        //         if (this.DPM(stats.playerDamage, stats.playerSpending) > bestDPM) {
+        //             bestDPM = this.DPM(stats.playerDamage, stats.playerSpending)
+        //             bestStats = stats
+        //             console.log('!!!!!!!!!!!!', bestStats)
+        //         }
+        //     }
+        // }
+        // console.log(bestStats)
+        // return bestStats
         // recursive function
     }
 
@@ -904,18 +943,19 @@ class SimulatingBot extends Player {
         return arr
     }
 
-    DPM(damage: number, price: number): number {
-        if (price === 0) return -1
-        return damage / price
+    damageCalc(stats: extendedStatsInterface): number {
+        if (stats.playerSpending === 0) return -1
+        if (stats.playerUnitsLength) return (stats.playerUnitsLength / stats.playerDamage) / stats.playerSpending
+        if (stats.enemyUnitsLength) return (stats.playerDamage / stats.enemyUnitsLength) / stats.playerSpending
     }
 
     getGameStats(game: gameInterface): extendedStatsInterface {
         let stats = {
             playerSpending: null,
             playerDamage: null,
-            playerUnitsStats: null,
+            playerUnitsLength: null,
             enemyDamage: null,
-            enemyUnitsStats: null
+            enemyUnitsLength: null
         }
         stats.playerSpending = game.players[this.side === 'left' ? 0 : 1].stats.spending
 
@@ -927,7 +967,7 @@ class SimulatingBot extends Player {
 
 
 let s = new SimulatingBot(0, 'left', false)
-s.bruteforce(0, [], [0,0])
+s.bruteforce( [], [0,1])
 
 // new Game(new Player(55, 'left', true),
 //          new SimulatingBot(55, 'right', true),
