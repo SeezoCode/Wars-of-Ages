@@ -501,10 +501,10 @@ class Game implements gameInterface{
             while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 10000) { //
                 move()
             }
-            console.log('Game ended,',
-                (!this.playerOneUnits.length && !this.playerTwoUnits.length ? 'nobody' : (this.playerOneUnits.length ? 'left' : 'right')), 'won',
-                ', took:', this.time, 'rounds, in', performance.now() - this.msTime, 'ms\n', 'Left player damage:', this.players[0].stats.damageDealt,
-                'Right player damage:', this.players[1].stats.damageDealt)
+            // console.log('Game ended,',
+            //     (!this.playerOneUnits.length && !this.playerTwoUnits.length ? 'nobody' : (this.playerOneUnits.length ? 'left' : 'right')), 'won',
+            //     ', took:', this.time, 'rounds, in', performance.now() - this.msTime, 'ms\n', 'Left player damage:', this.players[0].stats.damageDealt,
+            //     'Right player damage:', this.players[1].stats.damageDealt)
 
         }
         function hold(): void {
@@ -856,7 +856,7 @@ class SimulatingBot extends Player {
     }
 
     simulate(units1: Array<number>, units2: Array<number>): gameInterface {
-        console.log('simulate')
+        // console.log('simulate')
         return new Game(new Player(0, 'left', false),
                         new Player(0, 'right', false),
             false, units1, units2)
@@ -894,7 +894,7 @@ class SimulatingBot extends Player {
                     plTroops.push(i)
                     plTroops.push(j)
                     plTroops.push(k)
-                    console.log(plTroops)
+                    // console.log(plTroops)
                     let game = this.simulate(plTroops, enemyTroops.slice())
                     let stats = this.getGameStats(game)
                     stats.enemyUnitsLength = game.players[this.side === 'left' ? 0 : 1].enemyUnits.length
@@ -904,33 +904,13 @@ class SimulatingBot extends Player {
                         bestDPM = this.damageCalc(stats)
                         bestStats = stats
                         bestTroops = plTroops
-                        console.log('!!!!!!!!!!!!', bestStats)
+                        // console.log('!!!!!!!!!!!!', bestStats)
                     }
                 }
             }
         }
         console.log(bestTroops, 'in', performance.now() - p, 'ms')
         return bestTroops
-
-        // works but really clumsily
-        // let playerTroopsLength = playerTroops.length
-        // for (let i = 0; i < troopArr.length; i++) {
-        //     playerTroops[playerTroopsLength] = i
-        //     for (let i = 0; i < troopArr.length; i++) {
-        //         // could check for current money situation
-        //         playerTroops[playerTroopsLength + 1] = i
-        //         console.log(playerTroops)
-        //         let stats = this.getGameStats(this.simulate(enemyTroops, playerTroops))
-        //         if (this.DPM(stats.playerDamage, stats.playerSpending) > bestDPM) {
-        //             bestDPM = this.DPM(stats.playerDamage, stats.playerSpending)
-        //             bestStats = stats
-        //             console.log('!!!!!!!!!!!!', bestStats)
-        //         }
-        //     }
-        // }
-        // console.log(bestStats)
-        // return bestStats
-        // recursive function
     }
 
     private parseUnits(units: Array<trooperStatsInterface>): Array<number> {
