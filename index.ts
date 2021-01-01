@@ -1,6 +1,5 @@
 let canvasWidth, canvasHeight, cx, explosionIMG
 try {
-    console.log('Running in Browser')
     let ctx = document.querySelector('canvas')
     canvasWidth = ctx.width = 600
     canvasHeight = ctx.height = 250
@@ -8,6 +7,7 @@ try {
     cx = ctx.getContext('2d')
     explosionIMG = new Image(68, 55)
     explosionIMG.src = 'explosion.png'
+    console.log('Running in Browser')
 }
 catch (e) {
     console.log('Running node.js huh?')
@@ -20,7 +20,7 @@ const troopArr = [
         name: 'Basic Troop', health: 20, damage: 4.5, baseDamage: 4, attackSpeed: 40, castingTime: 1, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
     },
     {
-        name: 'Fast Troop', health: 18, damage: 1.3, baseDamage: .8, attackSpeed: 15, castingTime: 1.6, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
+        name: 'Fast Troop', health: 18, damage: 1.4, baseDamage: .8, attackSpeed: 15, castingTime: 1.6, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
     },
     {
         name: 'Range Troop', health: 20, damage: 3, baseDamage: 3, attackSpeed: 50, castingTime: 1.2, price: 10, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 100
@@ -668,7 +668,7 @@ class Player implements playerInterface{
                 if (playerUnit.health <= 0) {
                     // console.log(this.side, 'died', playerUnit)
                     playerUnit.deleteAnim()
-                    enemy.addFunds(playerUnit.price * 1.5)
+                    enemy.addFunds(playerUnit.price * 5)
                     this.playerUnits.splice(i, 1)
                 }
             })
@@ -865,6 +865,7 @@ class CalculatingBot extends Player implements botInterface {
 class SimulatingBot extends Player {
     cooldown: number = 100
     toUnlockUnit = 1
+    working = false
 
     // constructor(money = 0, side: string, checkForAvailMoney: boolean) {
     //     super(money, side, checkForAvailMoney);
@@ -875,14 +876,27 @@ class SimulatingBot extends Player {
         let enc = this.encouragement()
         if (this.cooldown <= 0) {
             // console.log(enc)
-            if (enc >= .50) {
-                let bestTroops = this.bruteforce(this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits))
-                // console.log(bestTroops)
-                if (enc === 10) console.log(bestTroops)
-                if (bestTroops.length && this.playerUnits.length < 7) this.addTroop(bestTroops[0])
+            if (enc >= .50 && !this.working) {
+                this.working = true
+                let cancelWork = () => this.working = false
+                let playerUnits = this.playerUnits
+                let addTroop = (i) => this.addTroop(i)
+                let worker = new Worker('Worker.js')
 
-                this.cooldown = 100
+                worker.postMessage([[1,2,3], this.parseUnits(this.enemyUnits),
+                    this.unlockedUnits, 'right', this.money, this.game])
+                worker.onmessage = function (e) {
+                    console.log(e.data)
+                    if (e.data.length && playerUnits.length < 5) addTroop(e.data[0])
+                    cancelWork()
+                }
+                // let bestTroops = this.bruteforceWorker(this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits))
+                // // console.log(bestTroops)
+                // if (enc === 10) console.log(bestTroops)
+
+                this.cooldown = 10
             }
+
             if (this.money > 1000 && (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300))
                 this.shouldSpawnBaseDestroyer(enc)
 
@@ -931,64 +945,19 @@ class SimulatingBot extends Player {
             false, units1, units2)
     }
 
-    bruteforce(playerTroops: Array<number>, enemyTroops: Array<number>): Array<number> {
-        let bestDPM = -999999
-        let bestStats
-        let bestTroops = []
-        // let workerArr: Array<object> = []
-        // let workerResults: Array<extendedStatsInterface>
-        let numberOfUnlockedUnits = 0
-        this.unlockedUnits.forEach(e => e ? numberOfUnlockedUnits++ : 0)
+    // bruteforce(playerTroops: Array<number>, enemyTroops: Array<number>): Array<number> {
+        // let bestTroops = []
+        // document.getElementById('dmgright').innerText = String(bestDPM)
+        // return bestTroops
+    // }
 
-        // let p = performance.now()
-        for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
-            if (i === 4 || i === 8) continue
-            for (let j = 0; j < numberOfUnlockedUnits; j++) {
-                if (j === 4 || j === 8) continue
-                for (let k = 0; k < numberOfUnlockedUnits; k++) {
-                    if (k === 4 || k === 8) continue
-                    let plTroops: Array<number> = playerTroops.slice()
-                    plTroops.push(i)
-                    plTroops.push(j)
-                    plTroops.push(k)
-                    // console.log(plTroops)
-                    let game = this.simulate(plTroops, enemyTroops.slice())
-                    let stats = this.getGameStats(game)
-                    stats.enemyUnitsLength = game.players[this.side === 'left' ? 0 : 1].enemyUnits.length
-                    stats.playerUnitsLength = game.players[this.side === 'left' ? 0 : 1].playerUnits.length
-
-                    // workerArr[i*j*k] = new Worker('webworker.js')
-                    // // @ts-ignore
-                    // workerArr[i*j*k].postMessage([plTroops, enemyTroops.slice()])
-                    // // @ts-ignore
-                    // workerArr[i*j*k].onmessage = function (e) {
-                    //     workerResults = e[0]
-                    //     console.log('done')
-                    //     console.log(performance.now() - p, 'ms')
-                    // }
-
-                    if (this.damageCalc(stats) > bestDPM) {
-                        bestDPM = this.damageCalc(stats)
-                        bestStats = stats
-                        bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]]
-                        // console.log('!!!!!!!!!!!!', bestStats)
-                    }
-                }
-            }
-        }
-        // console.log(bestTroops, 'in', performance.now() - p, 'ms')
-        document.getElementById('dmgright').innerText = String(bestDPM)
-        return bestTroops
-    }
-
-    bruteforceWorker(playerTroops: Array<number>, enemyTroops: Array<number>): Array<number> {
-        let worker = new Worker('index.js')
-        worker.postMessage([playerTroops, enemyTroops])
-        worker.onmessage = function (e) {
-            console.log(e[0])
-            return
-        }
-    }
+    // bruteforceWorker(playerTroops: Array<number>, enemyTroops: Array<number>): any { // Array<number>
+    //     let worker = new Worker('Worker.js')
+    //     worker.postMessage([[1, 2], [1,1,1,1,1,1], [true, true, true, true], 'right', 9999, this.game])
+    //     worker.onmessage = function (e) {
+    //         console.log(e)
+    //     }
+    // }
 
     private parseUnits(units: Array<trooperStatsInterface>): Array<number> {
         let arr = []
@@ -1044,7 +1013,7 @@ class SimulatingBot extends Player {
         }
         else if (!stats.enemyUnitsLength) return 0
         else {
-            console.log(stats)
+            // console.log(stats)
             return 10
         }
     }
@@ -1054,14 +1023,13 @@ class SimulatingBot extends Player {
 // let s = new SimulatingBot(0, 'left', false)
 // s.afterMoveArmy()
 
-// new Game(new Player(55, 'left', false),
-//          new SimulatingBot(55, 'right', false),
-//     true, [], [0])
+new Game(new Player(55, 'left', false),
+         new SimulatingBot(55, 'right', false),
+    true, [], [0])
 
-let worker = new Worker('Worker.js')
-worker.postMessage([1, 2])
-worker.onmessage = function (e) {
-    console.log(e.data)
-}
-
+// let worker = new Worker('Worker.js')
+// worker.postMessage([[1, 2], [1,1,1,1,1,1], [true, true, true, true], 'right', 9999])
+// worker.onmessage = function (e) {
+//     console.log(e)
+// }
 
