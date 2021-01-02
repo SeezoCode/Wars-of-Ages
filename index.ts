@@ -1,7 +1,7 @@
 let canvasWidth, canvasHeight, cx, explosionIMG, color
 try {
     let ctx = document.querySelector('canvas')
-    canvasWidth = ctx.width = 600
+    canvasWidth = ctx.width = 700
     canvasHeight = ctx.height = 250
     console.log(ctx)
     cx = ctx.getContext('2d')
@@ -13,7 +13,7 @@ try {
 }
 catch (e) {
     // console.log('Running node.js huh?')
-    canvasWidth = 600
+    canvasWidth = 700
     canvasHeight = 250
 }
 
