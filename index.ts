@@ -620,7 +620,7 @@ class Player implements playerInterface{
         // this.enemyUnits = enemyUnits
         this.unlockedUnits = [true, false, false, false, false, false, false, false, false]
         // this.unlockedUnits = [true, true, true, true, true, true, true, true, true]
-        this.maxUnits = 10
+        this.maxUnits = 7
         this.stats = {
             damageDealt: 0,
             spending: 0,
@@ -699,14 +699,17 @@ class Player implements playerInterface{
 
     handleRangeAttack(time: number): void {
         for (let unit of this.playerUnits) {
-            if (unit.range) {
+            if (unit.range > 0) {
                 if (this.side === 'left' && unit.position + unit.range >= this.enemyUnits[0].position) {
                     unit.timeAttack(time, this.enemyUnits, this.stats)
+                    this.stats.damageDealt += unit.damage
+                    // console.log(this.stats.damageDealt)
                 }
             }
             if (unit.range) {
                 if (this.side === 'right' && unit.position - unit.range <= this.enemyUnits[0].position) {
                     unit.timeAttack(time, this.enemyUnits, this.stats)
+                    this.stats.damageDealt += unit.damage
                 }
             }
         }
@@ -950,6 +953,7 @@ class SimulatingBot extends Player {
                 worker.onmessage = function (e) {
                     // console.log(e.data)
                     if (e.data.length) addTroop(e.data[0])
+                    if (e.data.length && Math.random() > .5 && e.data[0] === 3) addTroop(2)
                     cancelWork()
                     document.getElementById(`per${side}`).innerText = `Computed in: ${Math.round((performance.now() - p) * 1000) / 1000}ms`
                 }
@@ -1140,40 +1144,40 @@ catch (e) {
         }
 
         function damageCalc(stats): number {
-            // if (stats.playerSpending > e.data[4])
-            //     return -1;
+            if (stats.playerSpending > e.data[4])
+                return -1;
             if (stats.playerUnitsLength)
-                return (stats.playerUnitsLength / stats.playerDamage) / (stats.playerSpending);
+                return (stats.playerDamage);
             else if (stats.enemyUnitsLength)
-                return (stats.playerDamage) / (stats.playerSpending);
+                return (stats.playerDamage);
             else {
-                return stats.playerDamage / stats.playerSpending;
+                return (stats.playerDamage);
             }
         }
 
-        function encouragement(): number {
-            let stats = {
-                playerUnitsDamage: 0,
-                enemyUnitsDamage: 0,
-                playerUnitsLength: 0,
-                enemyUnitsLength: 0
-            }
-            e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.forEach(e => stats.playerUnitsDamage += e.damage)
-            e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.forEach(e => stats.enemyUnitsDamage += e.damage)
-            stats.playerUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.length
-            stats.enemyUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.length
-
-            if (stats.playerUnitsLength && stats.enemyUnitsDamage) {
-                return (((stats.enemyUnitsLength / stats.playerUnitsLength) / (stats.playerUnitsDamage / stats.enemyUnitsDamage)) ** .5)
-            } else if (!stats.enemyUnitsLength) return 0
-            else {
-                // console.log(stats)
-                return 10
-            }
-        }
+        // function encouragement(): number {
+        //     let stats = {
+        //         playerUnitsDamage: 0,
+        //         enemyUnitsDamage: 0,
+        //         playerUnitsLength: 0,
+        //         enemyUnitsLength: 0
+        //     }
+        //     e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.forEach(e => stats.playerUnitsDamage += e.damage)
+        //     e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.forEach(e => stats.enemyUnitsDamage += e.damage)
+        //     stats.playerUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.length
+        //     stats.enemyUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.length
+        //
+        //     if (stats.playerUnitsLength && stats.enemyUnitsDamage) {
+        //         return (((stats.enemyUnitsLength / stats.playerUnitsLength) / (stats.playerUnitsDamage / stats.enemyUnitsDamage)) ** .3)
+        //     } else if (!stats.enemyUnitsLength) return 0
+        //     else {
+        //         // console.log(stats)
+        //         return 10
+        //     }
+        // }
 
         // console.log('finished job')
-        // console.log(bestTroops)
+        console.log(bestTroops)
         // @ts-ignore
         postMessage(bestTroops);
     };
