@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
     <title>Wars of Ages</title>
 
     <style>
@@ -29,34 +32,44 @@
                 color: rgb(241, 241, 241);
             }
         }
+        .column {
+            float: left;
+            width: 50%;
+            padding: 10px;
+            height: 300px; /* Should be removed. Only for demonstration */
+        }
+        * {
+            box-sizing: border-box;
+            -ms-touch-action: manipulation;
+            touch-action: manipulation;
+        }
     </style>
 
 </head>
 <!--; -->
-<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-    <canvas id="cx"></canvas>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0px">
+    <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px"></canvas>
     <script type="module" src="index.js"></script>
 
-    <div id="basic-event">
-        <div id="left" style="float: left; margin-left: 30%">
-            <br>
+    <div class="row" style="margin: 10px">
+        <div id="left" class="col">
             <p id="leftMoney">Money: 55</p>
-            <p id="encleft" style="text-align: left"></p>
-            <p id="trsleft" style="text-align: left"></p>
-            <p id="unlleft" style="text-align: left"></p>
-            <p id="perleft" style="text-align: left"></p>
-            <p id="pullleft" style="text-align: left"></p>
-            <p id="statsleft" style="text-align: left"></p>
+            <p id="encleft"></p>
+            <p id="trsleft"></p>
+            <p id="unlleft"></p>
+            <p id="perleft" style="color: rgba(100, 100, 100, .4)"></p>
+            <p id="pullleft" style="color: rgba(100, 100, 100, .4)"></p>
+            <p id="statsleft"></p>
         </div>
         <br>
-        <div id="right" style="float: right; margin-right: 30%">
-            <p id="rightMoney">Money: </p>
-            <p id="encright" style="text-align: left"></p>
-            <p id="trsright" style="text-align: left"></p>
-            <p id="unlright" style="text-align: left"></p>
-            <p id="perright" style="text-align: left; color: rgba(100, 100, 100, .4)"></p>
-            <p id="pullright" style="text-align: left; color: rgba(100, 100, 100, .4)"></p>
-            <p id="statsright" style="text-align: left"></p>
+        <div id="right" class="col">
+            <p id="rightMoney">Money: 55</p>
+            <p id="encright"></p>
+            <p id="trsright"></p>
+            <p id="unlright"></p>
+            <p id="perright" style="color: rgba(100, 100, 100, .4)"></p>
+            <p id="pullright" style="color: rgba(100, 100, 100, .4)"></p>
+            <p id="statsright"></p>
         </div>
     </div>
 </body>
