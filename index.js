@@ -1005,7 +1005,7 @@ catch (e) {
         //     }
         // }
         // console.log('finished job')
-        console.log(bestTroops);
+        // console.log(bestTroops)
         // @ts-ignore
         postMessage(bestTroops);
     };
