@@ -467,7 +467,7 @@ var Player = /** @class */ (function () {
         // this.enemyUnits = enemyUnits
         this.unlockedUnits = [true, false, false, false, false, false, false, false, false];
         // this.unlockedUnits = [true, true, true, true, true, true, true, true, true]
-        this.maxUnits = 7;
+        this.maxUnits = 10;
         this.stats = {
             damageDealt: 0,
             spending: 0,
