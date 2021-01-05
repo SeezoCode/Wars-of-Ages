@@ -33,31 +33,31 @@ const troopArr = [
         name: 'Fast Troop', health: 18, damage: 1.3, baseDamage: .8, attackSpeed: 15, castingTime: 1.6, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
     },
     {
-        name: 'Range Troop', health: 20, damage: 4.5, baseDamage: 3, attackSpeed: 50, castingTime: 1.2, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 100
+        name: 'Range Troop', health: 20, damage: 4.5, baseDamage: 3, attackSpeed: 50, castingTime: 1.2, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
     },
     {
-        name: 'Advanced Troop', health: 35, damage: 12, baseDamage: 5, attackSpeed: 80, castingTime: 1.6, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Advanced Troop', health: 35, damage: 12, baseDamage: 5, attackSpeed: 80, castingTime: 1.6, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
     },
     {
-        name: 'Base Destroyer Troop', health: 40, damage: 2, baseDamage: 35, attackSpeed: 140, castingTime: 3, price: 50, color: 'yellow', speed: .5, span: 45, range: 0, researchPrice: 400
+        name: 'Base Destroyer Troop', health: 40, damage: 2, baseDamage: 35, attackSpeed: 140, castingTime: 3, price: 50, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
     },
     {
-        name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, castingTime: 1.6, price: 40, color: 'red', speed: 1, span: 20, range: 21, researchPrice: 550
+        name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, castingTime: 1.6, price: 30, color: 'red', speed: 1, span: 20, range: 21, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 300, castingTime: 3, price: 50, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
+        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 300, castingTime: 3, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
-        name: 'Healer Troop', health: 4, damage: 2.5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 75, color: 'hotpink', speed: 1.5, span: 20, range: 31, researchPrice: 750
+        name: 'Healer Troop', health: 4, damage: 2.5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 50, color: 'hotpink', speed: 1.5, span: 20, range: 31, researchPrice: 250
     },
     {
-        name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, castingTime: 3, price: 300, color: 'brown', speed: .3, span: 50, range: 200, researchPrice: 1200
+        name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, castingTime: 3, price: 75, color: 'brown', speed: .4, span: 50, range: 200, researchPrice: 400
     },
     {
-        name: 'Atomic Troop', health: 400, damage: .5, baseDamage: .5, attackSpeed: 1, castingTime: 3, price: 300, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 2200
+        name: 'Atomic Troop', health: 400, damage: .6, baseDamage: .75, attackSpeed: 1, castingTime: 3, price: 75, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
     },
     {
-        name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, castingTime: 3, price: 300, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 2500
+        name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, castingTime: 3, price: 300, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
     },
     // {
     //     name: 'Sneaky Troop', health: 1, damage: 49, baseDamage: 75, attackSpeed: 17, castingTime: 1.6, price: 12, color: 'darkgray', speed: 1, span: 20, range: 0, researchPrice: 500
@@ -158,7 +158,7 @@ class Trooper implements trooperStatsInterface{
 
     isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
         // takes an array and queue number to find out if one in front of him is '11' near
-        if (radioactivityPending) this.health -= .03
+        if (radioactivityPending && this.name != troopArr[4].name) this.health -= .03
         if (index === 0) return false
         // if (!this.visualize) return true // increases performance thrice, but isn't very precise, shortcut
         if (playerUnits.length === 0) return false
@@ -383,7 +383,7 @@ class AtomicTroop extends Trooper {
     draw() {
         // cx.fillRect(this.position - this.span / 2, canvasHeight - 65, this.span, 35)
         super.draw();
-        cx.drawImage(radiationSymbolIMG, this.position - this.span / 2 - 1, canvasHeight - 60)
+        if (this.visualize) cx.drawImage(radiationSymbolIMG, this.position - this.span / 2 - 1, canvasHeight - 60)
     }
 }
 class AtomicBomb extends ExplodingTroop {
@@ -393,28 +393,40 @@ class AtomicBomb extends ExplodingTroop {
         super(side, player, enemy, troopArr[10]);
         this.player = player
         this.enemy = enemy
+        document.querySelectorAll('button').forEach(e => {
+            if (e.innerText === 'Atomic Bomb: 300') {
+                e.disabled = true
+                setTimeout(() => {
+                    e.removeAttribute('disabled')
+                }, 30000)
+            }
+        })
     }
     attack(enemyTroopers: Array<trooperStatsInterface>) {
         this.health = 0
     }
 
     deleteAnim() {
-        holdDeathAnim(this.position, this.span)
+        if (this.visualize) holdDeathAnim(this.position, this.span)
     }
     draw() {
         super.draw();
-        cx.drawImage(radiationSymbolIMG, this.position - 9, canvasHeight - 60)
-
+        if (this.visualize) cx.drawImage(radiationSymbolIMG, this.position - 9, canvasHeight - 60)
     }
 }
 
 function holdDeathAnim(position: number, span: number) {
     let i = 0
-    if (color === 'rgb(239,239,239)') document.body.style.backgroundColor = 'rgba(98,134,85,0.35)'
-    else document.body.style.backgroundColor = 'rgb(21,29,21)'
+    document.body.style.backgroundColor = 'rgb(21,29,21)'
     document.querySelectorAll('button').forEach(e => {
-        if (color === 'rgb(239,239,239)') e.style.backgroundColor = 'rgba(100,171,84,0.35)'
-        else e.style.backgroundColor = 'rgb(11,31,4)'
+        if (color === 'rgb(239,239,239)') {
+            e.style.backgroundColor = 'rgba(100,171,84,0.35)'
+            e.style.color = 'rgb(30,30,30)'
+        }
+        else {
+            e.style.backgroundColor = 'rgb(11,31,4)'
+            e.style.color = 'rgb(166,172,154)'
+        }
     })
     requestAnimationFrame(hold)
     function hold() {
@@ -423,6 +435,7 @@ function holdDeathAnim(position: number, span: number) {
         cx.globalAlpha = i / 100
         cx.drawImage(explosionAtomicIMG, position - 171 / 2 + span / 4, 20);
         cx.globalAlpha = 1
+
         if (i <= 45) requestAnimationFrame(hold)
         else {
             deathAnimPending = false
@@ -430,7 +443,13 @@ function holdDeathAnim(position: number, span: number) {
             setTimeout(() => {
                 radioactivityPending = false
                 document.body.style.backgroundColor = bgColor
-                document.querySelectorAll('button').forEach(e => e.style.backgroundColor = color)
+                document.querySelectorAll('button').forEach(e => {
+                    e.style.backgroundColor = color
+                    if (color === 'rgb(239, 239, 239)') {
+                        e.style.color = 'black'
+                    }
+                    else e.style.color = 'rgb(169,169,169)'
+                })
 
             }, 22000)
         }
