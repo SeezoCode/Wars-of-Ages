@@ -779,6 +779,13 @@ class Player implements playerInterface{
     doesBaseHaveHealth(): boolean {
         if (this.playerBase.health <= 0) {
             if (this.visualize) console.log('Base destroyed: ', this.playerBase)
+            if (this.visualize) {
+                cx.font = "45px Arial";
+                cx.textAlign = "center";
+                cx.fillStyle = "red";
+                cx.fillText(`${(this.side === 'left' ? 'right' : 'left').toUpperCase()} WON`, canvasWidth / 2, canvasHeight / 2);
+            }
+
             return false
         }
         return true
