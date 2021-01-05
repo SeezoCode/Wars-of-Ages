@@ -559,8 +559,6 @@ var Player = /** @class */ (function () {
         this.score = 0;
         this.exp = 0;
         this.checkForMoneyAvail = checkForAvailMoney;
-        if (!checkForAvailMoney)
-            document.getElementById(this.side + "Money").innerHTML = "";
         // this.playerUnits = playerUnits
         // this.enemyUnits = enemyUnits
         this.unlockedUnits = [true, false, false, false, false, false, false, false, false];
