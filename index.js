@@ -11,7 +11,7 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
-var canvasWidth, canvasHeight, cx, explosionIMG, color;
+var canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, color, deathAnimPending, radioactivityPending, bgColor;
 try {
     var ctx = document.querySelector('canvas');
     canvasWidth = ctx.width = 700;
@@ -19,10 +19,16 @@ try {
     console.log(ctx);
     cx = ctx.getContext('2d');
     explosionIMG = new Image(68, 55);
-    explosionIMG.src = 'explosion.png';
+    explosionIMG.src = 'img/explosion.png';
+    explosionAtomicIMG = new Image(255, 255);
+    explosionAtomicIMG.src = 'img/nuke.png';
+    radiationSymbolIMG = new Image(255, 255);
+    radiationSymbolIMG.src = 'img/radiationSymbol.png';
     console.log('Running in Browser');
     color = document.querySelector('button');
     color = getComputedStyle(color).backgroundColor;
+    bgColor = document.body;
+    bgColor = getComputedStyle(bgColor).backgroundColor;
 }
 catch (e) {
     // console.log('Running node.js huh?')
@@ -49,13 +55,19 @@ var troopArr = [
         name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, castingTime: 1.6, price: 40, color: 'red', speed: 1, span: 20, range: 21, researchPrice: 550
     },
     {
-        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 500, castingTime: 3, price: 50, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
+        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 300, castingTime: 3, price: 50, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
     },
     {
-        name: 'Healer Troop', health: 4, damage: 2.5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 75, color: 'hotpink', speed: 1.5, span: 20, range: 31, researchPrice: 800
+        name: 'Healer Troop', health: 4, damage: 2.5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 75, color: 'hotpink', speed: 1.5, span: 20, range: 31, researchPrice: 750
     },
     {
-        name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, castingTime: 3, price: 300, color: 'brown', speed: .3, span: 50, range: 200, researchPrice: 2000
+        name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, castingTime: 3, price: 300, color: 'brown', speed: .3, span: 50, range: 200, researchPrice: 1200
+    },
+    {
+        name: 'Atomic Troop', health: 400, damage: .5, baseDamage: .5, attackSpeed: 1, castingTime: 3, price: 300, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 2200
+    },
+    {
+        name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, castingTime: 3, price: 300, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 2500
     },
 ];
 var baseStats = {
@@ -96,7 +108,7 @@ var Trooper = /** @class */ (function () {
         // if (this.visualize) {
         if (this.targetTime === null)
             this.targetTime = time + this.attackSpeed;
-        else if (time === this.targetTime) {
+        else if (time >= this.targetTime) {
             this.attack(enemyTroopers, stats);
             this.targetTime = null;
         }
@@ -105,6 +117,8 @@ var Trooper = /** @class */ (function () {
     };
     Trooper.prototype.isInFront = function (playerUnits, index) {
         // takes an array and queue number to find out if one in front of him is '11' near
+        if (radioactivityPending)
+            this.health -= .03;
         if (index === 0)
             return false;
         // if (!this.visualize) return true // increases performance thrice, but isn't very precise, shortcut
@@ -213,8 +227,9 @@ var BaseDestroyerTroop = /** @class */ (function (_super) {
 }(Trooper));
 var ExplodingTroop = /** @class */ (function (_super) {
     __extends(ExplodingTroop, _super);
-    function ExplodingTroop(side, player, enemy) {
-        return _super.call(this, troopArr[5], side, player.visualize) || this;
+    function ExplodingTroop(side, player, enemy, troopStats) {
+        if (troopStats === void 0) { troopStats = troopArr[5]; }
+        return _super.call(this, troopStats, side, player.visualize) || this;
     }
     ExplodingTroop.prototype.attack = function (enemyTroopers) {
         // console.log('attacked enemy BOOM: ', enemyTroopers)
@@ -265,6 +280,15 @@ var ShieldTroop = /** @class */ (function (_super) {
             cx.fillRect(this.position - (this.side === 'left' ? 0 : this.span) + this.span / 2 - 3, canvasHeight - 65, 3, 35);
             this.drawHealth();
         }
+    };
+    ShieldTroop.prototype.attack = function (enemyTroopers, stats) {
+        if (enemyTroopers[0].name === troopArr[6].name) {
+            this.damage = 33;
+        }
+        else {
+            this.damage = .5;
+        }
+        _super.prototype.attack.call(this, enemyTroopers, stats);
     };
     return ShieldTroop;
 }(Trooper));
@@ -322,12 +346,80 @@ var TrebuchetTroop = /** @class */ (function (_super) {
     };
     return TrebuchetTroop;
 }(Trooper));
+var AtomicTroop = /** @class */ (function (_super) {
+    __extends(AtomicTroop, _super);
+    function AtomicTroop(side, player, enemy) {
+        return _super.call(this, troopArr[9], side, player.visualize) || this;
+    }
+    AtomicTroop.prototype.isInFront = function (playerUnits, index) {
+        this.health -= (this.maxHealth / 7) / canvasWidth;
+        return _super.prototype.isInFront.call(this, playerUnits, index);
+    };
+    AtomicTroop.prototype.draw = function () {
+        // cx.fillRect(this.position - this.span / 2, canvasHeight - 65, this.span, 35)
+        _super.prototype.draw.call(this);
+        cx.drawImage(radiationSymbolIMG, this.position - this.span / 2 - 1, canvasHeight - 60);
+    };
+    return AtomicTroop;
+}(Trooper));
+var AtomicBomb = /** @class */ (function (_super) {
+    __extends(AtomicBomb, _super);
+    function AtomicBomb(side, player, enemy) {
+        var _this = _super.call(this, side, player, enemy, troopArr[10]) || this;
+        _this.player = player;
+        _this.enemy = enemy;
+        return _this;
+    }
+    AtomicBomb.prototype.attack = function (enemyTroopers) {
+        this.health = 0;
+    };
+    AtomicBomb.prototype.deleteAnim = function () {
+        holdDeathAnim(this.position, this.span);
+    };
+    AtomicBomb.prototype.draw = function () {
+        _super.prototype.draw.call(this);
+        cx.drawImage(radiationSymbolIMG, this.position - 9, canvasHeight - 60);
+    };
+    return AtomicBomb;
+}(ExplodingTroop));
+function holdDeathAnim(position, span) {
+    var i = 0;
+    if (color === 'rgb(239,239,239)')
+        document.body.style.backgroundColor = 'rgba(98,134,85,0.35)';
+    else
+        document.body.style.backgroundColor = 'rgb(21,29,21)';
+    document.querySelectorAll('button').forEach(function (e) {
+        if (color === 'rgb(239,239,239)')
+            e.style.backgroundColor = 'rgba(100,171,84,0.35)';
+        else
+            e.style.backgroundColor = 'rgb(11,31,4)';
+    });
+    requestAnimationFrame(hold);
+    function hold() {
+        deathAnimPending = true;
+        i++;
+        cx.globalAlpha = i / 100;
+        cx.drawImage(explosionAtomicIMG, position - 171 / 2 + span / 4, 20);
+        cx.globalAlpha = 1;
+        if (i <= 45)
+            requestAnimationFrame(hold);
+        else {
+            deathAnimPending = false;
+            radioactivityPending = true;
+            setTimeout(function () {
+                radioactivityPending = false;
+                document.body.style.backgroundColor = bgColor;
+                document.querySelectorAll('button').forEach(function (e) { return e.style.backgroundColor = color; });
+            }, 22000);
+        }
+    }
+}
 // class PlaneTroop extends Trooper {
 //     constructor(side: string, player: playerInterface, enemy: playerInterface) {
 //         super(troopArr[9], side, player.visualize);
 //     }
 // }
-var troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, HealerTroop, TrebuchetTroop];
+var troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, HealerTroop, TrebuchetTroop, AtomicTroop, AtomicBomb];
 var Base = /** @class */ (function () {
     function Base(stats, side, visualize) {
         if (visualize === void 0) { visualize = true; }
@@ -380,8 +472,12 @@ var Game = /** @class */ (function () {
         this.animation();
     }
     Game.prototype.move = function () {
-        if (this.visualize)
+        if (this.visualize && !deathAnimPending)
             cx.clearRect(0, 0, canvasWidth, canvasHeight);
+        if (this.visualize && radioactivityPending) {
+            cx.fillStyle = 'rgba(98,134,85, .15)';
+            cx.fillRect(0, 0, canvasWidth, canvasHeight);
+        }
         this.time += 1;
         // console.log(this.time, '---Move---')
         this.players[0].moveArmy();
@@ -467,7 +563,7 @@ var Player = /** @class */ (function () {
         // this.enemyUnits = enemyUnits
         this.unlockedUnits = [true, false, false, false, false, false, false, false, false];
         // this.unlockedUnits = [true, true, true, true, true, true, true, true, true]
-        this.maxUnits = 7;
+        this.maxUnits = 10;
         this.stats = {
             damageDealt: 0,
             spending: 0,
@@ -492,6 +588,8 @@ var Player = /** @class */ (function () {
         this.enemyBase = enemyBase;
         this.playerBase = playerBase;
         this.playerUnits = playerUnits;
+        if (!this.checkForMoneyAvail && visualize)
+            document.getElementById(this.side + "Money").innerHTML = "";
         if (startingPlayerUnits.length > 0) {
             startingPlayerUnits.forEach(function (i) { return _this.addTroop(i); });
         }
@@ -578,7 +676,7 @@ var Player = /** @class */ (function () {
     };
     Player.prototype.addFunds = function (amount) {
         this.money += amount;
-        if (this.DOMAccess)
+        if (this.DOMAccess && this.checkForMoneyAvail)
             document.getElementById(this.side + "Money").innerHTML = "Money: " + Math.round(this.money);
     };
     Player.prototype.isEnoughMoney = function (amount) {
@@ -603,6 +701,8 @@ var Player = /** @class */ (function () {
     };
     Player.prototype.moveArmy = function () {
         var _this = this;
+        if (deathAnimPending)
+            return;
         if (this.side === 'left') {
             this.playerUnits.forEach(function (troop, i) {
                 if (!troop.isInFront(_this.playerUnits, i) && !troop.isInFront(_this.enemyUnits, 1) &&
@@ -655,7 +755,11 @@ var Player = /** @class */ (function () {
                         _this.addTroop(i);
                     else
                         _this.purchaseUnit(i, button);
-                    document.getElementById(_this.side + "Money").innerHTML = "Money: " + Math.round(_this.money);
+                    if (_this.checkForMoneyAvail)
+                        document.getElementById(_this.side + "Money").innerHTML = "Money: " + Math.round(_this.money);
+                    else {
+                        document.getElementById(_this.side + "Money").innerHTML = "";
+                    }
                 });
             });
         }
@@ -823,12 +927,13 @@ var SimulatingBot = /** @class */ (function (_super) {
             return false;
         if (!this.playerUnits.length)
             return false;
+        if (this.side === 'left' ? this.playerUnits[0].position < canvasWidth / 2 : this.playerUnits[0].position > canvasWidth / 2) {
+            this.roundsSpentAtOpponentsHalf = 0;
+            return false;
+        }
         if (this.side === 'left' ? this.playerUnits[0].position > canvasWidth / 2 : this.playerUnits[0].position < canvasWidth / 2) {
             this.roundsSpentAtOpponentsHalf += increase;
-            if (this.roundsSpentAtOpponentsHalf > 1700) { // 45 seconds = 2700
-                if (this.side === 'left' ? this.playerUnits[0].position < canvasWidth / 2 : this.playerUnits[0].position > canvasWidth / 2) {
-                    this.roundsSpentAtOpponentsHalf = 0;
-                }
+            if (this.roundsSpentAtOpponentsHalf > 170) { // 45 seconds = 2700
                 return true;
             }
         }
@@ -911,7 +1016,54 @@ var SimulatingBot = /** @class */ (function (_super) {
 // s.afterMoveArmy()
 try {
     document.getElementById('left');
-    new Game(new Player(55, 'left', true), new SimulatingBot(55, 'right', true), true, true, [], []);
+    var shiftDown_1 = false;
+    window.addEventListener('keydown', function (e) {
+        if (e.shiftKey) {
+            shiftDown_1 = true;
+        }
+    });
+    window.addEventListener('keyup', function () {
+        shiftDown_1 = false;
+    });
+    document.getElementById('pl').addEventListener('click', function () {
+        new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
+        initializeUI(160, 140);
+    });
+    document.getElementById('bot').addEventListener('click', function () {
+        new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
+        initializeUI(160, 120);
+    });
+    function initializeUI(btnWiderWidth, btnNarrowerWidth) {
+        document.getElementById('startingScreen').style.display = 'none';
+        document.getElementById('cx').style.display = 'initial';
+        document.getElementById('controls').style.display = '';
+        window.addEventListener('resize', function () { resize(btnWiderWidth, btnNarrowerWidth); });
+        resize(btnWiderWidth, btnNarrowerWidth);
+    }
+    function resize(btnWiderWidth, btnNarrowerWidth) {
+        document.querySelectorAll('button').forEach(function (e) {
+            if (document.body.scrollWidth > 477) {
+                e.style.width = 200 + 'px';
+                if (color === 'rgb(239,239,239')
+                    e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)';
+                e.style.margin = '4px';
+                return;
+            }
+            if (document.body.scrollWidth <= 477) {
+                e.style.width = btnWiderWidth + 'px';
+            }
+            if (document.body.scrollWidth <= 347) {
+                e.style.width = btnNarrowerWidth + 'px';
+            }
+            if (color === 'rgb(239,239,239')
+                e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)';
+            e.style.margin = '0';
+            e.style.marginTop = '5px';
+            e.style.backgroundColor = color;
+        });
+        var cxHeight = document.getElementById('cx').offsetHeight;
+        document.getElementById('controls').style.height = window.innerHeight - cxHeight - 18 + 'px';
+    }
 }
 catch (e) {
     onmessage = function (e) {
