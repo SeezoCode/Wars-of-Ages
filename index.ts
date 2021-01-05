@@ -6,11 +6,13 @@ try {
     console.log(ctx)
     cx = ctx.getContext('2d')
     explosionIMG = new Image(68, 55)
+
     explosionIMG.src = 'img/explosion.png'
     explosionAtomicIMG = new Image(255, 255)
     explosionAtomicIMG.src = 'img/nuke.png'
     radiationSymbolIMG = new Image(255, 255)
     radiationSymbolIMG.src = 'img/radiationSymbol.png'
+
     console.log('Running in Browser')
     color = document.querySelector('button')
     color = getComputedStyle(color).backgroundColor
@@ -1167,7 +1169,7 @@ try {
             shiftDown = true
         }
     })
-    window.addEventListener('keyup', e => {
+    window.addEventListener('keyup', () => {
         shiftDown = false
     })
 
