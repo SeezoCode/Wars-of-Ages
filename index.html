@@ -17,6 +17,7 @@
             border-radius: 100px;
             border: 0;
             margin: 4px;
+            background: rgb(239, 239, 239)
         }
         body {
             text-align: center;
@@ -32,27 +33,42 @@
                 color: rgb(241, 241, 241);
             }
         }
-        .column {
-            float: left;
-            width: 50%;
-            padding: 10px;
-            height: 300px; /* Should be removed. Only for demonstration */
-        }
         * {
             box-sizing: border-box;
             -ms-touch-action: manipulation;
             touch-action: manipulation;
         }
+        .vertical-center {
+            margin: 0;
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            -ms-transform: translate(-50%, -50%);
+            transform: translate(-50%, -50%);
+        }
+        /*@media only screen and (max-width: 477px) {*/
+        /*    button {*/
+        /*        width: 145px;*/
+        /*    }*/
+        /*}*/
     </style>
 
 </head>
 <!--; -->
-<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0px">
-    <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px"></canvas>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0;">
+    <div id="startingScreen" class="vertical-center">
+        <p>Please choose:</p>
+        <button id="pl">Player vs Player</button>
+        <button id="bot">Player vs Bot</button> <br><hr>
+        <a href="#">Tips and Tricks</a>
+    </div>
+
+
+    <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px; display: none"></canvas>
     <script type="module" src="index.js"></script>
 
-    <div class="row" style="margin: 10px">
-        <div id="left" class="col">
+    <div id="controls" class="row" style="margin-top: 10px; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
+        <div id="left" class="col" style="overflow:auto">
             <p id="leftMoney">Money: 55</p>
             <p id="encleft"></p>
             <p id="trsleft"></p>
@@ -62,7 +78,7 @@
             <p id="statsleft"></p>
         </div>
         <br>
-        <div id="right" class="col">
+        <div id="right" class="col" style="overflow:auto">
             <p id="rightMoney">Money: 55</p>
             <p id="encright"></p>
             <p id="trsright"></p>

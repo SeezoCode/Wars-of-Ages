@@ -1,4 +1,4 @@
-let canvasWidth, canvasHeight, cx, explosionIMG, color
+let canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, color, deathAnimPending, radioactivityPending, bgColor
 try {
     let ctx = document.querySelector('canvas')
     canvasWidth = ctx.width = 700
@@ -6,10 +6,16 @@ try {
     console.log(ctx)
     cx = ctx.getContext('2d')
     explosionIMG = new Image(68, 55)
-    explosionIMG.src = 'explosion.png'
+    explosionIMG.src = 'img/explosion.png'
+    explosionAtomicIMG = new Image(255, 255)
+    explosionAtomicIMG.src = 'img/nuke.png'
+    radiationSymbolIMG = new Image(255, 255)
+    radiationSymbolIMG.src = 'img/radiationSymbol.png'
     console.log('Running in Browser')
     color = document.querySelector('button')
     color = getComputedStyle(color).backgroundColor
+    bgColor = document.body
+    bgColor = getComputedStyle(bgColor).backgroundColor
 }
 catch (e) {
     // console.log('Running node.js huh?')
@@ -37,13 +43,19 @@ const troopArr = [
         name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, castingTime: 1.6, price: 40, color: 'red', speed: 1, span: 20, range: 21, researchPrice: 550
     },
     {
-        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 500, castingTime: 3, price: 50, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
+        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 300, castingTime: 3, price: 50, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 550
     },
     {
-        name: 'Healer Troop', health: 4, damage: 2.5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 75, color: 'hotpink', speed: 1.5, span: 20, range: 31, researchPrice: 800
+        name: 'Healer Troop', health: 4, damage: 2.5, baseDamage: 0, attackSpeed: 60, castingTime: 1, price: 75, color: 'hotpink', speed: 1.5, span: 20, range: 31, researchPrice: 750
     },
     {
-        name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, castingTime: 3, price: 300, color: 'brown', speed: .3, span: 50, range: 200, researchPrice: 2000
+        name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, castingTime: 3, price: 300, color: 'brown', speed: .3, span: 50, range: 200, researchPrice: 1200
+    },
+    {
+        name: 'Atomic Troop', health: 400, damage: .5, baseDamage: .5, attackSpeed: 1, castingTime: 3, price: 300, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 2200
+    },
+    {
+        name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, castingTime: 3, price: 300, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 2500
     },
     // {
     //     name: 'Sneaky Troop', health: 1, damage: 49, baseDamage: 75, attackSpeed: 17, castingTime: 1.6, price: 12, color: 'darkgray', speed: 1, span: 20, range: 0, researchPrice: 500
@@ -134,7 +146,7 @@ class Trooper implements trooperStatsInterface{
     timeAttack(time: number, enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface): void {
         // if (this.visualize) {
         if (this.targetTime === null) this.targetTime = time + this.attackSpeed
-        else if (time === this.targetTime) {
+        else if (time >= this.targetTime) {
             this.attack(enemyTroopers, stats)
             this.targetTime = null
         }
@@ -144,6 +156,7 @@ class Trooper implements trooperStatsInterface{
 
     isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
         // takes an array and queue number to find out if one in front of him is '11' near
+        if (radioactivityPending) this.health -= .03
         if (index === 0) return false
         // if (!this.visualize) return true // increases performance thrice, but isn't very precise, shortcut
         if (playerUnits.length === 0) return false
@@ -245,20 +258,18 @@ class BaseDestroyerTroop extends Trooper {
     }
 }
 class ExplodingTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[5], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, troopStats: trooperStatsInterface = troopArr[5]) {
+        super(troopStats, side, player.visualize);
     }
     attack(enemyTroopers: Array<trooperStatsInterface>) {
         // console.log('attacked enemy BOOM: ', enemyTroopers)
         enemyTroopers[0].health -= this.damage
         this.health = 0
     }
-
     timeAttack(time: number, enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface) {
         this.deleteAnim()
         super.timeAttack(time, enemyTroopers, stats);
     }
-
     timeAttackBase(time: number, base: baseInterface) {
         this.deleteAnim()
         super.timeAttackBase(time, base);
@@ -267,7 +278,6 @@ class ExplodingTroop extends Trooper {
         this.health = 0
         super.attackBase(base);
     }
-
     isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
         if (playerUnits.length) {
             if ((this.side === 'left' && playerUnits[0].side === 'left') ||
@@ -298,6 +308,15 @@ class ShieldTroop extends Trooper {
             cx.fillRect(this.position - (this.side === 'left' ? 0 : this.span) + this.span / 2 - 3, canvasHeight - 65, 3, 35)
             this.drawHealth()
         }
+    }
+    attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface) {
+        if (enemyTroopers[0].name === troopArr[6].name) {
+            this.damage = 33
+        }
+        else {
+            this.damage = .5
+        }
+        super.attack(enemyTroopers, stats);
     }
 }
 class HealerTroop extends Trooper {
@@ -351,6 +370,70 @@ class TrebuchetTroop extends Trooper { // trebuchet could also attack other treb
         }
     }
 }
+class AtomicTroop extends Trooper {
+    constructor(side: string, player: playerInterface, enemy: playerInterface) {
+        super(troopArr[9], side, player.visualize);
+    }
+    isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
+        this.health -= (this.maxHealth / 7) / canvasWidth
+        return super.isInFront(playerUnits, index);
+    }
+    draw() {
+        // cx.fillRect(this.position - this.span / 2, canvasHeight - 65, this.span, 35)
+        super.draw();
+        cx.drawImage(radiationSymbolIMG, this.position - this.span / 2 - 1, canvasHeight - 60)
+    }
+}
+class AtomicBomb extends ExplodingTroop {
+    player: playerInterface
+    enemy: playerInterface
+    constructor(side: string, player: playerInterface, enemy: playerInterface) {
+        super(side, player, enemy, troopArr[10]);
+        this.player = player
+        this.enemy = enemy
+    }
+    attack(enemyTroopers: Array<trooperStatsInterface>) {
+        this.health = 0
+    }
+
+    deleteAnim() {
+        holdDeathAnim(this.position, this.span)
+    }
+    draw() {
+        super.draw();
+        cx.drawImage(radiationSymbolIMG, this.position - 9, canvasHeight - 60)
+
+    }
+}
+
+function holdDeathAnim(position: number, span: number) {
+    let i = 0
+    if (color === 'rgb(239,239,239)') document.body.style.backgroundColor = 'rgba(98,134,85,0.35)'
+    else document.body.style.backgroundColor = 'rgb(21,29,21)'
+    document.querySelectorAll('button').forEach(e => {
+        if (color === 'rgb(239,239,239)') e.style.backgroundColor = 'rgba(100,171,84,0.35)'
+        else e.style.backgroundColor = 'rgb(11,31,4)'
+    })
+    requestAnimationFrame(hold)
+    function hold() {
+        deathAnimPending = true
+        i++
+        cx.globalAlpha = i / 100
+        cx.drawImage(explosionAtomicIMG, position - 171 / 2 + span / 4, 20);
+        cx.globalAlpha = 1
+        if (i <= 45) requestAnimationFrame(hold)
+        else {
+            deathAnimPending = false
+            radioactivityPending = true
+            setTimeout(() => {
+                radioactivityPending = false
+                document.body.style.backgroundColor = bgColor
+                document.querySelectorAll('button').forEach(e => e.style.backgroundColor = color)
+
+            }, 22000)
+        }
+    }
+}
 // class PlaneTroop extends Trooper {
 //     constructor(side: string, player: playerInterface, enemy: playerInterface) {
 //         super(troopArr[9], side, player.visualize);
@@ -358,7 +441,7 @@ class TrebuchetTroop extends Trooper { // trebuchet could also attack other treb
 // }
 
 
-let troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, HealerTroop, TrebuchetTroop]
+let troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, HealerTroop, TrebuchetTroop, AtomicTroop, AtomicBomb]
 
 interface baseInterface {
     health: number
@@ -458,7 +541,11 @@ class Game implements gameInterface{
     }
 
     move() {
-        if (this.visualize) cx.clearRect(0, 0, canvasWidth, canvasHeight)
+        if (this.visualize && !deathAnimPending) cx.clearRect(0, 0, canvasWidth, canvasHeight)
+        if (this.visualize && radioactivityPending) {
+            cx.fillStyle = 'rgba(98,134,85, .15)'
+            cx.fillRect(0, 0, canvasWidth, canvasHeight)
+        }
 
         this.time += 1
         // console.log(this.time, '---Move---')
@@ -616,11 +703,12 @@ class Player implements playerInterface{
         this.score = 0
         this.exp = 0
         this.checkForMoneyAvail = checkForAvailMoney
+        if (!checkForAvailMoney) document.getElementById(`${this.side}Money`).innerHTML = ``
         // this.playerUnits = playerUnits
         // this.enemyUnits = enemyUnits
         this.unlockedUnits = [true, false, false, false, false, false, false, false, false]
         // this.unlockedUnits = [true, true, true, true, true, true, true, true, true]
-        this.maxUnits = 7
+        this.maxUnits = 10
         this.stats = {
             damageDealt: 0,
             spending: 0,
@@ -735,7 +823,7 @@ class Player implements playerInterface{
 
     addFunds(amount: number): void {
         this.money += amount
-        if (this.DOMAccess) document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
+        if (this.DOMAccess && this.checkForMoneyAvail) document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
     }
 
     isEnoughMoney(amount: number): boolean {
@@ -757,6 +845,7 @@ class Player implements playerInterface{
     }
 
     moveArmy() {
+        if (deathAnimPending) return
         if (this.side === 'left') {
             this.playerUnits.forEach((troop, i) => {
                 if (!troop.isInFront(this.playerUnits, i) && !troop.isInFront(this.enemyUnits, 1) &&
@@ -807,7 +896,10 @@ class Player implements playerInterface{
                 button.addEventListener('click', () => {
                     if (this.unlockedUnits[i]) this.addTroop(i)
                     else this.purchaseUnit(i, button)
-                    document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
+                    if (this.checkForMoneyAvail) document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
+                    else {
+                        document.getElementById(`${this.side}Money`).innerHTML = ``
+                    }
                 })
             })
         }
@@ -976,12 +1068,13 @@ class SimulatingBot extends Player {
         // determines whether to fight left or more right
         if (enc >= 10) return false
         if (!this.playerUnits.length) return false
+        if (this.side === 'left' ? this.playerUnits[0].position < canvasWidth / 2 : this.playerUnits[0].position > canvasWidth / 2) {
+            this.roundsSpentAtOpponentsHalf = 0
+            return false
+        }
         if (this.side === 'left' ? this.playerUnits[0].position > canvasWidth / 2 : this.playerUnits[0].position < canvasWidth / 2) {
             this.roundsSpentAtOpponentsHalf += increase
-            if (this.roundsSpentAtOpponentsHalf > 1700) { // 45 seconds = 2700
-                if (this.side === 'left' ? this.playerUnits[0].position < canvasWidth / 2 : this.playerUnits[0].position > canvasWidth / 2) {
-                    this.roundsSpentAtOpponentsHalf = 0
-                }
+            if (this.roundsSpentAtOpponentsHalf > 170) { // 45 seconds = 2700
                 return true
             }
         }
@@ -1068,9 +1161,62 @@ class SimulatingBot extends Player {
 // s.afterMoveArmy()
 try {
     document.getElementById('left')
-    new Game(new Player(55, 'left', true),
-        new SimulatingBot(55, 'right', true),
-        true, true, [], [])
+    let shiftDown = false
+    window.addEventListener('keydown', e => {
+        if (e.shiftKey) {
+            shiftDown = true
+        }
+    })
+    window.addEventListener('keyup', e => {
+        shiftDown = false
+    })
+
+    document.getElementById('pl').addEventListener('click', () => {
+        new Game(new Player(55, 'left', !shiftDown),
+            new Player(55, 'right', !shiftDown),
+            true, true, [], [])
+        initializeUI(160, 140)
+        }
+    )
+    document.getElementById('bot').addEventListener('click', () => {
+        new Game(new Player(55, 'left', !shiftDown),
+            new SimulatingBot(55, 'right', !shiftDown),
+            true, true, [], [])
+
+        initializeUI(160, 120)
+        }
+    )
+    function initializeUI(btnWiderWidth: number, btnNarrowerWidth: number,) {
+        document.getElementById('startingScreen').style.display = 'none'
+        document.getElementById('cx').style.display = 'initial'
+        document.getElementById('controls').style.display = ''
+        window.addEventListener('resize', () => {resize(btnWiderWidth, btnNarrowerWidth)})
+        resize(btnWiderWidth, btnNarrowerWidth)
+    }
+    function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
+        document.querySelectorAll('button').forEach(e => {
+            if (document.body.scrollWidth > 477) {
+                e.style.width = 200 + 'px'
+                if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)'
+                e.style.margin = '4px'
+
+                return
+            }
+            if (document.body.scrollWidth <= 477) {
+                e.style.width = btnWiderWidth + 'px'
+            }
+            if (document.body.scrollWidth <= 347) {
+                e.style.width = btnNarrowerWidth + 'px'
+            }
+            if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)'
+            e.style.margin = '0'
+            e.style.marginTop = '5px'
+            e.style.backgroundColor = color
+
+        })
+        let cxHeight = document.getElementById('cx').offsetHeight
+        document.getElementById('controls').style.height = window.innerHeight - cxHeight - 18 + 'px'
+    }
 }
 
 
