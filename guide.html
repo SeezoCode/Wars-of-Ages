@@ -22,7 +22,7 @@
             border: 1px solid black;
         }
         td {
-            padding: 0px 7px
+            padding: 0 7px
         }
         body {
             max-width: 700px !important
@@ -58,13 +58,14 @@
     <h3>Basic Troop</h3>
     <p>Does melee damage, really nothing else to it.</p> <hr>
     <h3>Fast Troop</h3>
-    <p>It's speed is fast. Really fast. You just won't believe how vastly hugely mind-bogglingly faster it is. I mean, you may think it's like a long way down the road to the chemist, but that's just peanuts to it's speed.</p> <hr>
+    <p>It's speed is fast. Really fast. You just won't believe how vastly hugely mind-bogglingly faster it is. I mean, you may think it's like a long way down the road to the chemist, but that's just peanuts to it's speed.</p> 
+    <p>Also can disarm a Boomer before he explodes.</p><hr>
     <h3>Range Troop</h3>
     <p>Three of theese troops can shoot at once. Recommended strategy is to use a tank unit in front and put one or two ranged troops behind.</p> <hr>
     <h3>Advanced Troop</h3>
     <p>Is an enhanced version of Basic Troop.</p> <hr>
     <h3>Base Destroyer Troop</h3>
-    <p>Does a pretty good damage against enemy base, however, isn't really useful since before it gets to the base, it will most likely get defeated. Use Trebuchet instead.</p> <hr>
+    <p>Does a pretty good damage against enemy base, however, isn't really useful since before it gets to the base, it will most likely get defeated. Also is immune to radioactive fallout. Use Trebuchet instead.</p> <hr>
     <h3>Boomer Troop</h3>
     <p>Runs up to the first enemy troop and blasts it to pieces. The shield unit can survive this attack.</p> <hr>
     <h3>Shield Troop</h3>
@@ -123,17 +124,17 @@
 
         generate_table()
 function generate_table() {
-  var body = document.getElementsByTagName("div")[0];
+  let body = document.getElementsByTagName("div")[0];
 
-  var tbl = document.createElement("table");
-  var tblBody = document.createElement("tbody");
+  let tbl = document.createElement("table");
+  let tblBody = document.createElement("tbody");
 
-  for (var i = 0; i < 12; i++) {
-    var row = document.createElement("tr");
-    for (var j = 0; j < 11; j++) {
-      var cell = document.createElement("td");
+  for (let i = 0; i < 12; i++) {
+    let row = document.createElement("tr");
+    for (let j = 0; j < 11; j++) {
+      let cell = document.createElement("td");
       let keys = Object.keys(troopArr[0])
-      var cellText = document.createTextNode(troopArr[i][keys[j]]);
+      let cellText = document.createTextNode(troopArr[i][keys[j]]);
       if (i === 0 || j === 0 || j === 6) cell.style.fontWeight = 'bold'
       else cell.style.textAlign = 'right'
       if (j === 6) {

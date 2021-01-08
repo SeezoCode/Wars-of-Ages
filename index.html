@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <script src="https://cdn.socket.io/socket.io-3.0.0.js"></script>
 
     <title>Wars of Ages</title>
 
@@ -21,6 +22,7 @@
         }
         body {
             text-align: center;
+            overflow-y: hidden;
         }
         @media (prefers-color-scheme: dark) {
             button {
@@ -63,15 +65,17 @@
         <h1>Wars of Ages</h1><br>
         <p style="color: rgb(120, 120, 120)">Please choose:</p>
         <button id="pl">Player vs Player</button>
-        <button id="bot">Player vs Bot</button> <br><hr>
-        <a href="Tips.html">Tips and Tricks</a>
+        <button id="bot">Player vs Bot</button>
+        <button id="mul">Multiplayer</button> <br><hr>
+        <a href="guide.html">Guide</a>
     </div>
 
 
-    <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px; display: none"></canvas>
+    <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px; display: none; padding: 0; margin-bottom: 0"></canvas>
     <script type="module" src="index.js"></script>
+    <script src="Client.js"></script>
 
-    <div id="controls" class="row" style="margin-top: 10px; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
+    <div id="controls" class="row" style="margin-top: 0; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
         <div id="left" class="col" style="overflow:auto">
             <p id="leftMoney">Money: 55</p>
             <p id="encleft"></p>
@@ -82,7 +86,7 @@
             <p id="statsleft"></p>
         </div>
         <br>
-        <div id="right" class="col" style="overflow:auto">
+        <div id="right" class="col" style="overflow:auto; margin-bottom: 35px">
             <p id="rightMoney">Money: 55</p>
             <p id="encright"></p>
             <p id="trsright"></p>

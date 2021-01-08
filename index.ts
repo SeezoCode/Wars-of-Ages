@@ -1,4 +1,7 @@
+// import {Socket} from "socket.io";
+
 let canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, color, deathAnimPending, radioactivityPending, bgColor
+
 try {
     let ctx = document.querySelector('canvas')
     canvasWidth = ctx.width = 700
@@ -115,7 +118,7 @@ class Trooper implements trooperStatsInterface{
     baseDamage: number
     visualize: boolean
 
-    constructor(stats: trooperStatsInterface, side: string, visualize: boolean) {
+    constructor(stats: trooperStatsInterface, side: string, visualize: boolean = true, specialParameters: object = {}) {
         this.health = stats.health
         this.damage = stats.damage
         this.castingTime = stats.castingTime
@@ -133,6 +136,16 @@ class Trooper implements trooperStatsInterface{
         this.name = stats.name
         if (side === 'left') this.position = 10
         if (side === 'right') this.position = canvasWidth - 10
+        if (JSON.stringify(specialParameters) != JSON.stringify({})) this.parseSpecialParameters(specialParameters)
+    }
+
+    parseSpecialParameters(parameters: object) {
+        // @ts-ignore
+        this.health = parameters.health
+        // @ts-ignore
+        this.position = parameters.position
+        // @ts-ignore
+        this.targetTime = parameters.targetTime
     }
 
     attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface): void {
@@ -182,16 +195,16 @@ class Trooper implements trooperStatsInterface{
     }
 
     timeAttackBase(time: number, base: baseInterface): void {
-        if (this.visualize) {
-            if (this.targetTime === null) this.targetTime = time + this.attackSpeed
-            else if (time >= this.targetTime) {
-                this.attackBase(base)
-                // console.log('Attack Base !!!!!!!!')
-                this.targetTime = null
-            }
+        // if (this.visualize) {
+        if (this.targetTime === null) this.targetTime = time + this.attackSpeed
+        else if (time >= this.targetTime) {
+            this.attackBase(base)
+            // console.log('Attack Base !!!!!!!!')
+            this.targetTime = null
         }
-        else this.attackBase(base) // This is a shortcut, may not be as precise!
     }
+        // else this.attackBase(base) // This is a shortcut, may not be as precise!
+
 
     attackBase(base: baseInterface): void {
         base.health -= this.baseDamage
@@ -227,28 +240,28 @@ class Trooper implements trooperStatsInterface{
 }
 
 class BasicTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[0], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[0], side, player.visualize, specialParameters);
     }
 }
 class FastTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[1], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[1], side, player.visualize, specialParameters);
     }
 }
 class RangeTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[2], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[2], side, player.visualize, specialParameters);
     }
 }
 class AdvancedTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[3], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[3], side, player.visualize, specialParameters);
     }
 }
 class BaseDestroyerTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[4], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[4], side, player.visualize, specialParameters);
     }
     drawAttack(time: number): void {
         if (this.targetTime !== null && this.visualize) {
@@ -260,8 +273,8 @@ class BaseDestroyerTroop extends Trooper {
     }
 }
 class ExplodingTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface, troopStats: trooperStatsInterface = troopArr[5]) {
-        super(troopStats, side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}, troopStats: trooperStatsInterface = troopArr[5]) {
+        super(troopStats, side, player.visualize, specialParameters);
     }
     attack(enemyTroopers: Array<trooperStatsInterface>) {
         // console.log('attacked enemy BOOM: ', enemyTroopers)
@@ -299,8 +312,8 @@ class ExplodingTroop extends Trooper {
     }
 }
 class ShieldTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[6], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[6], side, player.visualize, specialParameters);
     }
     draw() {
         if (this.visualize) {
@@ -311,7 +324,7 @@ class ShieldTroop extends Trooper {
             this.drawHealth()
         }
     }
-    attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface) {
+    attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface, specialParameters: object = {}) {
         if (enemyTroopers[0].name === troopArr[6].name) {
             this.damage = 33
         }
@@ -325,8 +338,8 @@ class HealerTroop extends Trooper {
     index: number
     player: playerInterface
 
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[7], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[7], side, player.visualize, specialParameters);
         this.index = null
         this.player = player
     }
@@ -348,8 +361,8 @@ class HealerTroop extends Trooper {
 }
 class TrebuchetTroop extends Trooper { // trebuchet could also attack other trebuchets
     player: playerInterface
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[8], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[8], side, player.visualize, specialParameters);
         this.player = player
     }
     timeAttack(time: number, enemyTroopers: Array<trooperStatsInterface>) {
@@ -373,8 +386,8 @@ class TrebuchetTroop extends Trooper { // trebuchet could also attack other treb
     }
 }
 class AtomicTroop extends Trooper {
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(troopArr[9], side, player.visualize);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(troopArr[9], side, player.visualize, specialParameters);
     }
     isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
         this.health -= (this.maxHealth / 7) / canvasWidth
@@ -389,11 +402,11 @@ class AtomicTroop extends Trooper {
 class AtomicBomb extends ExplodingTroop {
     player: playerInterface
     enemy: playerInterface
-    constructor(side: string, player: playerInterface, enemy: playerInterface) {
-        super(side, player, enemy, troopArr[10]);
+    constructor(side: string, player: playerInterface, enemy: playerInterface, specialParameters: object = {}) {
+        super(side, player, enemy, specialParameters, troopArr[10]);
         this.player = player
         this.enemy = enemy
-        document.querySelectorAll('button').forEach(e => {
+        if (this.visualize) document.querySelectorAll('button').forEach(e => {
             if (e.innerText === 'Atomic Bomb: 300') {
                 e.disabled = true
                 setTimeout(() => {
@@ -407,7 +420,7 @@ class AtomicBomb extends ExplodingTroop {
     }
 
     deleteAnim() {
-        if (this.visualize) holdDeathAnim(this.position, this.span)
+        if (this.visualize) holdDeathAnim(this.position, this.span, this.visualize)
     }
     draw() {
         super.draw();
@@ -415,18 +428,13 @@ class AtomicBomb extends ExplodingTroop {
     }
 }
 
-function holdDeathAnim(position: number, span: number) {
+function holdDeathAnim(position: number, span: number, visualize: boolean) {
+    if (!visualize) return
     let i = 0
-    document.body.style.backgroundColor = 'rgb(21,29,21)'
+    document.body.style.backgroundColor = 'rgb(26,38,26)'
     document.querySelectorAll('button').forEach(e => {
-        if (color === 'rgb(239,239,239)') {
-            e.style.backgroundColor = 'rgba(100,171,84,0.35)'
-            e.style.color = 'rgb(30,30,30)'
-        }
-        else {
-            e.style.backgroundColor = 'rgb(11,31,4)'
-            e.style.color = 'rgb(166,172,154)'
-        }
+        e.style.backgroundColor = 'rgb(22,48,6)'
+        e.style.color = 'rgb(166,172,154)'
     })
     requestAnimationFrame(hold)
     function hold() {
@@ -763,7 +771,7 @@ class Player implements playerInterface{
         this.unlockUnits()
     }
 
-    addTroop(index: number): void {
+    addTroop(index: number, params: trooperStatsInterface | object = {}): void {
         if (this.playerUnits.length) {
             for (let unit of this.playerUnits) {
                 if (troopArr[5].name === troopArr[index].name && unit.name === troopArr[5].name) return
@@ -786,7 +794,7 @@ class Player implements playerInterface{
 
             this.stats.spending += troopArr[index].price
             this.addFunds(-troopArr[index].price)
-            this.playerUnits.push(new troopers[index](this.side, this, this.enemy))
+            this.playerUnits.push(new troopers[index](this.side, this, this.enemy, params))
         }
     }
 
@@ -878,7 +886,7 @@ class Player implements playerInterface{
                 if (!troop.isInFront(this.playerUnits, i) && !troop.isInFront(this.enemyUnits, 1) &&
                     troop.position < canvasWidth - baseStats.span - 10) {
                     // console.log('moved to right', troop.position)
-                    troop.position += troop.speed + (!this.visualize ? 4 : 0)
+                    troop.position += troop.speed
                 }
                 // else console.log('no movement to right', troop.position)
             })
@@ -888,7 +896,7 @@ class Player implements playerInterface{
                 if (!troop.isInFront(this.playerUnits, i) && !troop.isInFront(this.enemyUnits, 1) &&
                     troop.position > baseStats.span + 10) {
                     // console.log('moved to left', troop.position)
-                    troop.position -= troop.speed + (!this.visualize ? 4 : 0)
+                    troop.position -= troop.speed
                 }
                 // else console.log('no movement to left', troop.position)
             })
@@ -908,7 +916,7 @@ class Player implements playerInterface{
         }
     }
 
-    protected unlockUnits(): void {
+    protected unlockUnits(bindEventListeners: boolean = true): void {
         // console.log(this.visualize)
         // needs to create buttons for the length of troopArr
         if (this.DOMAccess) {
@@ -917,10 +925,10 @@ class Player implements playerInterface{
                 let button = document.createElement('button')
                 button.innerHTML = `${stat.name}: ${stat.price}`
                 div.appendChild(button)
-                button.className = this.side
+                button.className = this.side + 'Button'
                 div.appendChild(document.createElement('br'))
                 if (!this.unlockedUnits[i]) button.innerHTML = `Purchase for ${troopArr[i].researchPrice}`
-                button.addEventListener('click', () => {
+                if (bindEventListeners) button.addEventListener('click', () => {
                     if (this.unlockedUnits[i]) this.addTroop(i)
                     else this.purchaseUnit(i, button)
                     if (this.checkForMoneyAvail) document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
@@ -930,6 +938,16 @@ class Player implements playerInterface{
                 })
             })
         }
+    }
+
+    protected parseUnits(units: Array<trooperStatsInterface>): Array<number> {
+        let arr = []
+        units.forEach((unit) => {
+            troopArr.forEach((u, i) => {
+                if (unit.name === u.name) arr.push(i)
+            })
+        })
+        return arr
     }
 
     protected purchaseUnit(index: number, element: object) {
@@ -1139,16 +1157,6 @@ class SimulatingBot extends Player {
         }
     }
 
-    private parseUnits(units: Array<trooperStatsInterface>): Array<number> {
-        let arr = []
-        units.forEach((unit) => {
-            troopArr.forEach((u, i) => {
-                if (unit.name === u.name) arr.push(i)
-            })
-        })
-        return arr
-    }
-
     encouragement(): number {
         let stats = {
             playerUnitsDamage: 0,
@@ -1184,10 +1192,130 @@ class SimulatingBot extends Player {
 }
 
 
-// let s = new SimulatingBot(0, 'left', false)
-// s.afterMoveArmy()
+
+class InternetPlayer extends Player implements playerInterface {
+    constructor(money, side, checkForAvailMoney) {
+        super(money, side, checkForAvailMoney);
+        let socket = io('ws://localhost:8080');
+
+        // this.map(new Player(1000, 'right', false), true, true, [], [], [], new Base(baseStats, 'right'), new Base(baseStats, 'left'))
+        this.DOMAccess = true
+        this.playerUnits = []
+        this.enemyUnits = []
+        socket.on('side', side => {
+            this.side = side
+            console.log('side: ', this.side)
+            console.log('innit')
+            this.addGUI(socket)
+        })
+        socket.on('getSide', () => {
+            socket.emit('getSide', this.side)
+        })
+
+
+        if (this.side) socket.on('game', (playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits, leftMoney, rightMoney, time) => {
+            this.updateMoney(leftMoney, rightMoney)
+            if (this.side === 'left') this.display(playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits, time)
+            else if (this.side === 'right') this.display(playerTwoBase, playerOneBase, playerTwoUnits, playerOneUnits, time)
+        });
+    }
+
+    configBases(playerBase, enemyBase) {
+        this.draw(playerBase)
+        this.draw(enemyBase)
+    }
+
+    draw(base: baseInterface): void {
+        cx.fillStyle = base.color
+        cx.fillRect(base.position, canvasHeight - 105, base.span, 75)
+        cx.fillStyle = 'lightgray'
+        cx.fillRect(base.position, canvasHeight - 115, base.span, 5)
+        cx.fillStyle = 'red'
+        cx.fillRect(base.position, canvasHeight - 115, base.health / 800 * base.span, 5)
+    }
+
+    display(playerOneBase: baseInterface, playerTwoBase: baseInterface,
+            playerUnits: Array<trooperStatsInterface>, enemyUnits: Array<trooperStatsInterface>, time: number) {
+        cx.clearRect(0, 0, canvasWidth, canvasHeight)
+        let playerUnitsNumber = this.parseUnits(playerUnits)
+        let enemyUnitsNumber = this.parseUnits(enemyUnits)
+
+        playerUnitsNumber.forEach((num, i) => {
+            this.addTroop(num, playerUnits[i])
+        })
+        enemyUnitsNumber.forEach((num, i) => {
+            this.addTroopToEnemy(num, enemyUnits[i])
+        })
+        this.configBases(playerOneBase, playerTwoBase)
+
+        for (let unit of this.playerUnits) {
+            unit.draw()
+            unit.drawAttack(time)
+        }
+        for (let unit of this.enemyUnits) {
+            unit.draw()
+            unit.drawAttack(time)
+        }
+        this.playerUnits = []
+        this.enemyUnits = []
+    }
+
+    addTroopToEnemy(index: number, params: trooperStatsInterface) {
+        this.enemyUnits.push(new troopers[index]((this.side === 'left' ? 'right' : 'left'), this, this.enemy, params))
+    }
+
+    addGUI(socket: object) {
+        this.unlockUnits(false)
+        let buttons = Array.from(document.getElementsByClassName(this.side + 'Button'))
+        buttons.forEach((button, i) => {
+            button.addEventListener('click', () => {
+                if (this.unlockedUnits[i]) {
+                    // @ts-ignore
+                    socket.emit(`${this.side}AddTroop`, i)
+                }
+                else if (this.isEnoughMoney(troopArr[i].researchPrice)) {
+                    this.purchaseUnit(i, button)
+                    // @ts-ignore
+                    socket.emit(`${this.side}AddMoney`, -troopArr[i].researchPrice)
+                    console.log(this.unlockedUnits)
+                }
+                else {
+                    // @ts-ignore
+                    button.style.backgroundColor = 'red'
+                    setTimeout(() => {
+                        // @ts-ignore
+                        button.style.backgroundColor = color
+                    }, 800)
+                }
+            })
+        })
+    }
+
+    updateMoney(leftMoney: number, rightMoney: number) {
+        if (this.side === 'left') this.money = leftMoney
+        else this.money = rightMoney
+        document.getElementById('leftMoney').innerText = `Money: ${leftMoney}`
+        document.getElementById('rightMoney').innerText = `Money: ${rightMoney}`
+    }
+}
+// try {
+//     new InternetPlayer(null, '', false)
+// }
+// catch (e) {}
+
+
+
 try {
-    document.getElementById('left')
+    module.exports = {
+        Game: Game,
+        Player: Player,
+    }
+}
+catch (e) {}
+
+
+try {
+    // initializeUI(160, 120)
     let shiftDown = false
     window.addEventListener('keydown', e => {
         if (e.shiftKey) {
@@ -1213,145 +1341,156 @@ try {
         initializeUI(160, 120)
         }
     )
-    function initializeUI(btnWiderWidth: number, btnNarrowerWidth: number,) {
-        document.getElementById('startingScreen').style.display = 'none'
-        document.getElementById('cx').style.display = 'initial'
-        document.getElementById('controls').style.display = ''
-        window.addEventListener('resize', () => {resize(btnWiderWidth, btnNarrowerWidth)})
-        resize(btnWiderWidth, btnNarrowerWidth)
-    }
-    function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
-        document.querySelectorAll('button').forEach(e => {
-            if (document.body.scrollWidth > 477) {
-                e.style.width = 200 + 'px'
-                if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)'
-                e.style.margin = '4px'
-
-                return
-            }
-            if (document.body.scrollWidth <= 477) {
-                e.style.width = btnWiderWidth + 'px'
-            }
-            if (document.body.scrollWidth <= 347) {
-                e.style.width = btnNarrowerWidth + 'px'
-            }
-            if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)'
-            e.style.margin = '0'
-            e.style.marginTop = '5px'
-            e.style.backgroundColor = color
-
-        })
-        let cxHeight = document.getElementById('cx').offsetHeight
-        document.getElementById('controls').style.height = window.innerHeight - cxHeight - 18 + 'px'
-    }
+    document.getElementById('mul').addEventListener('click', () => {
+            // new Game(new InternetPlayer(55, 'left', !shiftDown),
+            //     new InternetPlayer(55, 'right', !shiftDown),
+            //     true, true, [], [])
+        new InternetPlayer(0, 'left', false)
+        initializeUI(160, 120)
+        }
+    )
 }
-
-
-
-
-
-
-
-
-
-
-catch (e) {
-    onmessage = function (e) {
-        // e[0] playerTroops e[1] enemyTroops e[2] unlockedUnits e[3] side e[4] money e[5] game
-        // console.log(e);
-        let bestDPM = -999999;
-        let bestStats;
-        let bestTroops = [];
-        let numberOfUnlockedUnits = 0;
-        e.data[2].forEach(function (e) {
-            return e ? numberOfUnlockedUnits++ : 0;
-        });
-        if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
-        // let p = performance.now()
-        for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
-            if (i === 4 || i === 8) continue;
-            for (let j = 0; j < numberOfUnlockedUnits; j++) {
-                if (j === 4 || j === 8 || (i === 5 && j === 5)) continue;
-                for (let k = 0; k < numberOfUnlockedUnits; k++) {
-                    if (k === 4 || k === 8 || ((i === 5 && k === 5) || (j === 5 && k === 5))) continue;
-                    let plTroops = e.data[0].slice();
-                    plTroops.push(i);
-                    plTroops.push(j);
-                    plTroops.push(k);
-                    let game = simulate(plTroops, e.data[1].slice());
-                    let stats = getGameStats(game);
-                    stats.enemyUnitsLength = game.players[e.data[3] === 'left' ? 0 : 1].enemyUnits.length;
-                    stats.playerUnitsLength = game.players[e.data[3] === 'left' ? 0 : 1].playerUnits.length;
-                    if (damageCalc(stats) > bestDPM) {
-                        bestDPM = damageCalc(stats);
-                        bestStats = stats;
-                        bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]];
-                    }
-                }
-            }
-        }
-        // console.log(bestTroops, damageCalc(bestStats))
-        // console.log(bestTroops, 'in', performance.now() - p, 'ms')
-        // document.getElementById(`dmg${this.side}`).innerText = String(bestDPM)
-        function simulate(units1, units2): gameInterface {
-            // console.log('simulate')
-            return new Game(
-                new Player(0, 'left', false),
-                new Player(0, 'right', false),
-                false, false, units1, units2);
-        }
-
-        function getGameStats(game): extendedStatsInterface {
-            let stats = {
-                playerSpending: null,       // 15 - 200
-                playerDamage: null,         // 3 - 50
-                playerUnitsLength: null,    // 3 - 7
-                enemyDamage: null,          // 3 - 50
-                enemyUnitsLength: null,     // 3 - 7
-                time: null                  // 200 - 2000
-            };
-            stats.playerSpending = game.players[e.data[3] === 'left' ? 0 : 1].stats.spending;
-            stats.playerDamage = game.players[e.data[3] === 'left' ? 0 : 1].stats.damageDealt;
-            stats.enemyDamage = game.players[e.data[3] === 'left' ? 0 : 1].stats.damageDealt;
-            return stats;
-        }
-
-        function damageCalc(stats): number {
-            if (stats.playerSpending > e.data[4])
-                return -1;
-            if (stats.playerUnitsLength)
-                return (stats.playerDamage);
-            else if (stats.enemyUnitsLength)
-                return (stats.playerDamage);
-            else {
-                return (stats.playerDamage);
-            }
-        }
-
-        // function encouragement(): number {
-        //     let stats = {
-        //         playerUnitsDamage: 0,
-        //         enemyUnitsDamage: 0,
-        //         playerUnitsLength: 0,
-        //         enemyUnitsLength: 0
-        //     }
-        //     e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.forEach(e => stats.playerUnitsDamage += e.damage)
-        //     e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.forEach(e => stats.enemyUnitsDamage += e.damage)
-        //     stats.playerUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.length
-        //     stats.enemyUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.length
-        //
-        //     if (stats.playerUnitsLength && stats.enemyUnitsDamage) {
-        //         return (((stats.enemyUnitsLength / stats.playerUnitsLength) / (stats.playerUnitsDamage / stats.enemyUnitsDamage)) ** .3)
-        //     } else if (!stats.enemyUnitsLength) return 0
-        //     else {
-        //         // console.log(stats)
-        //         return 10
-        //     }
-        // }
-
-        // console.log('finished job')
-        // console.log(bestTroops)
-        // @ts-ignore
-        postMessage(bestTroops);
-    };
+catch (e) {}
+function initializeUI(btnWiderWidth: number, btnNarrowerWidth: number,) {
+    document.getElementById('startingScreen').style.display = 'none'
+    document.getElementById('cx').style.display = 'initial'
+    document.getElementById('controls').style.display = ''
+    window.addEventListener('resize', () => {resize(btnWiderWidth, btnNarrowerWidth)})
+    resize(btnWiderWidth, btnNarrowerWidth)
 }
+function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
+    document.querySelectorAll('button').forEach(e => {
+        if (document.body.scrollWidth > 477) {
+            e.style.width = 200 + 'px'
+            if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)'
+            e.style.margin = '4px'
+            return
+        }
+        if (document.body.scrollWidth <= 477) {
+            e.style.width = btnWiderWidth + 'px'
+        }
+        if (document.body.scrollWidth <= 347) {
+            e.style.width = btnNarrowerWidth + 'px'
+        }
+        if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)'
+        e.style.margin = '0'
+        e.style.marginTop = '5px'
+        e.style.backgroundColor = color
+
+    })
+    let cxHeight = document.getElementById('cx').offsetHeight
+    document.getElementById('controls').style.height = window.innerHeight - cxHeight + 'px'
+}
+//
+// catch (e) {
+//     try {
+//         onmessage = function (e) {
+//             // e[0] playerTroops e[1] enemyTroops e[2] unlockedUnits e[3] side e[4] money e[5] game
+//             // console.log(e);
+//             let bestDPM = -999999;
+//             let bestStats;
+//             let bestTroops = [];
+//             let numberOfUnlockedUnits = 0;
+//             e.data[2].forEach(function (e) {
+//                 return e ? numberOfUnlockedUnits++ : 0;
+//             });
+//             if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
+//             // let p = performance.now()
+//             for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
+//                 if (i === 4 || i === 8) continue;
+//                 for (let j = 0; j < numberOfUnlockedUnits; j++) {
+//                     if (j === 4 || j === 8 || (i === 5 && j === 5)) continue;
+//                     for (let k = 0; k < numberOfUnlockedUnits; k++) {
+//                         if (k === 4 || k === 8 || ((i === 5 && k === 5) || (j === 5 && k === 5))) continue;
+//                         let plTroops = e.data[0].slice();
+//                         plTroops.push(i);
+//                         plTroops.push(j);
+//                         plTroops.push(k);
+//                         let game = simulate(plTroops, e.data[1].slice());
+//                         let stats = getGameStats(game);
+//                         stats.enemyUnitsLength = game.players[e.data[3] === 'left' ? 0 : 1].enemyUnits.length;
+//                         stats.playerUnitsLength = game.players[e.data[3] === 'left' ? 0 : 1].playerUnits.length;
+//                         if (damageCalc(stats) > bestDPM) {
+//                             bestDPM = damageCalc(stats);
+//                             bestStats = stats;
+//                             bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]];
+//                         }
+//                     }
+//                 }
+//             }
+//             // console.log(bestTroops, damageCalc(bestStats))
+//             // console.log(bestTroops, 'in', performance.now() - p, 'ms')
+//             // document.getElementById(`dmg${this.side}`).innerText = String(bestDPM)
+//             function simulate(units1, units2): gameInterface {
+//                 // console.log('simulate')
+//                 return new Game(
+//                     new Player(0, 'left', false),
+//                     new Player(0, 'right', false),
+//                     false, false, units1, units2);
+//             }
+//
+//             function getGameStats(game): extendedStatsInterface {
+//                 let stats = {
+//                     playerSpending: null,       // 15 - 200
+//                     playerDamage: null,         // 3 - 50
+//                     playerUnitsLength: null,    // 3 - 7
+//                     enemyDamage: null,          // 3 - 50
+//                     enemyUnitsLength: null,     // 3 - 7
+//                     time: null                  // 200 - 2000
+//                 };
+//                 stats.playerSpending = game.players[e.data[3] === 'left' ? 0 : 1].stats.spending;
+//                 stats.playerDamage = game.players[e.data[3] === 'left' ? 0 : 1].stats.damageDealt;
+//                 stats.enemyDamage = game.players[e.data[3] === 'left' ? 0 : 1].stats.damageDealt;
+//                 return stats;
+//             }
+//
+//             function damageCalc(stats): number {
+//                 if (stats.playerSpending > e.data[4])
+//                     return -1;
+//                 if (stats.playerUnitsLength)
+//                     return (stats.playerDamage);
+//                 else if (stats.enemyUnitsLength)
+//                     return (stats.playerDamage);
+//                 else {
+//                     return (stats.playerDamage);
+//                 }
+//             }
+//
+//             // function encouragement(): number {
+//             //     let stats = {
+//             //         playerUnitsDamage: 0,
+//             //         enemyUnitsDamage: 0,
+//             //         playerUnitsLength: 0,
+//             //         enemyUnitsLength: 0
+//             //     }
+//             //     e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.forEach(e => stats.playerUnitsDamage += e.damage)
+//             //     e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.forEach(e => stats.enemyUnitsDamage += e.damage)
+//             //     stats.playerUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].playerUnits.length
+//             //     stats.enemyUnitsLength = e.data[5].players[e.data[3] === 'left' ? 0 : 1].enemyUnits.length
+//             //
+//             //     if (stats.playerUnitsLength && stats.enemyUnitsDamage) {
+//             //         return (((stats.enemyUnitsLength / stats.playerUnitsLength) / (stats.playerUnitsDamage / stats.enemyUnitsDamage)) ** .3)
+//             //     } else if (!stats.enemyUnitsLength) return 0
+//             //     else {
+//             //         // console.log(stats)
+//             //         return 10
+//             //     }
+//             // }
+//
+//             // console.log('finished job')
+//             // console.log(bestTroops)
+//             // @ts-ignore
+//             postMessage(bestTroops);
+//         };
+//     }
+//
+//
+//     catch (e) {
+//         console.log(e)
+//
+//         // new Game(new InternetPlayer(55, 'left', !shiftDown),
+//         //     new InternetPlayer(55, 'right', !shiftDown),
+//         //     true, true, [], [])
+//
+//     }
+// }
