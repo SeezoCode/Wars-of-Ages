@@ -1,4 +1,6 @@
-// import * as index from './index'
+
+if (!process.argv[2]) process.argv[2] = `8080`
+
 let index = require('./index')
 
 
@@ -100,7 +102,15 @@ io.on('connection', (socket) => {
         console.log('disconnect')
         game.connectedUsersCount--
     })
+    socket.on('multiplier', side => {
+        if (side === 'left') game.players[0].multiplier *= 1.2
+        if (side === 'right') game.players[1].multiplier *= 1.2
+        emitMultiplayer()
+    })
 });
+function emitMultiplayer() {
+    io.emit('multiplier', game.players[0].multiplier, game.players[1].multiplier)
+}
 let os = require('os')
 let ip
 let ifaces = os.networkInterfaces();
