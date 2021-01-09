@@ -75,7 +75,7 @@ let game = new ServerSideGame(new index.Player(55, 'left', checkForAvailMoney),
     [], [], 60)
 
 io.on('connection', (socket) => {
-    console.log('a user has connected' + (game.connectedUsersCount + 1));
+    console.log('a user has connected, connected users: ' + (game.connectedUsersCount + 1));
 
     if (game.connectedUsersCount < 2) socket.emit('side', game.sideToFill, checkForAvailMoney)
     if (game.connectedUsersCount >= 2) socket.emit('side', 'Server Full')

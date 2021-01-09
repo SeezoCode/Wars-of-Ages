@@ -45,19 +45,19 @@ const troopArr = [
         name: 'Base Destroyer Troop', health: 40, damage: 2, baseDamage: 35, attackSpeed: 140, price: 50, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
     },
     {
-        name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, price: 30, color: 'red', speed: 1, span: 20, range: 40, researchPrice: 200
+        name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, price: 30, color: 'red', speed: 1.75, span: 20, range: 40, researchPrice: 200
     },
     {
         name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 300, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
-        name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 50, color: 'chocolate', speed: 1.5, span: 15, range: 0, researchPrice: 250
+        name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 50, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
     },
     {
         name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 200, researchPrice: 400
     },
     {
-        name: 'Atomic Troop', health: 400, damage: .6, baseDamage: .75, attackSpeed: 1, price: 200, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
+        name: 'Atomic Troop', health: 300, damage: .6, baseDamage: .75, attackSpeed: 1, price: 200, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
     },
     {
         name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
@@ -405,7 +405,7 @@ class AtomicBomb extends ExplodingTroop {
                 e.disabled = true
                 setTimeout(() => {
                     e.removeAttribute('disabled')
-                }, 10000)
+                }, 100000)
             }
         })
     }
@@ -477,7 +477,7 @@ interface baseInterface {
     visualize?: boolean
     baseExposed?: boolean
     side?: string
-    draw?: () => void
+    draw?: (multiplier: number) => void
 }
 
 class Base implements baseInterface {
@@ -500,11 +500,35 @@ class Base implements baseInterface {
         if (side === 'right') this.position = canvasWidth - 50
     }
 
-    draw(): void {
+    draw(multiplier: number): void {
         if (this.visualize) {
             cx.fillStyle = this.color
             cx.fillRect(this.position, canvasHeight - 105, this.span, 75)
             this.drawHealth()
+        }
+        if (canvasHeight - 105 - multiplier < canvasHeight - 105 - 50) {
+            multiplier = canvasHeight - 105 - 50
+            Base.drawCross(this.position + this.span / 2, 26, this.visualize)
+        }
+        if (this.visualize) {
+            cx.fillStyle = this.color
+            cx.fillRect(this.position, canvasHeight - 105 - multiplier, this.span, 75 + multiplier)
+            cx.fillStyle = 'lightgray'
+            cx.fillRect(this.position, canvasHeight - 115 - multiplier, this.span, 5)
+            cx.fillStyle = 'red'
+            cx.fillRect(this.position, canvasHeight - 115 - multiplier, this.health / 800 * this.span, 5)
+        }
+    }
+
+    private static drawCross(x: number, y: number, visualize: boolean): void {
+        if (visualize) {
+            cx.strokeStyle = 'red'
+            cx.beginPath()
+            cx.moveTo(x, y - 7)
+            cx.lineTo(x, y + 7)
+            cx.moveTo(x - 7, y)
+            cx.lineTo(x + 7, y)
+            cx.stroke()
         }
     }
 
@@ -605,8 +629,8 @@ class Game implements gameInterface{
     }
 
     display() {
-        this.playerOneBase.draw()
-        this.playerTwoBase.draw()
+        this.playerOneBase.draw(this.players[0].multiplier)
+        this.playerTwoBase.draw(this.players[1].multiplier)
         for (let unit of this.playerOneUnits) {
             unit.draw()
             unit.drawAttack(this.time)
@@ -954,8 +978,10 @@ class Player implements playerInterface{
             button.id = 'incMult'
             if (bindEventListeners) {
                 button.addEventListener('click', () => {
-                    this.multiplier *= 1.2
-                    console.log(this.multiplier)
+                    if (this.isEnoughMoney(2000)) {
+                        this.multiplier *= 1.2
+                        // console.log(this.multiplier)
+                    }
                 })
             }
         }
@@ -1303,6 +1329,19 @@ class InternetPlayer extends Player implements playerInterface {
         cx.fillRect(base.position, canvasHeight - 115 - multiplier, base.span, 5)
         cx.fillStyle = 'red'
         cx.fillRect(base.position, canvasHeight - 115 - multiplier, base.health / 800 * base.span, 5)
+        if (canvasHeight - 105 - multiplier < canvasHeight - 105 - 50) {
+            this.drawCross(base.position + base.span / 2, 26)
+        }
+    }
+
+    private static drawCross(x, y): void {
+        cx.strokeStyle = 'red'
+        cx.beginPath()
+        cx.moveTo(x, y - 7)
+        cx.lineTo(x, y + 7)
+        cx.moveTo(x - 7, y)
+        cx.lineTo(x + 7, y)
+        cx.stroke()
     }
 
     display(playerOneBase: baseInterface, playerTwoBase: baseInterface,
