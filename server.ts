@@ -1,5 +1,8 @@
 
 if (!process.argv[2]) process.argv[2] = `8080`
+if (!process.argv[4]) process.argv[4] = `false`
+console.log('---', process.argv[4])
+let checkForAvailMoney = process.argv[4] === 'true'
 
 let index = require('./index')
 
@@ -24,12 +27,14 @@ class ServerSideGame extends index.Game {
     animation() {
         let interval = setInterval(() => {
             if (this.players[0].enemyBase.health <= 0) {
-                io.emit('message', 'LEFT HAS WON')
+                io.emit('win', 'LEFT HAS WON')
                 clearInterval(interval)
+                process.exit()
             }
             if (this.players[1].enemyBase.health <= 0) {
-                io.emit('message', 'RIGHT HAS WON')
+                io.emit('win', 'RIGHT HAS WON')
                 clearInterval(interval)
+                process.exit()
             }
 
             if (this.atomicDoomPending) io.emit('atomic', true)
@@ -65,19 +70,17 @@ const io = require('socket.io')(http, {
     cors: { origin: "*" }
 });
 
-let game = new ServerSideGame(new index.Player(55, 'left', false),
-    new index.Player(55, 'right', false), false, false,
+let game = new ServerSideGame(new index.Player(55, 'left', checkForAvailMoney),
+    new index.Player(55, 'right', checkForAvailMoney), false, false,
     [], [], 60)
 
 io.on('connection', (socket) => {
-    console.log('a user has connected');
+    console.log('a user has connected' + (game.connectedUsersCount + 1));
 
-    if (game.connectedUsersCount < 2) {
-        socket.emit('side', game.sideToFill)
-        game.connectedUsersCount++
-    }
+    if (game.connectedUsersCount < 2) socket.emit('side', game.sideToFill, checkForAvailMoney)
     if (game.connectedUsersCount >= 2) socket.emit('side', 'Server Full')
 
+    game.connectedUsersCount++
 
     setInterval(() => {
         socket.emit('game', game.playerOneBase, game.playerTwoBase, game.playerOneUnits, game.playerTwoUnits,
@@ -103,8 +106,12 @@ io.on('connection', (socket) => {
         game.connectedUsersCount--
     })
     socket.on('multiplier', side => {
-        if (side === 'left') game.players[0].multiplier *= 1.2
-        if (side === 'right') game.players[1].multiplier *= 1.2
+        if (side === 'left') {
+            if (!checkForAvailMoney || game.players[0].money >= 2000) game.players[0].multiplier *= 1.2
+        }
+        if (side === 'right') {
+            if (!checkForAvailMoney || game.players[0].money >= 2000)  game.players[1].multiplier *= 1.2
+        }
         emitMultiplayer()
     })
 });

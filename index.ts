@@ -1220,6 +1220,7 @@ class InternetPlayer extends Player implements playerInterface {
     private spectator: boolean
     playerMultiplier: number = 1
     enemyMultiplier: number = 1
+    checkForAvailMoney: boolean
 
     constructor(money, side, checkForAvailMoney, address: string) {
         super(money, side, checkForAvailMoney);
@@ -1231,16 +1232,22 @@ class InternetPlayer extends Player implements playerInterface {
         this.enemyUnits = []
         this.firstTimeAtomicDoom = true
         socket.on('mess', message => {console.log(message)})
-        socket.on('side', side => {
+        socket.on('side', (side, checkForAvailMoney) => {
             if (side === 'Server Full') {
-                this.displayText('Server Full')
+                this.message = 'Logged in as spectator'
+                setTimeout(() => {this.message = ''}, 5000)
+                console.log(1)
                 return
             }
-            this.side = side
-            console.log('side: ', this.side)
-            console.log('innit')
-            if (side) this.addGUI(socket)
-            // else if (!side) this.spectator = true
+            else {
+                console.log('2')
+                this.checkForAvailMoney = checkForAvailMoney
+                console.log(checkForAvailMoney)
+                this.side = side
+                console.log('side: ', this.side)
+                console.log('innit')
+                if (side) this.addGUI(socket)
+            }
         })
         socket.on('getSide', () => {
             socket.emit('getSide', this.side)
@@ -1260,7 +1267,7 @@ class InternetPlayer extends Player implements playerInterface {
             }
             if (!atomicDoomPending) this.firstTimeAtomicDoom = true
         })
-        socket.on('message', message => {
+        socket.on('win', message => {
             this.message = message
             setTimeout(() => {location.reload()}, 7500)
         })
@@ -1323,7 +1330,7 @@ class InternetPlayer extends Player implements playerInterface {
         this.playerUnits = []
         this.enemyUnits = []
 
-        this.displayText(this.message)
+        if (this.message) this.displayText(this.message)
     }
 
     addTroopToEnemy(index: number, params: trooperStatsInterface) {
@@ -1343,7 +1350,7 @@ class InternetPlayer extends Player implements playerInterface {
                     // @ts-ignore
                     socket.emit(`AddTroop`, this.side, i)
                 }
-                else if (this.money >= troopArr[i].researchPrice || true) {
+                else if (this.money >= troopArr[i].researchPrice || !this.checkForAvailMoney) {
                     this.purchaseUnit(i, button)
                     // @ts-ignore
                     socket.emit(`AddMoney`, this.side, -troopArr[i].researchPrice)
