@@ -1,3 +1,6 @@
+
+// node SeverHandler false (launch without http-server)
+
 const httpServer = require("http");
 const { fork } = require('child_process');
 const { exec } = require('child_process');
@@ -16,7 +19,7 @@ exec('npx http-server', [], (err, output, stderr) => {
     }
 })
 try {
-    fork('node_modules/http-server/bin/http-server')
+    if (process.argv[2] != 'false') fork('node_modules/http-server/bin/http-server')
 }
 catch (e) {
     console.log('Could not start http server')
