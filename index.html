@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <script src="https://cdn.socket.io/socket.io-3.0.0.js"></script>
 
     <title>Wars of Ages</title>
@@ -34,7 +35,7 @@
                 color: darkgray
             }
             button[disabled] {
-                background-color: #323232 !important
+                background-color: #262626 !important
             }
             body {
                 background: rgb(24, 26, 27);
@@ -42,6 +43,12 @@
             }
             hr {
                 border: 1px solid rgb(43, 43, 43);
+            }
+            .toggle {
+                background: rgb(45, 45, 45) !important;
+            }
+            .indicator {
+                background: rgb(235, 235, 235) !important;
             }
         }
         * {
@@ -131,10 +138,13 @@
 <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0;">
     <div id="startingScreen" class="vertical-center">
         <h1>Wars of Ages</h1><br>
-        <p style="color: rgb(120, 120, 120)">Please choose:</p>
         <button id="pl">Player vs Player</button>
         <button id="bot">Player vs Bot</button>
-        <button id="mul">Multiplayer</button> <br><hr>
+        <br> <hr>
+        <p id="onlineIndicator"><i class="fa fa-spinner fa-spin"></i> Play online: </p>
+        <button id="mul">Connect to multiplayer game with code</button>
+        <button id="code">Create multiplayer game</button>
+        <br><hr>
         <label class="label">
             <a href="guide.html" style="margin-right: 20px">Guide</a>
             <div class="label-text" style="margin-right: 7px">Music</div>

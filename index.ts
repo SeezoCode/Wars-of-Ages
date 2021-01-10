@@ -1,4 +1,3 @@
-// import {Socket} from "socket.io";
 
 let canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, color, deathAnimPending, radioactivityPending, bgColor
 
@@ -16,7 +15,6 @@ try {
     radiationSymbolIMG = new Image(255, 255)
     radiationSymbolIMG.src = 'img/radiationSymbol.png'
 
-    console.log('Running in Browser')
     color = document.querySelector('button')
     color = getComputedStyle(color).backgroundColor
     bgColor = document.body
@@ -460,11 +458,7 @@ function holdDeathAnim(position: number, span: number, visualize: boolean) {
         }
     }
 }
-// class PlaneTroop extends Trooper {
-//     constructor(side: string, player: playerInterface, enemy: playerInterface) {
-//         super(troopArr[9], side, player.visualize);
-//     }
-// }
+
 
 
 let troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, HealerTroop, TrebuchetTroop, AtomicTroop, AtomicBomb, BossTroop]
@@ -504,19 +498,16 @@ class Base implements baseInterface {
         if (this.visualize) {
             cx.fillStyle = this.color
             cx.fillRect(this.position, canvasHeight - 105, this.span, 75)
-            this.drawHealth()
         }
         if (canvasHeight - 105 - multiplier < canvasHeight - 105 - 50) {
             multiplier = canvasHeight - 105 - 50
             Base.drawCross(this.position + this.span / 2, 26, this.visualize)
         }
+        multiplier = (multiplier ** .1) * 165 - 165
         if (this.visualize) {
             cx.fillStyle = this.color
             cx.fillRect(this.position, canvasHeight - 105 - multiplier, this.span, 75 + multiplier)
-            cx.fillStyle = 'lightgray'
-            cx.fillRect(this.position, canvasHeight - 115 - multiplier, this.span, 5)
-            cx.fillStyle = 'red'
-            cx.fillRect(this.position, canvasHeight - 115 - multiplier, this.health / 800 * this.span, 5)
+            this.drawHealth(115 + multiplier)
         }
     }
 
@@ -532,11 +523,11 @@ class Base implements baseInterface {
         }
     }
 
-    private drawHealth() {
+    private drawHealth(y: number) {
         cx.fillStyle = 'lightgray'
-        cx.fillRect(this.position, canvasHeight - 115, this.span, 5)
+        cx.fillRect(this.position, canvasHeight - y, this.span, 5)
         cx.fillStyle = 'red'
-        cx.fillRect(this.position, canvasHeight - 115, this.health / this.maxHealth * this.span, 5)
+        cx.fillRect(this.position, canvasHeight - y, this.health / this.maxHealth * this.span, 5)
     }
 }
 
@@ -1262,16 +1253,13 @@ class InternetPlayer extends Player implements playerInterface {
             if (side === 'Server Full') {
                 this.message = 'Logged in as spectator'
                 setTimeout(() => {this.message = ''}, 5000)
-                console.log(1)
                 return
             }
             else {
-                console.log('2')
                 this.checkForAvailMoney = checkForAvailMoney
-                console.log(checkForAvailMoney)
+                console.log('Overdraft:', !checkForAvailMoney)
                 this.side = side
                 console.log('side: ', this.side)
-                console.log('innit')
                 if (side) this.addGUI(socket)
             }
         })
@@ -1306,6 +1294,11 @@ class InternetPlayer extends Player implements playerInterface {
                 this.playerMultiplier = right
                 this.enemyMultiplier = left
             }
+        })
+
+        socket.on('message', message => {
+            this.message = message
+            this.displayText(message)
         })
     }
 
@@ -1405,7 +1398,6 @@ class InternetPlayer extends Player implements playerInterface {
                 }
             })
         })
-        console.log(buttons)
         document.getElementById('incMult').addEventListener('click', () => {
             // @ts-ignore
             socket.emit('multiplier', this.side)
@@ -1467,6 +1459,9 @@ function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
 
 
 try {
+    let hostIP = self.location.hostname
+    let hostPort = '8081'
+
     let audioPlaying = false
     let audio = new Audio('img/Age of War - Theme Soundtrack.mp3');
     document.getElementById('music').addEventListener('click', () => {
@@ -1476,10 +1471,6 @@ try {
         else audio.pause()
         audioPlaying = !audioPlaying
     })
-    window.addEventListener('ended', () => {
-        audio = new Audio('img/Age of War - Theme Soundtrack.mp3');
-        audio.play()})
-    // initializeUI(160, 120)
     let shiftDown = false
     window.addEventListener('keydown', e => {
         if (e.shiftKey) {
@@ -1506,13 +1497,56 @@ try {
         }
     )
     document.getElementById('mul').addEventListener('click', () => {
-        let address = prompt('Enter address:', 'http://192.168.1.160:8080')
-        // let address = prompt('Enter code:', '8080'); address = `http://192.168.1.135:${address}`
-        // let address = `http://192.168.1.160:${8080}`
+        // let address = prompt('Enter address:', `http://${hostIP}:${hostPort}`)
+        // let address = `http://${hostIP}:${hostPort}`
+        let address = prompt('Enter code:', '')
+        if (address === null) return
+        address = `http://${hostIP}:${address}`
         new InternetPlayer(0, 'left', false, address)
         initializeUI(160, 120)
         }
     )
+    document.getElementById('code').addEventListener('click', () => {
+        document.getElementById('code').innerHTML = `<i class="fa fa-spinner fa-spin"></i> ${document.getElementById('code').innerHTML}`
+        fetch(`http://${hostIP}:${hostPort}`, {
+            headers: new Headers(),
+            method: 'POST'
+        }).then((res) => {
+            res.json().then(res => {
+                console.log(res)
+                if (res === 'Too many requests') {
+                    alert(res)
+                    return
+                }
+                alert(`Game code is: ${res}`)
+                new InternetPlayer(0, '', false, `localhost:${res}`)
+                initializeUI(160, 120)
+            })
+        })
+    })
+
+    setTimeout(() => {
+        if (document.getElementById('onlineIndicator').innerHTML === '<i class="fa fa-spinner fa-spin"></i> Play online: ') {
+            document.getElementById('onlineIndicator').innerHTML = '<span style="color: red">&#10006;</span> Play online'
+        }
+    }, 5000)
+    fetch(`http://${hostIP}:${hostPort}`, {
+        headers: new Headers(),
+        method: 'GET'
+    }).then((res) => {
+        res.json().then((mess) => {
+            document.getElementById('onlineIndicator').style.color = 'green'
+            document.getElementById('onlineIndicator').innerHTML = '&#10004; Play online: Available!'
+        })
+    }).catch(err => {
+        console.log(err)
+        document.getElementById('onlineIndicator').innerHTML = '<span style="color: red">&#10006;</span> Play online'
+        // @ts-ignore
+        document.getElementById('mul').disabled = true
+        // @ts-ignore
+        document.getElementById('code').disabled = true
+    })
+
 }
 // catch (e) {}
 
