@@ -962,7 +962,7 @@ class Player implements playerInterface{
                     }
                 })
             })
-            div.appendChild(document.createElement('br'))
+            div.appendChild(document.createElement('hr'))
             let button = document.createElement('button')
             button.innerHTML = `Increase all stats by 20%: 2500`
             div.appendChild(button)
@@ -1467,6 +1467,7 @@ try {
     document.getElementById('music').addEventListener('click', () => {
         if (!audioPlaying) {
             audio.play();
+            audio.loop = true
         }
         else audio.pause()
         audioPlaying = !audioPlaying
