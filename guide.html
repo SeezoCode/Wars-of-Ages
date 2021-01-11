@@ -22,7 +22,7 @@
             border: 1px solid black;
         }
         td {
-            padding: 0 7px
+            padding: 4px 7px
         }
         body {
             max-width: 700px !important
@@ -41,6 +41,9 @@
             hr {
                 border: 1px solid rgb(43, 43, 43);
             }
+            table, th, td {
+                border: 1px solid #454545;
+            }
         }
 
     </style>
@@ -58,7 +61,7 @@
     <h3>Basic Troop</h3>
     <p>Does melee damage, really nothing else to it.</p> <hr>
     <h3>Fast Troop</h3>
-    <p>It's speed is fast. Really fast. You just won't believe how vastly hugely mind-bogglingly faster it is. I mean, you may think it's like a long way down the road to the chemist, but that's just peanuts to it's speed.</p> 
+    <p>It's speed is fast. Really fast. You just won't believe how vastly hugely mind-bogglingly faster it is. I mean, you may think it's like a long way down the road to the chemist, but that's just peanuts to it's speed.</p>
     <p>Also can disarm a Boomer before he explodes.</p><hr>
     <h3>Range Troop</h3>
     <p>Three of theese troops can shoot at once. Recommended strategy is to use a tank unit in front and put one or two ranged troops behind.</p> <hr>
@@ -81,10 +84,10 @@
     <p>And of course, has a really cool visual effects.</p>
 
 </body>
-<script>
+<script type="module">
     const troopArr = [
         {
-            name: 'Basic Troop', health: 20, damage: 4.5, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
+            name: 'Name', health: 'Health', damage: 'Damage', baseDamage: 'Base Damage', attackSpeed: 'Attack Speed', price: 'Price', color: 'Color', speed: 'Speed', span: 'Span', range: 'Range', researchPrice: 'Research price'
         },
         {
             name: 'Fast Troop', health: 18, damage: 1.3, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
@@ -96,22 +99,22 @@
             name: 'Advanced Troop', health: 35, damage: 12, baseDamage: 5, attackSpeed: 80, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
         },
         {
-            name: 'Base Destroyer Troop', health: 40, damage: 2, baseDamage: 35, attackSpeed: 140, price: 50, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
+            name: 'Base Destroyer', health: 40, damage: 8, baseDamage: 35, attackSpeed: 140, price: 50, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
         },
         {
-            name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, price: 30, color: 'red', speed: 1, span: 20, range: 40, researchPrice: 200
+            name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, price: 30, color: 'red', speed: 1.75, span: 20, range: 40, researchPrice: 200
         },
         {
-            name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 300, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+            name: 'Shield Troop', health: 75, damage: .5, baseDamage: 1, attackSpeed: 300, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
         },
         {
-            name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 50, color: 'chocolate', speed: 1.5, span: 15, range: 0, researchPrice: 250
+            name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 40, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
         },
         {
-            name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 200, researchPrice: 400
+            name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 200, researchPrice: 400
         },
         {
-            name: 'Atomic Troop', health: 300, damage: .6, baseDamage: .75, attackSpeed: 1, price: 200, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
+            name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 60, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
         },
         {
             name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
@@ -120,34 +123,34 @@
             name: 'Boss', health: 1000, damage: 40, baseDamage: 0, attackSpeed: 180, price: 10000, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 30000
         },
     ]
-    
 
-        generate_table()
-function generate_table() {
-  let body = document.getElementsByTagName("div")[0];
 
-  let tbl = document.createElement("table");
-  let tblBody = document.createElement("tbody");
+    generate_table()
+    function generate_table() {
+        let body = document.getElementsByTagName("div")[0];
 
-  for (let i = 0; i < 12; i++) {
-    let row = document.createElement("tr");
-    for (let j = 0; j < 11; j++) {
-      let cell = document.createElement("td");
-      let keys = Object.keys(troopArr[0])
-      let cellText = document.createTextNode(troopArr[i][keys[j]]);
-      if (i === 0 || j === 0 || j === 6) cell.style.fontWeight = 'bold'
-      else cell.style.textAlign = 'right'
-      if (j === 6) {
-          cell.style.color = troopArr[i][keys[j]]
-      }
-      cell.appendChild(cellText);
-      row.appendChild(cell);
+        let tbl = document.createElement("table");
+        let tblBody = document.createElement("tbody");
+
+        for (let i = 0; i < 12; i++) {
+            let row = document.createElement("tr");
+            for (let j = 0; j < 11; j++) {
+                let cell = document.createElement("td");
+                let keys = Object.keys(troopArr[0])
+                let cellText = document.createTextNode(troopArr[i][keys[j]]);
+                if (i === 0 || j === 0 || j === 6) cell.style.fontWeight = 'bold'
+                else cell.style.textAlign = 'right'
+                if (j === 6) {
+                    cell.style.color = troopArr[i][keys[j]]
+                }
+                cell.appendChild(cellText);
+                row.appendChild(cell);
+            }
+            tblBody.appendChild(row);
+        }
+        tbl.appendChild(tblBody);
+        body.appendChild(tbl);
+        tbl.setAttribute("border", "2");
     }
-    tblBody.appendChild(row);
-  }
-  tbl.appendChild(tblBody);
-  body.appendChild(tbl);
-  tbl.setAttribute("border", "2");
-}
     </script>
 </html>
