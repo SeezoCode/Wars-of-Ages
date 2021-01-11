@@ -1,12 +1,13 @@
 
-let canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, color, deathAnimPending, radioactivityPending, bgColor
+let canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, buttonColor, deathAnimPending,
+    radioactivityPending, bgColor, buttonBg, darkTheme
 
 try {
-    let ctx = document.querySelector('canvas')
-    canvasWidth = ctx.width = 700
-    canvasHeight = ctx.height = 250
-    console.log(ctx)
-    cx = ctx.getContext('2d')
+    let canvas = document.querySelector('canvas')
+    canvasWidth = canvas.width = 700
+    canvasHeight = canvas.height = 250
+    console.log(canvas)
+    cx = canvas.getContext('2d')
     explosionIMG = new Image(68, 55)
 
     explosionIMG.src = 'img/explosion.png'
@@ -15,10 +16,19 @@ try {
     radiationSymbolIMG = new Image(255, 255)
     radiationSymbolIMG.src = 'img/radiationSymbol.png'
 
-    color = document.querySelector('button')
-    color = getComputedStyle(color).backgroundColor
-    bgColor = document.body
-    bgColor = getComputedStyle(bgColor).backgroundColor
+    darkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
+    console.log(darkTheme)
+    if (darkTheme) {
+        buttonColor = 'darkgray'
+        buttonBg = '#1c1c1c'
+        bgColor = 'rgb(24, 26, 27)'
+    }
+    else {
+        buttonColor = 'black'
+        buttonBg = 'rgb(239, 239, 239)'
+        bgColor = 'white'
+    }
+
 }
 catch (e) {
     // console.log('Running node.js huh?')
@@ -40,22 +50,22 @@ const troopArr = [
         name: 'Advanced Troop', health: 35, damage: 12, baseDamage: 5, attackSpeed: 80, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
     },
     {
-        name: 'Base Destroyer Troop', health: 40, damage: 2, baseDamage: 35, attackSpeed: 140, price: 50, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
+        name: 'Base Destroyer', health: 40, damage: 8, baseDamage: 35, attackSpeed: 140, price: 50, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
     },
     {
         name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, price: 30, color: 'red', speed: 1.75, span: 20, range: 40, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 65, damage: .5, baseDamage: 1, attackSpeed: 300, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Shield Troop', health: 75, damage: .5, baseDamage: 1, attackSpeed: 300, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
-        name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 50, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
+        name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 40, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
     },
     {
-        name: 'Trebuchet Troop', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 200, researchPrice: 400
+        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 200, researchPrice: 400
     },
     {
-        name: 'Atomic Troop', health: 300, damage: .6, baseDamage: .75, attackSpeed: 1, price: 200, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
+        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 60, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
     },
     {
         name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
@@ -424,6 +434,7 @@ class BossTroop extends Trooper {
         super(troopArr[11], side, player.visualize, multiplier, specialParameters);
     }
 }
+
 function holdDeathAnim(position: number, span: number, visualize: boolean) {
     if (!visualize) return
     let i = 0
@@ -448,11 +459,8 @@ function holdDeathAnim(position: number, span: number, visualize: boolean) {
                 radioactivityPending = false
                 document.body.style.backgroundColor = bgColor
                 document.querySelectorAll('button').forEach(e => {
-                    e.style.backgroundColor = color
-                    if (color === 'rgb(239, 239, 239)') {
-                        e.style.color = 'black'
-                    }
-                    else e.style.color = 'rgb(169,169,169)'
+                    e.style.backgroundColor = buttonBg
+                    e.style.color = buttonColor
                 })
             }, 22000)
         }
@@ -869,6 +877,8 @@ class Player implements playerInterface{
                         this.game.atomicDoomPending = true
                         setTimeout(() => {this.game.atomicDoomPending = false}, 22000)
                         console.log('atomicDoomPending')
+                        this.playerUnits.splice(i, 1)
+                        return
                     }
                     // playerUnit.doDeleteAnim = true
                     enemy.addFunds(playerUnit.price * 3)
@@ -948,7 +958,7 @@ class Player implements playerInterface{
             let div = document.getElementById(this.side)
             troopArr.forEach((stat, i) => {
                 let button = document.createElement('button')
-                button.innerHTML = `${stat.name}: ${stat.price}`
+                button.innerHTML = `<span style="color: ${stat.color}"><i class="fa-circle"></i></span> ${stat.name}: ${stat.price}`
                 div.appendChild(button)
                 button.className = this.side + 'Button'
                 div.appendChild(document.createElement('br'))
@@ -964,7 +974,7 @@ class Player implements playerInterface{
             })
             div.appendChild(document.createElement('hr'))
             let button = document.createElement('button')
-            button.innerHTML = `Increase all stats by 20%: 2500`
+            button.innerHTML = `Increase all stats by 20%: 1500`
             div.appendChild(button)
             button.id = 'incMult'
             if (bindEventListeners) {
@@ -995,7 +1005,8 @@ class Player implements playerInterface{
             this.unlockedUnits[index] = true
             try {
                 // @ts-ignore
-                if (this.DOMAccess) element.innerHTML = `${troopArr[index].name}: ${troopArr[index].price}`
+                if (this.DOMAccess) element.innerHTML =
+                    `<span style="color: ${troopArr[index].color}"><i class="fa-circle"></i></span> ${troopArr[index].name}: ${troopArr[index].price}`
             }
             catch (e) {}
             // document.querySelectorAll(`.${this.side}`)[index].removeAttribute('disabled')
@@ -1005,7 +1016,7 @@ class Player implements playerInterface{
             element.style.backgroundColor = 'red'
             setTimeout(() => {
                 // @ts-ignore
-                element.style.backgroundColor = color
+                element.style.backgroundColor = buttonBg
             }, 800)
             // console.log('Not enough money, dummy')
         }
@@ -1249,10 +1260,11 @@ class InternetPlayer extends Player implements playerInterface {
         this.enemyUnits = []
         this.firstTimeAtomicDoom = true
         socket.on('mess', message => {console.log(message)})
-        socket.on('side', (side, checkForAvailMoney) => {
+
+        socket.on('side', (side, checkForAvailMoney, unlockedUnits) => {
             if (side === 'Server Full') {
                 this.message = 'Logged in as spectator'
-                setTimeout(() => {this.message = ''}, 5000)
+                setTimeout(() => {this.message = ''}, 7000)
                 return
             }
             else {
@@ -1260,6 +1272,7 @@ class InternetPlayer extends Player implements playerInterface {
                 console.log('Overdraft:', !checkForAvailMoney)
                 this.side = side
                 console.log('side: ', this.side)
+                this.unlockedUnits = unlockedUnits
                 if (side) this.addGUI(socket)
             }
         })
@@ -1269,15 +1282,16 @@ class InternetPlayer extends Player implements playerInterface {
 
         if (this.side || this.spectator) socket.on('game', (playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits,
                                                             leftMoney, rightMoney, time) => {
-            this.updateMoney(leftMoney, rightMoney)
+            this.updateMoney(leftMoney, rightMoney, playerOneUnits.length, playerTwoUnits.length)
             if (this.side === 'left') this.display(playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits, time)
             else if (this.side === 'right') this.display(playerTwoBase, playerOneBase, playerTwoUnits, playerOneUnits, time)
         });
-        socket.on('atomic', atomicDoomPending => {
+        socket.on('atomic', (atomicDoomPending) => {
             if (atomicDoomPending && this.firstTimeAtomicDoom) {
                 console.log('atomicDoomPending')
                 this.firstTimeAtomicDoom = false
-                holdDeathAnim(500, 28, true)
+
+                holdDeathAnim(canvasWidth / 2, 28, true)
             }
             if (!atomicDoomPending) this.firstTimeAtomicDoom = true
         })
@@ -1308,9 +1322,13 @@ class InternetPlayer extends Player implements playerInterface {
     }
 
     displayText(text: string) {
-        cx.font = "45px Arial";
-        cx.textAlign = "center";
         cx.fillStyle = "red";
+        if (text.length > 10) {
+            cx.font = "30px Arial"
+            cx.fillStyle = "green";
+        }
+        else cx.font = "45px Arial"
+        cx.textAlign = "center";
         cx.fillText(`${text}`, canvasWidth / 2, canvasHeight / 2);
     }
 
@@ -1376,24 +1394,25 @@ class InternetPlayer extends Player implements playerInterface {
         this.unlockUnits(false)
         let buttons = Array.from(document.getElementsByClassName(this.side + 'Button'))
         buttons.forEach((button, i) => {
-            if (i === troopArr.length) return
+            if (i >= troopArr.length) return
             button.addEventListener('click', () => {
                 if (this.unlockedUnits[i]) {
                     // @ts-ignore
                     socket.emit(`AddTroop`, this.side, i)
                 }
-                else if (this.money >= troopArr[i].researchPrice || !this.checkForAvailMoney) {
+                else if (this.money > troopArr[i - 1].researchPrice || !this.checkForAvailMoney) {
                     this.purchaseUnit(i, button)
                     // @ts-ignore
-                    socket.emit(`AddMoney`, this.side, -troopArr[i].researchPrice)
-                    console.log(this.unlockedUnits)
+                    socket.emit(`unlockTroop`, this.side, i)
+
+                    // socket.emit(`AddMoney`, this.side, -troopArr[i].researchPrice)
                 }
                 else {
                     // @ts-ignore
                     button.style.backgroundColor = 'red'
                     setTimeout(() => {
                         // @ts-ignore
-                        button.style.backgroundColor = color
+                        button.style.backgroundColor = buttonBg
                     }, 800)
                 }
             })
@@ -1404,11 +1423,14 @@ class InternetPlayer extends Player implements playerInterface {
         })
     }
 
-    updateMoney(leftMoney: number, rightMoney: number) {
+    updateMoney(leftMoney: number, rightMoney: number, leftTroops: number, rightTroops: number) {
         if (this.side === 'left') this.money = leftMoney
         else this.money = rightMoney
         document.getElementById('leftMoney').innerText = `Money: ${leftMoney}`
         document.getElementById('rightMoney').innerText = `Money: ${rightMoney}`
+        document.getElementById('encleft').innerText = `${leftTroops} / ${10}`
+        document.getElementById('encright').innerText = `${rightTroops} / ${10}`
+
     }
 }
 // try {
@@ -1422,6 +1444,7 @@ try {
     module.exports = {
         Game: Game,
         Player: Player,
+        troopArr: troopArr,
     }
 }
 catch (e) {}
@@ -1437,7 +1460,7 @@ function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
     document.querySelectorAll('button').forEach(e => {
         if (document.body.scrollWidth > 477) {
             e.style.width = 200 + 'px'
-            if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)'
+            if (darkTheme) e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)'
             e.style.margin = '4px'
             return
         }
@@ -1447,10 +1470,10 @@ function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
         if (document.body.scrollWidth <= 347) {
             e.style.width = btnNarrowerWidth + 'px'
         }
-        if (color === 'rgb(239,239,239') e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)'
+        if (darkTheme) e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)'
         e.style.margin = '0'
         e.style.marginTop = '5px'
-        e.style.backgroundColor = color
+        e.style.backgroundColor = buttonBg
 
     })
     let cxHeight = document.getElementById('cx').offsetHeight
@@ -1460,7 +1483,7 @@ function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
 
 try {
     let hostIP = self.location.hostname
-    let hostPort = '8081'
+    let hostPort = '8083'
 
     let audioPlaying = false
     let audio = new Audio('img/Age of War - Theme Soundtrack.mp3');
@@ -1520,7 +1543,7 @@ try {
                     return
                 }
                 alert(`Game code is: ${res}`)
-                new InternetPlayer(0, '', false, `localhost:${res}`)
+                new InternetPlayer(0, 'left', false, `localhost:${res}`)
                 initializeUI(160, 120)
             })
         })
@@ -1536,6 +1559,7 @@ try {
         method: 'GET'
     }).then((res) => {
         res.json().then((mess) => {
+            if (mess != 'Available') return
             document.getElementById('onlineIndicator').style.color = 'green'
             document.getElementById('onlineIndicator').innerHTML = '&#10004; Play online: Available!'
         })

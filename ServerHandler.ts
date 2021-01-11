@@ -8,10 +8,10 @@ const fs = require('fs');
 let tcpPortUsed = require('tcp-port-used');
 
 let connectedUsersThisSession = 0
-const port = 8081                   // port for Server Handler
-let nextServerPort: number = 8082   // starting port for server
+const port = 8083                   // port for Server Handler
+let nextServerPort: number = 8085   // starting port for server
 
-setInterval(() => {nextServerPort = 8082}, 43200000) // every 12h resets
+setInterval(() => {nextServerPort = 8085}, 43200000) // every 12h resets
 
 exec('npx http-server', [], (err, output, stderr) => {
     if (err) {

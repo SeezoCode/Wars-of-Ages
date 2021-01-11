@@ -22,6 +22,9 @@ class ServerSideGame extends index.Game {
         super(player1, player2, visualize, DOMAccess, playerUnits1, playerUnits2);
         this.players[0].enemyBase = this.playerTwoBase
         this.players[1].enemyBase = this.playerOneBase
+        this.players[0].money = 50
+        this.players[1].money = 50
+
         this.players[0].unlockedUnits = [true, false, false, false, false, false, false, false, false, false]
         this.players[1].unlockedUnits = [true, false, false, false, false, false, false, false, false, false]
         this.fps = fps
@@ -39,7 +42,7 @@ class ServerSideGame extends index.Game {
         let interval = setInterval(() => {
             if (pause) {
                 if (this.connectedUsersCount < 2) {
-                    io.emit('message', 'Pause')
+                    io.emit('message', 'Waiting for opponent to join, code: ' + process.argv[2])
                     this.wasPaused = true
                     return
                 } else if (this.wasPaused) {
@@ -49,13 +52,17 @@ class ServerSideGame extends index.Game {
             }
             if (this.players[0].enemyBase.health <= 0) {
                 io.emit('win', 'LEFT HAS WON')
-                clearInterval(interval)
-                process.exit()
+                setTimeout(() => {
+                    clearInterval(interval)
+                    process.exit()
+                }, 3000)
             }
             if (this.players[1].enemyBase.health <= 0) {
                 io.emit('win', 'RIGHT HAS WON')
-                clearInterval(interval)
-                process.exit()
+                setTimeout(() => {
+                    clearInterval(interval)
+                    process.exit()
+                }, 3000)
             }
 
             if (this.atomicDoomPending) io.emit('atomic', true)
@@ -83,10 +90,13 @@ io.on('connection', (socket) => {
     console.log(`Port`, process.argv[2], `: A user has connected. Connected users: ` + (game.connectedUsersCount + 1));
 
     if (game.connectedUsersCount < 2) {
-        socket.emit('side', game.sideToFill, checkForAvailMoney)
+        socket.emit('side', game.sideToFill, checkForAvailMoney,
+            game.sideToFill === 'left' ? game.players[0].unlockedUnits : game.players[1].unlockedUnits)
     }
     if (game.connectedUsersCount >= 2) {
-        socket.emit('side', 'Server Full')
+        return
+        // console.log(`Port`, process.argv[2], `: A spectator has connected. Connected users: ` + (game.connectedUsersCount))
+        // socket.emit('side', 'Server Full')
     }
     game.connectedUsersCount++
 
@@ -102,29 +112,30 @@ io.on('connection', (socket) => {
         side === 'left' ? game.sideToFill = 'right' : game.sideToFill = 'left'
     })
     socket.on('AddTroop', (side, index) => {
-        if (side === 'left') game.players[0].addTroop(index)
-        if (side === 'right') game.players[1].addTroop(index)
+        if (index === 10 && game.atomicDoomPending) return
+        if (side === 'left' && game.players[0].unlockedUnits[index]) game.players[0].addTroop(index)
+        if (side === 'right' && game.players[1].unlockedUnits[index]) game.players[1].addTroop(index)
     })
     socket.on('AddMoney', (side, amount) => {
         if (side === 'left') game.players[0].addFunds(amount)
         if (side === 'right') game.players[1].addFunds(amount)
     })
     socket.on('disconnect', () => {
+        // if (this.spectator) {
+        //     console.log(`Port`, process.argv[2], `: Spectator has disconnected. Connected users:`, game.connectedUsersCount - 1)
+        //     return
+        // }
         game.connectedUsersCount--
         console.log(`Port`, process.argv[2], `: A user has disconnected. Connected users:`, game.connectedUsersCount)
     })
+    socket.on('unlockTroop', (side, i) => {
+        game.players[side === 'left' ? 0 : 1].unlockedUnits[i] = true
+        game.players[side === 'left' ? 0 : 1].money -= index.troopArr[i].researchPrice
+    })
     socket.on('multiplier', side => {
-        if (side === 'left') {
-            if (!checkForAvailMoney || game.players[0].money >= 2500) {
-                game.players[0].multiplier *= 1.2
-                game.players[0].money -= 2500
-            }
-        }
-        if (side === 'right') {
-            if (!checkForAvailMoney || game.players[0].money >= 2500)  {
-                game.players[1].multiplier *= 1.2
-                game.players[1].money -= 2500
-            }
+        if (!checkForAvailMoney || game.players[side === 'left' ? 0 : 1].money >= 1500) {
+            game.players[side === 'left' ? 0 : 1].multiplier *= 1.2
+            game.players[side === 'left' ? 0 : 1].money -= 1500
         }
         emitMultiplayer()
     })
