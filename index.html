@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+<!--    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">-->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css">
+    <script src="https://cdn.socket.io/socket.io-3.0.0.js"></script>
 
     <title>Wars of Ages</title>
 
@@ -19,8 +22,13 @@
             margin: 4px;
             background: rgb(239, 239, 239)
         }
+        button[disabled] {
+            color: #838383 !important;
+            background: rgb(220, 220, 220) !important
+        }
         body {
             text-align: center;
+            overflow-y: hidden;
         }
         @media (prefers-color-scheme: dark) {
             button {
@@ -28,12 +36,21 @@
                 background-color: #1c1c1c;
                 color: darkgray
             }
+            button[disabled] {
+                background-color: #262626 !important
+            }
             body {
                 background: rgb(24, 26, 27);
                 color: rgb(241, 241, 241);
             }
             hr {
                 border: 1px solid rgb(43, 43, 43);
+            }
+            .toggle {
+                background: rgb(45, 45, 45) !important;
+            }
+            .indicator {
+                background: rgb(235, 235, 235) !important;
             }
         }
         * {
@@ -54,24 +71,102 @@
         /*        width: 145px;*/
         /*    }*/
         /*}*/
+        .label {
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .label-text {
+            margin-left: 8px;
+        }
+
+        .toggle {
+            isolation: isolate;
+            position: relative;
+            height: 24px;
+            width: 48px;
+            border-radius: 15px;
+            background: #d6d6d6;
+            overflow: hidden;
+        }
+
+        .toggle-inner {
+            z-index: 2;
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            height: 22px;
+            width: 46px;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+
+        .active-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 200%;
+            background: #003dda;
+            transform: translate3d(-100%, 0, 0);
+            transition: transform 0.05s linear 0.17s;
+        }
+
+        .toggle-state {
+            display: none;
+        }
+
+        .indicator {
+            height: 100%;
+            width: 200%;
+            background: white;
+            border-radius: 13px;
+            transform: translate3d(-75%, 0, 0);
+            transition: transform 0.35s cubic-bezier(0.85, 0.05, 0.18, 1.35);
+        }
+
+        .toggle-state:checked ~ .active-bg {
+            transform: translate3d(-50%, 0, 0);
+        }
+
+        .toggle-state:checked ~ .toggle-inner .indicator {
+            transform: translate3d(25%, 0, 0);
+        }
     </style>
 
 </head>
 <!--; -->
 <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0;">
     <div id="startingScreen" class="vertical-center">
-        <h1>Wars of Ages</h1><br>
-        <p style="color: rgb(120, 120, 120)">Please choose:</p>
+        <h1>Wars of Ages</h1>
+        <p style="color: #c3c3c3">Filip Hostinský</p>
         <button id="pl">Player vs Player</button>
-        <button id="bot">Player vs Bot</button> <br><hr>
-        <a href="Tips.html">Tips and Tricks</a>
+        <button id="bot">Player vs Bot</button>
+        <br> <hr>
+        <p id="onlineIndicator"><i class="fa fa-spinner fa-spin"></i> Play online: </p>
+        <button id="mul">Connect to multiplayer game with code</button>
+        <button id="code">Create multiplayer game and get code</button>
+        <br><hr>
+        <label class="label">
+            <a href="guide.html" style="margin-right: 20px">Guide</a>
+            <div class="label-text" style="margin-right: 7px">Music</div>
+            <div class="toggle">
+                <input class="toggle-state" type="checkbox" name="check" id="music" value="check" />
+                <div class="toggle-inner">
+                    <div class="indicator"></div>
+                </div>
+                <div class="active-bg"></div>
+            </div>
+        </label>
     </div>
 
 
-    <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px; display: none"></canvas>
+    <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px; display: none; padding: 0; margin-bottom: 0"></canvas>
     <script type="module" src="index.js"></script>
+    <script src="Client.js"></script>
 
-    <div id="controls" class="row" style="margin-top: 10px; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
+    <div id="controls" class="row" style="margin-top: 0; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
         <div id="left" class="col" style="overflow:auto">
             <p id="leftMoney">Money: 55</p>
             <p id="encleft"></p>
@@ -82,7 +177,7 @@
             <p id="statsleft"></p>
         </div>
         <br>
-        <div id="right" class="col" style="overflow:auto">
+        <div id="right" class="col" style="overflow:auto; margin-bottom: 35px">
             <p id="rightMoney">Money: 55</p>
             <p id="encright"></p>
             <p id="trsright"></p>
