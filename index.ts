@@ -976,6 +976,7 @@ class Player implements playerInterface{
             div.appendChild(document.createElement('hr'))
             let button = document.createElement('button')
             button.innerHTML = `Increase all troop stats by 20%: 1500`
+            
             div.appendChild(button)
             button.id = 'incMult'
             if (bindEventListeners) {

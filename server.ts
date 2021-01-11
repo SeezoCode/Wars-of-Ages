@@ -22,8 +22,9 @@ class ServerSideGame extends index.Game {
         super(player1, player2, visualize, DOMAccess, playerUnits1, playerUnits2);
         this.players[0].enemyBase = this.playerTwoBase
         this.players[1].enemyBase = this.playerOneBase
-        this.players[0].money = 505566
-        this.players[1].money = 505566
+
+        this.players[0].money = 50
+        this.players[1].money = 50
 
         this.players[0].unlockedUnits = [true, false, false, false, false, false, false, false, false, false]
         this.players[1].unlockedUnits = [true, false, false, false, false, false, false, false, false, false]
