@@ -1442,7 +1442,7 @@ try {
         console.log(err);
         document.getElementById('onlineIndicator').innerHTML =
             '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
-                ' target="blank">How to create a server</a>';
+                ' target="blank">How to host a server</a>';
         // @ts-ignore
         document.getElementById('mul').disabled = false;
         // @ts-ignore
