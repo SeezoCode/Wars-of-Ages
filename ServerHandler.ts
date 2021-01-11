@@ -3,27 +3,20 @@
 
 const httpServer = require("http");
 const { fork } = require('child_process');
-const { exec } = require('child_process');
-const fs = require('fs');
 let tcpPortUsed = require('tcp-port-used');
 
 let connectedUsersThisSession = 0
-const port = 8083                   // port for Server Handler
+const port = 8083                   // port for Server Handler, Also change in index.ts on line 1489!
 let nextServerPort: number = 8085   // starting port for server
 
 setInterval(() => {nextServerPort = 8085}, 43200000) // every 12h resets
 
-exec('npx http-server', [], (err, output, stderr) => {
-    if (err) {
-        console.log(err)
-    }
-})
-try {
-    if (process.argv[2] != 'false') fork('node_modules/http-server/bin/http-server')
-}
-catch (e) {
-    console.log('Could not start http server')
-}
+// exec('npx http-server', [], (err, output, stderr) => {
+//     if (err) {
+//         console.log(err)
+//     }
+// })
+
 
 let connected = {
 
@@ -44,7 +37,7 @@ httpServer.createServer((req, res) => {
     console.log('Page views:', ++connectedUsersThisSession)
 
     if (req.method == 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'})
         res.end(JSON.stringify(`Available`));
     }
 
@@ -68,8 +61,15 @@ httpServer.createServer((req, res) => {
     }
 }).listen(port);
 
+try {
+    if (process.argv[2] != 'false') fork('node_modules/http-server/bin/http-server')
+}
+catch (e) {
+    console.log('Could not start http server')
+}
+
 function setAvailablePort() {
-    if (nextServerPort > 65000) nextServerPort = 8082
+    if (nextServerPort > 65000) nextServerPort = 8085
     nextServerPort++
     tcpPortUsed.check(nextServerPort, 'localhost')
         .then(function(inUse) {
