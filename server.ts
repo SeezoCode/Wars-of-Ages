@@ -130,8 +130,10 @@ io.on('connection', (socket) => {
         console.log(`Port`, process.argv[2], `: A user has disconnected. Connected users:`, game.connectedUsersCount)
     })
     socket.on('unlockTroop', (side, i) => {
-        game.players[side === 'left' ? 0 : 1].unlockedUnits[i] = true
-        game.players[side === 'left' ? 0 : 1].money -= index.troopArr[i].researchPrice
+        if (game.players[side === 'left' ? 0 : 1].money >= index.troopArr[i].researchPrice) {
+            game.players[side === 'left' ? 0 : 1].unlockedUnits[i] = true
+            game.players[side === 'left' ? 0 : 1].money -= index.troopArr[i].researchPrice
+        }
     })
     socket.on('multiplier', side => {
         if (!checkForAvailMoney || game.players[side === 'left' ? 0 : 1].money >= 1500) {

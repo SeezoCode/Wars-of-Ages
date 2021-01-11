@@ -1403,7 +1403,7 @@ class InternetPlayer extends Player implements playerInterface {
                     // @ts-ignore
                     socket.emit(`AddTroop`, this.side, i)
                 }
-                else if (this.money > troopArr[i - 1].researchPrice || !this.checkForAvailMoney) {
+                else if (this.money > troopArr[i].researchPrice || !this.checkForAvailMoney) {
                     this.purchaseUnit(i, button)
                     // @ts-ignore
                     socket.emit(`unlockTroop`, this.side, i)
@@ -1487,6 +1487,7 @@ function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
 try {
     let hostIP = self.location.hostname
     let hostPort = '8083'
+    let onlineConnection = false
 
     let audioPlaying = false
     let audio = new Audio('img/Age of War - Theme Soundtrack.mp3');
@@ -1524,18 +1525,34 @@ try {
         }
     )
     document.getElementById('mul').addEventListener('click', () => {
-        let address = prompt('Enter address:', `http://localhost:8080`)
+        let address
+        // let address = prompt('Enter address:', `http://${hostIP}:${hostPort}`)
         // let address = `http://${hostIP}:${hostPort}`
-        // let address = prompt('Enter code:', '')
-        if (address === null) return
-        // address = `http://${hostIP}:${address}`
+        if (onlineConnection) {
+            address = prompt('Enter code:', '')
+            if (address === null) return
+            address = `http://${hostIP}:${address}`
+        }
+        else {
+            address = prompt('Enter address:', `http://localhost:8080`)
+            if (address === null) return
+        }
         new InternetPlayer(0, 'left', false, address)
         initializeUI(160, 120)
         }
     )
     document.getElementById('code').addEventListener('click', () => {
         document.getElementById('code').innerHTML = `<i class="fa fa-spinner fa-spin"></i> ${document.getElementById('code').innerHTML}`
-        fetch(`http://${hostIP}:${hostPort}`, {
+        let address
+        if (onlineConnection) {
+            address = `http://${hostIP}:${hostPort}`
+        }
+        else {
+            address = prompt('Enter address:', `http://localhost:8080`)
+            if (address === null) return
+        }
+
+        fetch(address, {
             headers: new Headers(),
             method: 'POST'
         }).then((res) => {
@@ -1565,14 +1582,21 @@ try {
             if (mess != 'Available') return
             document.getElementById('onlineIndicator').style.color = 'green'
             document.getElementById('onlineIndicator').innerHTML = '&#10004; Play online: Available!'
+            // @ts-ignore
+            document.getElementById('mul').disabled = false
+            // @ts-ignore
+            document.getElementById('code').disabled = false
+            onlineConnection = true
         })
     }).catch(err => {
         console.log(err)
-        document.getElementById('onlineIndicator').innerHTML = '<span style="color: red">&#10006;</span> Play online'
+        document.getElementById('onlineIndicator').innerHTML =
+            '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
+            ' target="blank">How to create a server</a>'
         // @ts-ignore
-        document.getElementById('mul').disabled = true
+        document.getElementById('mul').disabled = false
         // @ts-ignore
-        document.getElementById('code').disabled = true
+        document.getElementById('code').disabled = false
     })
 
 }

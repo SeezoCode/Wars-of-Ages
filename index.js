@@ -1265,7 +1265,7 @@ var InternetPlayer = /** @class */ (function (_super) {
                     // @ts-ignore
                     socket.emit("AddTroop", _this.side, i);
                 }
-                else if (_this.money > troopArr[i - 1].researchPrice || !_this.checkForAvailMoney) {
+                else if (_this.money > troopArr[i].researchPrice || !_this.checkForAvailMoney) {
                     _this.purchaseUnit(i, button);
                     // @ts-ignore
                     socket.emit("unlockTroop", _this.side, i);
@@ -1344,6 +1344,7 @@ function resize(btnWiderWidth, btnNarrowerWidth) {
 try {
     var hostIP_1 = self.location.hostname;
     var hostPort_1 = '8083';
+    var onlineConnection_1 = false;
     var audioPlaying_1 = false;
     var audio_1 = new Audio('img/Age of War - Theme Soundtrack.mp3');
     document.getElementById('music').addEventListener('click', function () {
@@ -1373,18 +1374,35 @@ try {
         initializeUI(160, 120);
     });
     document.getElementById('mul').addEventListener('click', function () {
-        var address = prompt('Enter address:', "http://localhost:8080");
+        var address;
+        // let address = prompt('Enter address:', `http://${hostIP}:${hostPort}`)
         // let address = `http://${hostIP}:${hostPort}`
-        // let address = prompt('Enter code:', '')
-        if (address === null)
-            return;
-        // address = `http://${hostIP}:${address}`
+        if (onlineConnection_1) {
+            address = prompt('Enter code:', '');
+            if (address === null)
+                return;
+            address = "http://" + hostIP_1 + ":" + address;
+        }
+        else {
+            address = prompt('Enter address:', "http://localhost:8080");
+            if (address === null)
+                return;
+        }
         new InternetPlayer(0, 'left', false, address);
         initializeUI(160, 120);
     });
     document.getElementById('code').addEventListener('click', function () {
         document.getElementById('code').innerHTML = "<i class=\"fa fa-spinner fa-spin\"></i> " + document.getElementById('code').innerHTML;
-        fetch("http://" + hostIP_1 + ":" + hostPort_1, {
+        var address;
+        if (onlineConnection_1) {
+            address = "http://" + hostIP_1 + ":" + hostPort_1;
+        }
+        else {
+            address = prompt('Enter address:', "http://localhost:8080");
+            if (address === null)
+                return;
+        }
+        fetch(address, {
             headers: new Headers(),
             method: 'POST'
         }).then(function (res) {
@@ -1414,14 +1432,21 @@ try {
                 return;
             document.getElementById('onlineIndicator').style.color = 'green';
             document.getElementById('onlineIndicator').innerHTML = '&#10004; Play online: Available!';
+            // @ts-ignore
+            document.getElementById('mul').disabled = false;
+            // @ts-ignore
+            document.getElementById('code').disabled = false;
+            onlineConnection_1 = true;
         });
     }).catch(function (err) {
         console.log(err);
-        document.getElementById('onlineIndicator').innerHTML = '<span style="color: red">&#10006;</span> Play online';
+        document.getElementById('onlineIndicator').innerHTML =
+            '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
+                ' target="blank">How to create a server</a>';
         // @ts-ignore
-        document.getElementById('mul').disabled = true;
+        document.getElementById('mul').disabled = false;
         // @ts-ignore
-        document.getElementById('code').disabled = true;
+        document.getElementById('code').disabled = false;
     });
 }
 // catch (e) {}

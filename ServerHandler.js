@@ -1,25 +1,16 @@
 // node SeverHandler false (launch without http-server)
 var httpServer = require("http");
 var fork = require('child_process').fork;
-var exec = require('child_process').exec;
-var fs = require('fs');
 var tcpPortUsed = require('tcp-port-used');
 var connectedUsersThisSession = 0;
-var port = 8083; // port for Server Handler
+var port = 8083; // port for Server Handler, Also change in index.ts on line 1489!
 var nextServerPort = 8085; // starting port for server
 setInterval(function () { nextServerPort = 8085; }, 43200000); // every 12h resets
-exec('npx http-server', [], function (err, output, stderr) {
-    if (err) {
-        console.log(err);
-    }
-});
-try {
-    if (process.argv[2] != 'false')
-        fork('node_modules/http-server/bin/http-server');
-}
-catch (e) {
-    console.log('Could not start http server');
-}
+// exec('npx http-server', [], (err, output, stderr) => {
+//     if (err) {
+//         console.log(err)
+//     }
+// })
 var connected = {};
 setInterval(function () { connected = {}; }, 60000);
 function checkConnectionForSpam(ip, increaseBy) {
@@ -54,9 +45,16 @@ httpServer.createServer(function (req, res) {
         });
     }
 }).listen(port);
+try {
+    if (process.argv[2] != 'false')
+        fork('node_modules/http-server/bin/http-server');
+}
+catch (e) {
+    console.log('Could not start http server');
+}
 function setAvailablePort() {
     if (nextServerPort > 65000)
-        nextServerPort = 8082;
+        nextServerPort = 8085;
     nextServerPort++;
     tcpPortUsed.check(nextServerPort, 'localhost')
         .then(function (inUse) {
