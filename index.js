@@ -283,7 +283,8 @@ var ExplodingTroop = /** @class */ (function (_super) {
         }
         return _super.prototype.isInFront.call(this, playerUnits, index);
     };
-    ExplodingTroop.prototype.deleteAnim = function () {
+    ExplodingTroop.prototype.deleteAnim = function (position) {
+        if (position === void 0) { position = this.position; }
         if (this.visualize) {
             cx.fillStyle = 'red';
             cx.beginPath();
@@ -584,6 +585,8 @@ var Game = /** @class */ (function () {
             unit.drawAttack(this.time);
         }
     };
+    Game.prototype.boomerDoomer = function (position) {
+    };
     Game.prototype.animation = function () {
         var _this = this;
         var move = function () { _this.move(); };
@@ -742,12 +745,14 @@ var Player = /** @class */ (function () {
                     if (playerUnit.name === troopArr[10].name) {
                         _this.game.atomicDoomPending = true;
                         setTimeout(function () { _this.game.atomicDoomPending = false; }, 22000);
-                        console.log('atomicDoomPending');
-                        _this.playerUnits.splice(i, 1);
-                        return;
                     }
-                    // playerUnit.doDeleteAnim = true
-                    enemy.addFunds(playerUnit.price * 3);
+                    else if (playerUnit.name === troopArr[5].name) {
+                        _this.game.boomerDoomer(playerUnit.position);
+                        // this.boomerDoomer(playerUnit.position)
+                    }
+                    else {
+                        enemy.addFunds(playerUnit.price * 3);
+                    }
                     _this.playerUnits.splice(i, 1);
                 }
             });
@@ -1119,6 +1124,8 @@ var InternetPlayer = /** @class */ (function (_super) {
         _this.message = '';
         _this.playerMultiplier = 1;
         _this.enemyMultiplier = 1;
+        _this.boomerDoom = false;
+        _this.boomerDoomAt = -1;
         var socket = io(address); // ws://localhost:8080
         // this.map(new Player(1000, 'right', false), true, true, [], [], [], new Base(baseStats, 'right'), new Base(baseStats, 'left'))
         _this.DOMAccess = true;
@@ -1144,6 +1151,11 @@ var InternetPlayer = /** @class */ (function (_super) {
         });
         socket.on('getSide', function () {
             socket.emit('getSide', _this.side);
+        });
+        socket.on('boomer', function (position) {
+            _this.boomerDoom = true;
+            _this.boomerDoomAt = position;
+            setTimeout(function () { _this.boomerDoom = false; }, 85);
         });
         if (_this.side || _this.spectator)
             socket.on('game', function (playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits, leftMoney, rightMoney, time) {
@@ -1186,6 +1198,9 @@ var InternetPlayer = /** @class */ (function (_super) {
         InternetPlayer.draw(playerBase, this.playerMultiplier);
         InternetPlayer.draw(enemyBase, this.enemyMultiplier);
     };
+    InternetPlayer.prototype.boomerBoom = function (position) {
+        cx.drawImage(explosionIMG, position - 20 / 2 - 34, canvasHeight - 65 - 35 / 2);
+    };
     InternetPlayer.prototype.displayText = function (text) {
         cx.fillStyle = "red";
         if (text.length > 10) {
@@ -1203,7 +1218,7 @@ var InternetPlayer = /** @class */ (function (_super) {
             this.drawCross(base.position + base.span / 2, 26);
         }
         if (canvasHeight - 105 - multiplier < canvasHeight - 105 - 50)
-            multiplier = canvasHeight - 105 - 50;
+            multiplier = canvasHeight - 105 - 80;
         cx.fillStyle = base.color;
         cx.fillRect(base.position, canvasHeight - 105 - multiplier, base.span, 75 + multiplier);
         cx.fillStyle = 'lightgray';
@@ -1244,6 +1259,8 @@ var InternetPlayer = /** @class */ (function (_super) {
         }
         this.playerUnits = [];
         this.enemyUnits = [];
+        if (this.boomerDoom)
+            this.boomerBoom(this.boomerDoomAt);
         if (this.message)
             this.displayText(this.message);
     };
@@ -1384,7 +1401,7 @@ try {
             address = "http://" + hostIP_1 + ":" + address;
         }
         else {
-            address = prompt('Enter address:', "http://localhost:8080");
+            address = prompt('Enter address:', "http://localhost:" + port);
             if (address === null)
                 return;
         }

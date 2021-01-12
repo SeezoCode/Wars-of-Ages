@@ -12,7 +12,7 @@ var __extends = (this && this.__extends) || (function () {
     };
 })();
 if (!process.argv[2])
-    process.argv[2] = "8080";
+    process.argv[2] = "8085";
 if (!process.argv[4])
     process.argv[4] = "true";
 if (!process.argv[5])
@@ -33,6 +33,8 @@ var ServerSideGame = /** @class */ (function (_super) {
         if (fps === void 0) { fps = 60; }
         var _this = _super.call(this, player1, player2, visualize, DOMAccess, playerUnits1, playerUnits2) || this;
         _this.wasPaused = false;
+        _this.leftID = '';
+        _this.rightID = '';
         _this.players[0].enemyBase = _this.playerTwoBase;
         _this.players[1].enemyBase = _this.playerOneBase;
         _this.players[0].money = 50;
@@ -44,6 +46,9 @@ var ServerSideGame = /** @class */ (function (_super) {
         _this.connectedUsersCount = 0;
         return _this;
     }
+    ServerSideGame.prototype.boomerDoomer = function (position) {
+        io.emit('boomer', position);
+    };
     ServerSideGame.prototype.animation = function () {
         var _this = this;
         setInterval(function () {
@@ -54,7 +59,7 @@ var ServerSideGame = /** @class */ (function (_super) {
         }, 60000);
         var interval = setInterval(function () {
             if (pause) {
-                if (_this.connectedUsersCount < 2) {
+                if (!_this.leftID || !_this.rightID) {
                     io.emit('message', 'Waiting for opponent to join, code: ' + process.argv[2]);
                     _this.wasPaused = true;
                     return;
@@ -78,6 +83,7 @@ var ServerSideGame = /** @class */ (function (_super) {
                     process.exit();
                 }, 3000);
             }
+            io.emit('game', game.playerOneBase, game.playerTwoBase, game.playerOneUnits, game.playerTwoUnits, game.players[0].money, game.players[1].money, game.time);
             if (_this.atomicDoomPending)
                 io.emit('atomic', true);
             _this.move();
@@ -93,21 +99,20 @@ var io = require('socket.io')(http, {
 });
 var game = new ServerSideGame(new index.Player(55, 'left', checkForAvailMoney), new index.Player(55, 'right', checkForAvailMoney), false, false, [], [], 60);
 io.on('connection', function (socket) {
-    console.log("Port", process.argv[2], ": A user has connected. Connected users: " + (game.connectedUsersCount + 1));
-    if (game.connectedUsersCount < 2) {
-        socket.emit('side', game.sideToFill, checkForAvailMoney, game.sideToFill === 'left' ? game.players[0].unlockedUnits : game.players[1].unlockedUnits);
-    }
-    if (game.connectedUsersCount >= 2) {
-        return;
-        // console.log(`Port`, process.argv[2], `: A spectator has connected. Connected users: ` + (game.connectedUsersCount))
-        // socket.emit('side', 'Server Full')
-    }
     game.connectedUsersCount++;
-    setInterval(function () {
-        socket.emit('game', game.playerOneBase, game.playerTwoBase, game.playerOneUnits, game.playerTwoUnits, game.players[0].money, game.players[1].money, game.time);
-        socket.emit('getSide');
-        // console.log(connectedUsersCount)
-    }, 1000 / 60);
+    console.log("Port", process.argv[2], ': A user has connected. Connected users: ' + (game.connectedUsersCount));
+    if (!game.leftID) {
+        game.leftID = socket.id;
+        socket.emit('side', 'left', checkForAvailMoney, game.players[0].unlockedUnits);
+    }
+    else if (!game.rightID) {
+        game.rightID = socket.id;
+        socket.emit('side', 'right', checkForAvailMoney, game.players[1].unlockedUnits);
+    }
+    else {
+        console.log("Port", process.argv[2], ': A spectator has connected. Connected users: ' + (game.connectedUsersCount));
+        socket.emit('side', 'Server Full');
+    }
     socket.on('getSide', function (side) {
         // console.log('getSide: ', side)
         side === 'left' ? game.sideToFill = 'right' : game.sideToFill = 'left';
@@ -127,12 +132,20 @@ io.on('connection', function (socket) {
             game.players[1].addFunds(amount);
     });
     socket.on('disconnect', function () {
-        // if (this.spectator) {
-        //     console.log(`Port`, process.argv[2], `: Spectator has disconnected. Connected users:`, game.connectedUsersCount - 1)
-        //     return
-        // }
         game.connectedUsersCount--;
-        console.log("Port", process.argv[2], ": A user has disconnected. Connected users:", game.connectedUsersCount);
+        if (socket.id === game.leftID) {
+            game.leftID = '';
+            // console.log('left disconnect')
+        }
+        else if (socket.id === game.rightID) {
+            game.rightID = '';
+            // console.log('right disconnect')
+        }
+        else {
+            console.log("Port", process.argv[2], ': Spectator has disconnected. Connected users:', game.connectedUsersCount);
+            return;
+        }
+        console.log("Port", process.argv[2], ': A user has disconnected. Connected users:', game.connectedUsersCount);
     });
     socket.on('unlockTroop', function (side, i) {
         if (game.players[side === 'left' ? 0 : 1].money >= index.troopArr[i].researchPrice) {
