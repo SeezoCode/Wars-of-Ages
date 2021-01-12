@@ -6,7 +6,7 @@ const { fork } = require('child_process');
 let tcpPortUsed = require('tcp-port-used');
 
 let connectedUsersThisSession = 0
-const port = 8083                   // port for Server Handler, Also change in index.ts on line 1489!
+const port = 8083                   // port for Server Handler, Also change in index.ts on line 1513!
 let nextServerPort: number = 8085   // starting port for server
 
 setInterval(() => {nextServerPort = 8085}, 43200000) // every 12h resets

@@ -1,5 +1,5 @@
 
-if (!process.argv[2]) process.argv[2] = `8080`
+if (!process.argv[2]) process.argv[2] = `8085`
 if (!process.argv[4]) process.argv[4] = `true`
 if (!process.argv[5]) process.argv[5] = `true`
 let checkForAvailMoney = process.argv[4] === 'true'
@@ -16,6 +16,8 @@ class ServerSideGame extends index.Game {
     connectedUsersCount: number
     atomicDoomPending: boolean
     wasPaused: boolean = false
+    leftID: string = ''
+    rightID: string = ''
 
     constructor(player1: playerInterface, player2: playerInterface, visualize: boolean = false, DOMAccess: boolean = false,
                 playerUnits1: Array<number> = [], playerUnits2: Array<number> = [], fps: number = 60) {
@@ -33,6 +35,10 @@ class ServerSideGame extends index.Game {
         this.connectedUsersCount = 0
     }
 
+    boomerDoomer(position: number) {
+        io.emit('boomer', position)
+    }
+
     animation() {
         setInterval(() => {
             if (this.connectedUsersCount === 0) {
@@ -42,7 +48,7 @@ class ServerSideGame extends index.Game {
         }, 60000)
         let interval = setInterval(() => {
             if (pause) {
-                if (this.connectedUsersCount < 2) {
+                if (!this.leftID || !this.rightID) {
                     io.emit('message', 'Waiting for opponent to join, code: ' + process.argv[2])
                     this.wasPaused = true
                     return
@@ -66,6 +72,9 @@ class ServerSideGame extends index.Game {
                 }, 3000)
             }
 
+            io.emit('game', game.playerOneBase, game.playerTwoBase, game.playerOneUnits, game.playerTwoUnits,
+                game.players[0].money, game.players[1].money, game.time);
+
             if (this.atomicDoomPending) io.emit('atomic', true)
 
             this.move()
@@ -88,25 +97,21 @@ let game = new ServerSideGame(new index.Player(55, 'left', checkForAvailMoney),
     [], [], 60)
 
 io.on('connection', (socket) => {
-    console.log(`Port`, process.argv[2], `: A user has connected. Connected users: ` + (game.connectedUsersCount + 1));
-
-    if (game.connectedUsersCount < 2) {
-        socket.emit('side', game.sideToFill, checkForAvailMoney,
-            game.sideToFill === 'left' ? game.players[0].unlockedUnits : game.players[1].unlockedUnits)
-    }
-    if (game.connectedUsersCount >= 2) {
-        return
-        // console.log(`Port`, process.argv[2], `: A spectator has connected. Connected users: ` + (game.connectedUsersCount))
-        // socket.emit('side', 'Server Full')
-    }
     game.connectedUsersCount++
+    console.log(`Port`, process.argv[2], ': A user has connected. Connected users: ' + (game.connectedUsersCount));
 
-    setInterval(() => {
-        socket.emit('game', game.playerOneBase, game.playerTwoBase, game.playerOneUnits, game.playerTwoUnits,
-            game.players[0].money, game.players[1].money, game.time);
-        socket.emit('getSide')
-        // console.log(connectedUsersCount)
-    }, 1000/60)
+    if (!game.leftID) {
+        game.leftID = socket.id
+        socket.emit('side', 'left', checkForAvailMoney, game.players[0].unlockedUnits)
+    }
+    else if (!game.rightID) {
+        game.rightID = socket.id
+        socket.emit('side', 'right', checkForAvailMoney, game.players[1].unlockedUnits)
+    }
+    else {
+        console.log(`Port`, process.argv[2], ': A spectator has connected. Connected users: ' + (game.connectedUsersCount))
+        socket.emit('side', 'Server Full')
+    }
 
     socket.on('getSide', side => {
         // console.log('getSide: ', side)
@@ -122,12 +127,20 @@ io.on('connection', (socket) => {
         if (side === 'right') game.players[1].addFunds(amount)
     })
     socket.on('disconnect', () => {
-        // if (this.spectator) {
-        //     console.log(`Port`, process.argv[2], `: Spectator has disconnected. Connected users:`, game.connectedUsersCount - 1)
-        //     return
-        // }
         game.connectedUsersCount--
-        console.log(`Port`, process.argv[2], `: A user has disconnected. Connected users:`, game.connectedUsersCount)
+        if (socket.id === game.leftID) {
+            game.leftID = ''
+            // console.log('left disconnect')
+        }
+        else if (socket.id === game.rightID) {
+            game.rightID = ''
+            // console.log('right disconnect')
+        }
+        else {
+            console.log(`Port`, process.argv[2], ': Spectator has disconnected. Connected users:', game.connectedUsersCount)
+            return
+        }
+        console.log(`Port`, process.argv[2], ': A user has disconnected. Connected users:', game.connectedUsersCount)
     })
     socket.on('unlockTroop', (side, i) => {
         if (game.players[side === 'left' ? 0 : 1].money >= index.troopArr[i].researchPrice) {

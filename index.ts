@@ -305,7 +305,7 @@ class ExplodingTroop extends Trooper {
         return super.isInFront(playerUnits, index);
     }
 
-    deleteAnim() {
+    deleteAnim(position: number = this.position) {
         if (this.visualize) {
             cx.fillStyle = 'red'
             cx.beginPath();
@@ -554,6 +554,7 @@ interface gameInterface {
     DOMAccess: boolean
     atomicDoomPending: boolean
 
+    boomerDoomer(position: number): void;
 }
 
 class Game implements gameInterface{
@@ -638,6 +639,10 @@ class Game implements gameInterface{
             unit.draw()
             unit.drawAttack(this.time)
         }
+    }
+
+    boomerDoomer(position: number) {
+
     }
 
     animation(): void {
@@ -750,6 +755,7 @@ class Player implements playerInterface{
     maxUnits: number
     DOMAccess: boolean
     multiplier: number = 1
+    private online: boolean;
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean) {
         this.money = money
@@ -876,12 +882,14 @@ class Player implements playerInterface{
                     if (playerUnit.name === troopArr[10].name) {
                         this.game.atomicDoomPending = true
                         setTimeout(() => {this.game.atomicDoomPending = false}, 22000)
-                        console.log('atomicDoomPending')
-                        this.playerUnits.splice(i, 1)
-                        return
                     }
-                    // playerUnit.doDeleteAnim = true
-                    enemy.addFunds(playerUnit.price * 3)
+                    else if (playerUnit.name === troopArr[5].name) {
+                        this.game.boomerDoomer(playerUnit.position)
+                        // this.boomerDoomer(playerUnit.position)
+                    }
+                    else {
+                        enemy.addFunds(playerUnit.price * 3)
+                    }
                     this.playerUnits.splice(i, 1)
                 }
             })
@@ -1251,6 +1259,8 @@ class InternetPlayer extends Player implements playerInterface {
     playerMultiplier: number = 1
     enemyMultiplier: number = 1
     checkForAvailMoney: boolean
+    boomerDoom: boolean = false
+    boomerDoomAt: number = -1
 
     constructor(money, side, checkForAvailMoney, address: string) {
         super(money, side, checkForAvailMoney);
@@ -1281,6 +1291,11 @@ class InternetPlayer extends Player implements playerInterface {
         socket.on('getSide', () => {
             socket.emit('getSide', this.side)
         })
+        socket.on('boomer', position => {
+            this.boomerDoom = true
+            this.boomerDoomAt = position
+            setTimeout(() => {this.boomerDoom = false}, 85)
+        })
 
         if (this.side || this.spectator) socket.on('game', (playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits,
                                                             leftMoney, rightMoney, time) => {
@@ -1288,6 +1303,7 @@ class InternetPlayer extends Player implements playerInterface {
             if (this.side === 'left') this.display(playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits, time)
             else if (this.side === 'right') this.display(playerTwoBase, playerOneBase, playerTwoUnits, playerOneUnits, time)
         });
+
         socket.on('atomic', (atomicDoomPending) => {
             if (atomicDoomPending && this.firstTimeAtomicDoom) {
                 console.log('atomicDoomPending')
@@ -1297,10 +1313,12 @@ class InternetPlayer extends Player implements playerInterface {
             }
             if (!atomicDoomPending) this.firstTimeAtomicDoom = true
         })
+
         socket.on('win', message => {
             this.message = message
             setTimeout(() => {location.reload()}, 7500)
         })
+
         socket.on('multiplier', (left, right) => {
             if (this.side === 'left') {
                 this.playerMultiplier = left
@@ -1323,6 +1341,10 @@ class InternetPlayer extends Player implements playerInterface {
         InternetPlayer.draw(enemyBase, this.enemyMultiplier)
     }
 
+    boomerBoom(position: number) {
+        cx.drawImage(explosionIMG, position - 20 / 2 - 34, canvasHeight - 65 - 35 / 2);
+    }
+
     displayText(text: string) {
         cx.fillStyle = "red";
         if (text.length > 10) {
@@ -1339,7 +1361,7 @@ class InternetPlayer extends Player implements playerInterface {
         if (canvasHeight - 105 - multiplier < canvasHeight - 105 - 50) {
             this.drawCross(base.position + base.span / 2, 26)
         }
-        if (canvasHeight - 105 - multiplier < canvasHeight - 105 - 50) multiplier = canvasHeight - 105 - 50
+        if (canvasHeight - 105 - multiplier < canvasHeight - 105 - 50) multiplier = canvasHeight - 105 - 80
         cx.fillStyle = base.color
         cx.fillRect(base.position, canvasHeight - 105 - multiplier, base.span, 75 + multiplier)
         cx.fillStyle = 'lightgray'
@@ -1382,6 +1404,8 @@ class InternetPlayer extends Player implements playerInterface {
         }
         this.playerUnits = []
         this.enemyUnits = []
+
+        if (this.boomerDoom) this.boomerBoom(this.boomerDoomAt)
 
         if (this.message) this.displayText(this.message)
     }
@@ -1534,7 +1558,7 @@ try {
             address = `http://${hostIP}:${address}`
         }
         else {
-            address = prompt('Enter address:', `http://localhost:8080`)
+            address = prompt('Enter address:', `http://localhost:${port}`)
             if (address === null) return
         }
         new InternetPlayer(0, 'left', false, address)
@@ -1592,7 +1616,7 @@ try {
         console.log(err)
         document.getElementById('onlineIndicator').innerHTML =
             '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
-            ' target="blank">How to create a server</a>'
+            ' target="blank">How to host a server</a>'
         // @ts-ignore
         document.getElementById('mul').disabled = false
         // @ts-ignore
