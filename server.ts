@@ -1,9 +1,11 @@
 
 if (!process.argv[2]) process.argv[2] = `8085`
-if (!process.argv[4]) process.argv[4] = `true`
-if (!process.argv[5]) process.argv[5] = `true`
+if (!process.argv[4]) process.argv[4] = `true` // check for overdraft, doesn't include server-side reasearch and other things
+if (!process.argv[5]) process.argv[5] = `true` // autopause
 let checkForAvailMoney = process.argv[4] === 'true'
 let pause = process.argv[5] === 'true'
+
+let initialMoney = 55
 
 console.log('\n---', 'port: ', process.argv[2], '\n    ' +
     'check for money:', process.argv[4], '\n    ' +
@@ -12,7 +14,6 @@ let index = require('./index')
 
 class ServerSideGame extends index.Game {
     fps: number
-    sideToFill: string
     connectedUsersCount: number
     atomicDoomPending: boolean
     wasPaused: boolean = false
@@ -25,13 +26,12 @@ class ServerSideGame extends index.Game {
         this.players[0].enemyBase = this.playerTwoBase
         this.players[1].enemyBase = this.playerOneBase
 
-        this.players[0].money = 50
-        this.players[1].money = 50
+        this.players[0].money = initialMoney
+        this.players[1].money = initialMoney
 
         this.players[0].unlockedUnits = [true, false, false, false, false, false, false, false, false, false]
         this.players[1].unlockedUnits = [true, false, false, false, false, false, false, false, false, false]
         this.fps = fps
-        this.sideToFill = 'left'
         this.connectedUsersCount = 0
     }
 
@@ -113,10 +113,6 @@ io.on('connection', (socket) => {
         socket.emit('side', 'Server Full')
     }
 
-    socket.on('getSide', side => {
-        // console.log('getSide: ', side)
-        side === 'left' ? game.sideToFill = 'right' : game.sideToFill = 'left'
-    })
     socket.on('AddTroop', (side, index) => {
         if (index === 10 && game.atomicDoomPending) return
         if (side === 'left' && game.players[0].unlockedUnits[index]) game.players[0].addTroop(index)

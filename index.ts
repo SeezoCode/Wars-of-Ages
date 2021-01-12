@@ -1,6 +1,6 @@
 
 let canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, buttonColor, deathAnimPending,
-    radioactivityPending, bgColor, buttonBg, darkTheme
+    radioactivityPending, bgColor, buttonBg, darkTheme, playingHostedGame
 
 try {
     let canvas = document.querySelector('canvas')
@@ -71,7 +71,7 @@ const troopArr = [
         name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
     },
     {
-        name: 'Boss', health: 1000, damage: 40, baseDamage: 0, attackSpeed: 180, price: 10000, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 30000
+        name: 'Boss', health: 1100, damage: 40, baseDamage: 10, attackSpeed: 180, price: 10000, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 30000
     },
     ]
 
@@ -120,6 +120,7 @@ class Trooper implements trooperStatsInterface{
     maxHealth: number
     baseDamage: number
     visualize: boolean
+    protected puppy?: boolean;
 
     constructor(stats: trooperStatsInterface, side: string, visualize: boolean = true, multiplier: number = 1, specialParameters: object = {}) {
         this.health = stats.health * multiplier
@@ -150,6 +151,18 @@ class Trooper implements trooperStatsInterface{
         this.targetTime = parameters.targetTime
         // @ts-ignore
         this.maxHealth = parameters.maxHealth
+        // @ts-ignore
+        if (parameters.puppy) {
+            this.puppy = true
+            // @ts-ignore
+            this.damage = parameters.damage
+            // @ts-ignore
+            this.attackSpeed = parameters.attackSpeed
+            // @ts-ignore
+            this.speed = parameters.speed
+            // @ts-ignore
+            this.span = parameters.span
+        }
     }
 
     attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface): void {
@@ -340,23 +353,34 @@ class ShieldTroop extends Trooper {
 }
 class HealerTroop extends Trooper {
     index: number
+    amountOfDogsPresent: number = 0
+    protected puppy: boolean = false
+    protected height = 0
     player: playerInterface
     playerUnits: Array<trooperStatsInterface>
 
     constructor(side: string, player: playerInterface, enemy: playerInterface, multiplier: number, specialParameters: object = {}) {
         super(troopArr[7], side, player.visualize, multiplier, specialParameters);
-        this.index = null
-        // this.playerUnits = player.playerUnits
-        // for (let unit of this.playerUnits) {
-        //     unit.damage += 100
-        // }
-        // this.player = player
+        if (!playingHostedGame && player.playerUnits.length >= 2) {
+            if (player.playerUnits[player.playerUnits.length - 1].name === troopArr[7].name && player.playerUnits[player.playerUnits.length - 2].name === troopArr[7].name) {
+                this.puppy = true
+            }
+        }
+        // console.log(player)
+        if (this.puppy) {
+            this.health = 12 * multiplier
+            this.maxHealth = this.health * multiplier
+            this.damage = Math.random() * 15 * multiplier
+            this.attackSpeed = 20
+            this.speed = 2
+            this.span = 10
+        }
     }
 
     draw() {
         if (this.visualize) {
             cx.fillStyle = this.color
-            cx.fillRect(this.position - this.span / 2, canvasHeight - 45, this.span, 15)
+            cx.fillRect(this.position - this.span / 2, canvasHeight - 45 + (this.span == 10 ? 5 : 0), this.span, (this.span == 10 ? 10 : 15))
             this.drawHealth()
         }
     }
@@ -920,27 +944,24 @@ class Player implements playerInterface{
     }
 
     moveArmy() {
-        // if (deathAnimPending) return
-        if (this.side === 'left') {
+        if (deathAnimPending) return
+        for (let i = 0; i < 2; i++) {
             this.playerUnits.forEach((troop, i) => {
-                if (!troop.isInFront(this.playerUnits, i) && !troop.isInFront(this.enemyUnits, 1) &&
-                    troop.position < canvasWidth - baseStats.span - 10) {
-                    // console.log('moved to right', troop.position)
-                    troop.position += troop.speed
+                if (this.side === 'left') {
+                    if (!troop.isInFront(this.playerUnits, i) && !troop.isInFront(this.enemyUnits, 1) &&
+                        troop.position < canvasWidth - baseStats.span - 10) {
+                        troop.position += troop.speed / 2
+                    }
                 }
-                // else console.log('no movement to right', troop.position)
+                else if (this.side === 'right') {
+                    if (!troop.isInFront(this.playerUnits, i) && !troop.isInFront(this.enemyUnits, 1) &&
+                        troop.position > baseStats.span + 10) {
+                        troop.position -= troop.speed / 2
+                    }
+                }
             })
         }
-        if (this.side === 'right') {
-            this.playerUnits.forEach((troop, i) => {
-                if (!troop.isInFront(this.playerUnits, i) && !troop.isInFront(this.enemyUnits, 1) &&
-                    troop.position > baseStats.span + 10) {
-                    // console.log('moved to left', troop.position)
-                    troop.position -= troop.speed
-                }
-                // else console.log('no movement to left', troop.position)
-            })
-        }
+
         for (let troop of this.playerUnits) {
             if (this.game.atomicDoomPending) troop.health -= .04
         }
@@ -1133,6 +1154,10 @@ class SimulatingBot extends Player {
 
     afterMoveArmy() {
         super.afterMoveArmy()
+        if (this.money > 2000) {
+            this.multiplier *= 1.2
+            this.money -= 1500
+        }
         let enc = this.encouragement()
         document.getElementById(`pull${this.side}`).innerText = 'Mode: ' + (enc > 2.2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal')
         if (this.cooldown <= 0 && !this.shouldPull(1, enc)) {
@@ -1178,7 +1203,7 @@ class SimulatingBot extends Player {
         }
         if (this.side === 'left' ? this.playerUnits[0].position > canvasWidth / 2 : this.playerUnits[0].position < canvasWidth / 2) {
             this.roundsSpentAtOpponentsHalf += increase
-            if (this.roundsSpentAtOpponentsHalf > 170) { // 45 seconds = 2700
+            if (this.roundsSpentAtOpponentsHalf > 2300) { // 45 seconds = 2700
                 return true
             }
         }
@@ -1264,6 +1289,7 @@ class InternetPlayer extends Player implements playerInterface {
 
     constructor(money, side, checkForAvailMoney, address: string) {
         super(money, side, checkForAvailMoney);
+        playingHostedGame = true
         let socket = io(address) // ws://localhost:8080
 
         // this.map(new Player(1000, 'right', false), true, true, [], [], [], new Base(baseStats, 'right'), new Base(baseStats, 'left'))
@@ -1417,6 +1443,7 @@ class InternetPlayer extends Player implements playerInterface {
     addGUI(socket: object) {
         document.querySelectorAll('button').forEach(button => button.remove())
         document.querySelectorAll('br').forEach(br => br.remove())
+        document.querySelectorAll('hr').forEach(hr => hr.remove())
         // if (this.spectator) return
         this.unlockUnits(false)
         let buttons = Array.from(document.getElementsByClassName(this.side + 'Button'))
@@ -1558,7 +1585,7 @@ try {
             address = `http://${hostIP}:${address}`
         }
         else {
-            address = prompt('Enter address:', `http://localhost:${port}`)
+            address = prompt('Enter address:', `http://localhost:${8085}`)
             if (address === null) return
         }
         new InternetPlayer(0, 'left', false, address)
