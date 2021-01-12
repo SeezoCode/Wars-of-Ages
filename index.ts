@@ -71,7 +71,7 @@ const troopArr = [
         name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
     },
     {
-        name: 'Boss', health: 1000, damage: 40, baseDamage: 0, attackSpeed: 180, price: 10000, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 30000
+        name: 'Boss', health: 1100, damage: 40, baseDamage: 10, attackSpeed: 180, price: 10000, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 30000
     },
     ]
 
@@ -1133,6 +1133,10 @@ class SimulatingBot extends Player {
 
     afterMoveArmy() {
         super.afterMoveArmy()
+        if (this.money > 2000) {
+            this.multiplier *= 1.2
+            this.money -= 1500
+        }
         let enc = this.encouragement()
         document.getElementById(`pull${this.side}`).innerText = 'Mode: ' + (enc > 2.2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal')
         if (this.cooldown <= 0 && !this.shouldPull(1, enc)) {
@@ -1178,7 +1182,7 @@ class SimulatingBot extends Player {
         }
         if (this.side === 'left' ? this.playerUnits[0].position > canvasWidth / 2 : this.playerUnits[0].position < canvasWidth / 2) {
             this.roundsSpentAtOpponentsHalf += increase
-            if (this.roundsSpentAtOpponentsHalf > 170) { // 45 seconds = 2700
+            if (this.roundsSpentAtOpponentsHalf > 2300) { // 45 seconds = 2700
                 return true
             }
         }
