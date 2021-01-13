@@ -68,7 +68,7 @@ var troopArr = [
         name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 40, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
     },
     {
-        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 200, researchPrice: 400
+        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 210, researchPrice: 400
     },
     {
         name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 60, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
@@ -386,12 +386,19 @@ var TrebuchetTroop = /** @class */ (function (_super) {
     TrebuchetTroop.prototype.drawAttack = function (time) {
         if (this.visualize) {
             _super.prototype.drawAttack.call(this, time);
-            cx.fillStyle = 'silver';
-            // could shoot in a curve
-            cx.beginPath();
-            cx.arc(this.position + (this.side === 'left' ? (1 / (this.targetTime - time)) * this.span :
-                -(1 / (this.targetTime - time)) * this.range), canvasHeight - 100, 10, 0, 2 * Math.PI);
-            cx.fill();
+            var y = void 0;
+            if (this.targetTime && this.targetTime - time <= this.attackSpeed / 5)
+                y = canvasHeight - 100 -
+                    Math.abs(Math.sin(((this.attackSpeed / 5) / (this.targetTime - time)) / (this.attackSpeed / 5) * Math.PI)) * 100 + 5;
+            else
+                y = canvasHeight - 100;
+            if (this.targetTime) {
+                cx.fillStyle = 'silver';
+                cx.beginPath();
+                cx.arc(this.position + (this.side === 'left' ? (1 / (this.targetTime - time)) * (canvasWidth - this.position - 35) :
+                    -(1 / (this.targetTime - time)) * (this.position - 35)), y, 10, 0, 2 * Math.PI); // y = canvasHeight - 100
+                cx.fill();
+            }
         }
     };
     return TrebuchetTroop;
@@ -1435,13 +1442,13 @@ try {
         initializeUI(160, 120);
     });
     document.getElementById('code').addEventListener('click', function () {
-        document.getElementById('code').innerHTML = "<i class=\"fa fa-spinner fa-spin\"></i> " + document.getElementById('code').innerHTML;
+        // document.getElementById('code').innerHTML = `<i class="fa fa-spinner fa-spin"></i> ${document.getElementById('code').innerHTML}`
         var address;
         if (onlineConnection_1) {
             address = "http://" + hostIP_1 + ":" + hostPort_1;
         }
         else {
-            address = prompt('Enter address:', "http://localhost:8080");
+            address = prompt('Enter server address:', "http://localhost:8080");
             if (address === null)
                 return;
         }
@@ -1452,7 +1459,7 @@ try {
             res.json().then(function (res) {
                 console.log(res);
                 if (res === 'Too many requests') {
-                    alert(res);
+                    alert('Too many requests, please wait a moment');
                     return;
                 }
                 alert("Game code is: " + res);
@@ -1462,8 +1469,10 @@ try {
         });
     });
     setTimeout(function () {
-        if (document.getElementById('onlineIndicator').innerHTML === '<i class="fa fa-spinner fa-spin"></i> Play online: ') {
-            document.getElementById('onlineIndicator').innerHTML = '<span style="color: red">&#10006;</span> Play online';
+        if (!onlineConnection_1) {
+            document.getElementById('onlineIndicator').innerHTML =
+                '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
+                    ' target="blank">How to host the server</a>';
         }
     }, 5000);
     fetch("http://" + hostIP_1 + ":" + hostPort_1, {
@@ -1485,7 +1494,7 @@ try {
         console.log(err);
         document.getElementById('onlineIndicator').innerHTML =
             '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
-                ' target="blank">How to host a server</a>';
+                ' target="blank">How to host the server</a>';
         // @ts-ignore
         document.getElementById('mul').disabled = false;
         // @ts-ignore

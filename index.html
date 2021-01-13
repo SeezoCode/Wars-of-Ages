@@ -58,13 +58,15 @@
             -ms-touch-action: manipulation;
             touch-action: manipulation;
         }
-        .vertical-center {
-            margin: 0;
-            position: absolute;
-            top: 45%;
-            left: 50%;
-            -ms-transform: translate(-50%, -50%);
-            transform: translate(-50%, -50%);
+        @media only screen and (min-height: 660px) {
+            .vertical-center {
+                margin: 0;
+                position: absolute;
+                top: 48%;
+                left: 50%;
+                -ms-transform: translate(-50%, -50%);
+                transform: translate(-50%, -50%);
+            }
         }
         /*@media only screen and (max-width: 477px) {*/
         /*    button {*/
