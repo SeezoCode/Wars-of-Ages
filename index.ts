@@ -44,22 +44,22 @@ const troopArr = [
         name: 'Fast Troop', health: 18, damage: 1.3, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
     },
     {
-        name: 'Range Troop', health: 20, damage: 4.5, baseDamage: 3, attackSpeed: 50, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
+        name: 'Range Troop', health: 20, damage: 4.3, baseDamage: 3, attackSpeed: 50, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
     },
     {
-        name: 'Advanced Troop', health: 35, damage: 12, baseDamage: 5, attackSpeed: 80, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
+        name: 'Advanced Troop', health: 35, damage: 13, baseDamage: 5, attackSpeed: 70, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
     },
     {
-        name: 'Base Destroyer', health: 40, damage: 8, baseDamage: 35, attackSpeed: 140, price: 50, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
+        name: 'Base Destroyer', health: 40, damage: 8, baseDamage: 35, attackSpeed: 120, price: 30, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
     },
     {
-        name: 'Boomer Troop', health: 1, damage: 40, baseDamage: 30, attackSpeed: 17, price: 30, color: 'red', speed: 1.75, span: 20, range: 40, researchPrice: 200
+        name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 1.75, span: 20, range: 40, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 75, damage: .5, baseDamage: 1, attackSpeed: 300, price: 30, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Shield Troop', health: 100, damage: 1, baseDamage: 4, attackSpeed: 300, price: 20, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
-        name: 'Doggo', health: 15, damage: 30, baseDamage: 0, attackSpeed: 60, price: 40, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
+        name: 'Doggo', health: 20, damage: 30, baseDamage: 0, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
     },
     {
         name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 210, researchPrice: 400
@@ -168,9 +168,10 @@ class Trooper implements trooperStatsInterface{
     attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface): void {
         // console.log('attacked enemy: ', enemyTroopers)
         if (enemyTroopers.length) {
-            stats.damageDealt += enemyTroopers[0].health < 0 ? 0 :
-                enemyTroopers[0].health < this.damage ?
-                enemyTroopers[0].health : this.damage
+            stats.damageDealt += this.damage
+                // (enemyTroopers[0].health < 0 ? 0 :
+                // enemyTroopers[0].health < this.damage ?
+                // enemyTroopers[0].health : this.damage)
             enemyTroopers[0].health -= this.damage
         }
     }
@@ -368,7 +369,7 @@ class HealerTroop extends Trooper {
         }
         // console.log(player)
         if (this.puppy) {
-            this.health = 12 * multiplier
+            this.health = 15 * multiplier
             this.maxHealth = this.health * multiplier
             this.damage = Math.random() * 15 * multiplier
             this.attackSpeed = 20
@@ -687,7 +688,7 @@ class Game implements gameInterface{
         //     }, .001)
         // }
         else {
-            while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 100000) { //
+            while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 1000000) { //
                 move()
             }
             // console.log('Game ended,',
@@ -839,8 +840,8 @@ class Player implements playerInterface{
             }
         }
         if (this.isEnoughMoney(troopArr[index].price) && this.playerUnits.length < this.maxUnits) {
-            // if (this.DOMAccess) {
-            //     this.stats.units[Object.keys(this.stats.units)[index]] += 1
+            if (this.DOMAccess) {
+                this.stats.units[Object.keys(this.stats.units)[index]] += 1
             //     document.getElementById(`stats${this.side}`).innerText = `
             //     Basic Troop: ${this.stats.units.basicTroop}
             //     Fast Troop: ${this.stats.units.fastTroop}
@@ -851,7 +852,7 @@ class Player implements playerInterface{
             //     Shield Troop: ${this.stats.units.shieldTroop}
             //     Healer Troop: ${this.stats.units.healerTroop}
             //     Trebuchet Troop: ${this.stats.units.trebuchetTroop}`
-            // }
+            }
 
             this.stats.spending += troopArr[index].price
             this.addFunds(-troopArr[index].price)
@@ -886,14 +887,14 @@ class Player implements playerInterface{
             if (unit.range > 0) {
                 if (this.side === 'left' && unit.position + unit.range >= this.enemyUnits[0].position) {
                     unit.timeAttack(time, this.enemyUnits, this.stats)
-                    this.stats.damageDealt += unit.damage
+                    // this.stats.damageDealt += unit.damage
                     // console.log(this.stats.damageDealt)
                 }
             }
             if (unit.range) {
                 if (this.side === 'right' && unit.position - unit.range <= this.enemyUnits[0].position) {
                     unit.timeAttack(time, this.enemyUnits, this.stats)
-                    this.stats.damageDealt += unit.damage
+                    // this.stats.damageDealt += unit.damage
                 }
             }
         }
@@ -1016,8 +1017,9 @@ class Player implements playerInterface{
             button.id = 'incMult'
             if (bindEventListeners) {
                 button.addEventListener('click', () => {
-                    if (this.isEnoughMoney(2000)) {
+                    if (this.isEnoughMoney(1500)) {
                         this.multiplier *= 1.2
+                        this.money -= 1500
                         // console.log(this.multiplier)
                     }
                 })
@@ -1160,10 +1162,10 @@ class SimulatingBot extends Player {
 
     afterMoveArmy() {
         super.afterMoveArmy()
-        if (this.money > 2000) {
-            this.multiplier *= 1.2
-            this.money -= 1500
-        }
+        // if (this.money > 2000) {
+        //     this.multiplier *= 1.2
+        //     this.money -= 1500
+        // }
         let enc = this.encouragement()
         document.getElementById(`pull${this.side}`).innerText = 'Mode: ' + (enc > 2.2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal')
         if (this.cooldown <= 0 && !this.shouldPull(1, enc)) {
@@ -1180,7 +1182,6 @@ class SimulatingBot extends Player {
                 worker.onmessage = function (e) {
                     // console.log(e.data)
                     if (e.data.length) addTroop(e.data[0])
-                    if (e.data.length && Math.random() > .5 && e.data[0] === 3) addTroop(2)
                     cancelWork()
                     document.getElementById(`per${side}`).innerText = `Computed in: ${Math.round((performance.now() - p) * 1000) / 1000}ms`
                 }
@@ -1576,7 +1577,7 @@ try {
     document.getElementById('bot').addEventListener('click', () => {
         new Game(new Player(55, 'left', !shiftDown),
             new SimulatingBot(55, 'right', !shiftDown),
-            true, true, [], [])
+            true, true, [1,1], [])
 
         initializeUI(160, 120)
         }
@@ -1631,6 +1632,10 @@ try {
             document.getElementById('onlineIndicator').innerHTML =
                 '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
                 ' target="blank">How to host the server</a>'
+            // @ts-ignore
+            document.getElementById('mul').disabled = false
+            // @ts-ignore
+            document.getElementById('code').disabled = false
         }
     }, 5000)
     fetch(`http://${hostIP}:${hostPort}`, {
@@ -1667,14 +1672,14 @@ catch (e) {
         onmessage = function (e) {
             // e[0] playerTroops e[1] enemyTroops e[2] unlockedUnits e[3] side e[4] money e[5] game
             // console.log(e);
-            let bestDPM = -999999;
+            let bestDPM = -9999;
             let bestStats;
             let bestTroops = [];
             let numberOfUnlockedUnits = 0;
             e.data[2].forEach(function (e) {
                 return e ? numberOfUnlockedUnits++ : 0;
             });
-            if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
+            // if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
             // let p = performance.now()
             for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
                 if (i === 4 || i === 8) continue;
@@ -1688,9 +1693,9 @@ catch (e) {
                         plTroops.push(k);
                         let game = simulate(plTroops, e.data[1].slice());
                         let stats = getGameStats(game);
-                        stats.enemyUnitsLength = game.players[e.data[3] === 'left' ? 0 : 1].enemyUnits.length;
-                        stats.playerUnitsLength = game.players[e.data[3] === 'left' ? 0 : 1].playerUnits.length;
-                        if (damageCalc(stats) > bestDPM) {
+                        stats.playerUnitsLength = game.players[0].playerUnits.length;
+                        stats.enemyUnitsLength = game.players[1].enemyUnits.length;
+                        if (damageCalc(stats) > bestDPM && Math.random() > .2) {
                             bestDPM = damageCalc(stats);
                             bestStats = stats;
                             bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]];
@@ -1698,6 +1703,7 @@ catch (e) {
                     }
                 }
             }
+            // console.log(bestDPM, bestStats, bestTroops);
             // console.log(bestTroops, damageCalc(bestStats))
             // console.log(bestTroops, 'in', performance.now() - p, 'ms')
             // document.getElementById(`dmg${this.side}`).innerText = String(bestDPM)
@@ -1718,22 +1724,16 @@ catch (e) {
                     enemyUnitsLength: null,     // 3 - 7
                     time: null                  // 200 - 2000
                 };
-                stats.playerSpending = game.players[e.data[3] === 'left' ? 0 : 1].stats.spending;
-                stats.playerDamage = game.players[e.data[3] === 'left' ? 0 : 1].stats.damageDealt;
-                stats.enemyDamage = game.players[e.data[3] === 'left' ? 0 : 1].stats.damageDealt;
+                stats.playerSpending = game.players[0].stats.spending;
+                stats.playerDamage = game.players[0].stats.damageDealt;
+                stats.enemyDamage = game.players[1].stats.damageDealt;
                 return stats;
             }
 
             function damageCalc(stats): number {
-                if (stats.playerSpending > e.data[4])
-                    return -1;
-                if (stats.playerUnitsLength)
-                    return (stats.playerDamage);
-                else if (stats.enemyUnitsLength)
-                    return (stats.playerDamage);
-                else {
-                    return (stats.playerDamage);
-                }
+                // if (stats.playerSpending > e.data[4])
+                //     return 0;
+                return (stats.playerDamage / stats.playerSpending);
             }
 
             // @ts-ignore
