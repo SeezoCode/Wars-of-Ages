@@ -38,25 +38,25 @@ catch (e) {
 
 const troopArr = [
     {
-        name: 'Basic Troop', health: 20, damage: 4.5, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
+        name: 'Basic Troop', health: 15, damage: 4, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
     },
     {
-        name: 'Fast Troop', health: 18, damage: 1.3, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
+        name: 'Fast Troop', health: 10, damage: 1, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
     },
     {
-        name: 'Range Troop', health: 20, damage: 4.3, baseDamage: 3, attackSpeed: 50, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
+        name: 'Range Troop', health: 20, damage: 3.8, baseDamage: 3, attackSpeed: 50, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
     },
     {
-        name: 'Advanced Troop', health: 35, damage: 13, baseDamage: 5, attackSpeed: 70, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
+        name: 'Advanced Troop', health: 35, damage: 13, baseDamage: 10, attackSpeed: 70, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
     },
     {
         name: 'Base Destroyer', health: 40, damage: 8, baseDamage: 35, attackSpeed: 120, price: 30, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
     },
     {
-        name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 1.75, span: 20, range: 40, researchPrice: 200
+        name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 2, span: 20, range: 40, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 100, damage: 1, baseDamage: 4, attackSpeed: 300, price: 20, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Shield Troop', health: 105, damage: 1.5, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
         name: 'Doggo', health: 20, damage: 30, baseDamage: 0, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
@@ -98,8 +98,8 @@ interface trooperStatsInterface {
     attack?: (enemyTroopers: Array<trooperStatsInterface>, stats: object) => void
     isInFront?: (playerUnits: Array<trooperStatsInterface>, index: number) => boolean
     draw?: () => void
-    timeAttack?: (time: number, enemyTroopers: Array<trooperStatsInterface>, stats: object) => void
-    timeAttackBase?: (time: number, base: baseInterface) => void
+    timeAttack?: (time: number, enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface) => void
+    timeAttackBase?: (time: number, base: baseInterface, stats: statsInterface) => void
     drawAttack?: (time: number) => void
     deleteAnim?: () => void
 }
@@ -212,20 +212,20 @@ class Trooper implements trooperStatsInterface{
         return false
     }
 
-    timeAttackBase(time: number, base: baseInterface): void {
+    timeAttackBase(time: number, base: baseInterface, stats: statsInterface): void {
         // if (this.visualize) {
         if (this.targetTime === null) this.targetTime = time + this.attackSpeed
         else if (time >= this.targetTime) {
-            this.attackBase(base)
-            // console.log('Attack Base !!!!!!!!')
+            this.attackBase(base, stats)
             this.targetTime = null
         }
     }
         // else this.attackBase(base) // This is a shortcut, may not be as precise!
 
 
-    attackBase(base: baseInterface): void {
+    attackBase(base: baseInterface, stats: statsInterface): void {
         base.health -= this.baseDamage
+        stats.damageDealt += this.baseDamage
     }
 
     draw() {
@@ -303,13 +303,13 @@ class ExplodingTroop extends Trooper {
         this.deleteAnim()
         super.timeAttack(time, enemyTroopers, stats);
     }
-    timeAttackBase(time: number, base: baseInterface) {
+    timeAttackBase(time: number, base: baseInterface, stats: statsInterface) {
         this.deleteAnim()
-        super.timeAttackBase(time, base);
+        super.timeAttackBase(time, base, stats);
     }
-    attackBase(base: baseInterface) {
+    attackBase(base: baseInterface, stats: statsInterface) {
         this.health = 0
-        super.attackBase(base);
+        super.attackBase(base, stats);
     }
     isInFront(playerUnits: Array<trooperStatsInterface>, index: number): boolean {
         if (playerUnits.length) {
@@ -372,7 +372,7 @@ class HealerTroop extends Trooper {
             this.health = 15 * multiplier
             this.maxHealth = this.health * multiplier
             this.damage = Math.random() * 15 * multiplier
-            this.attackSpeed = 20
+            this.attackSpeed = 30
             this.speed = 2
             this.span = 10
         }
@@ -392,14 +392,19 @@ class TrebuchetTroop extends Trooper { // trebuchet could also attack other treb
         super(troopArr[8], side, player.visualize, multiplier, specialParameters);
         this.enemyBase = player.enemyBase
     }
-    timeAttack(time: number, enemyTroopers: Array<trooperStatsInterface>) {
+    timeAttack(time: number, enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface) {
         if (this.side === 'left' && canvasWidth - this.position - 55 < this.range) {
-            super.timeAttackBase(time, this.enemyBase)
+            super.timeAttackBase(time, this.enemyBase, stats)
         } // attacks enemy base even when unit is close but base is far !!!
         else if (this.side === 'right' && this.position - this.range - 55 < 0) {
-            super.timeAttackBase(time, this.enemyBase)
+            super.timeAttackBase(time, this.enemyBase, stats)
         }
     }
+    attackBase(base: baseInterface, stats: statsInterface) {
+        super.attackBase(base, stats);
+
+    }
+
     drawAttack(time: number) {
         if (this.visualize) {
             super.drawAttack(time);
@@ -796,8 +801,8 @@ class Player implements playerInterface{
         this.checkForMoneyAvail = checkForAvailMoney
         // this.playerUnits = playerUnits
         // this.enemyUnits = enemyUnits
-        this.unlockedUnits = [true, false, false, false, false, false, false, false, false]
-        // this.unlockedUnits = [true, true, true, true, true, true, true, true, true]
+        // this.unlockedUnits = [true, false, false, false, false, false, false, false, false]
+        this.unlockedUnits = [true, true, true, true, true, true, true, true, true]
         this.maxUnits = 10
         this.stats = {
             damageDealt: 0,
@@ -834,11 +839,11 @@ class Player implements playerInterface{
     }
 
     addTroop(index: number, params: trooperStatsInterface | object = {}): void {
-        if (this.playerUnits.length) {
-            for (let unit of this.playerUnits) {
-                if (troopArr[5].name === troopArr[index].name && unit.name === troopArr[5].name) return
-            }
-        }
+        // if (this.playerUnits.length) {
+        //     for (let unit of this.playerUnits) {
+        //         if (troopArr[5].name === troopArr[index].name && unit.name === troopArr[5].name) return
+        //     }
+        // }
         if (this.isEnoughMoney(troopArr[index].price) && this.playerUnits.length < this.maxUnits) {
             if (this.DOMAccess) {
                 this.stats.units[Object.keys(this.stats.units)[index]] += 1
@@ -866,7 +871,8 @@ class Player implements playerInterface{
 
     doesBaseHaveHealth(): boolean {
         if (this.playerBase.health <= 0) {
-            if (this.visualize) console.log('Base destroyed: ', this.playerBase)
+            if (this.visualize) console.log('Base destroyed: ', this.playerBase,
+                '\nLeft used units:', this.game.players[0].stats.units, 'Right used units:', this.game.players[1].stats.units)
             if (this.visualize) {
                 cx.font = "45px Arial";
                 cx.textAlign = "center";
@@ -944,8 +950,8 @@ class Player implements playerInterface{
     attackBase(time: number, enemyBase: baseInterface): void {
         if (this.playerUnits.length) {
             for (let unit of this.playerUnits) {
-                if (this.side === 'left' && unit.position >= canvasWidth - 55 - unit.range) {unit.timeAttackBase(time, enemyBase)}
-                if (this.side === 'right' && unit.position <= 55 + unit.range) unit.timeAttackBase(time, enemyBase)
+                if (this.side === 'left' && unit.position >= canvasWidth - 55 - unit.range) {unit.timeAttackBase(time, enemyBase, this.stats)}
+                if (this.side === 'right' && unit.position <= 55 + unit.range) unit.timeAttackBase(time, enemyBase, this.stats)
             }
         }
     }
@@ -1019,7 +1025,7 @@ class Player implements playerInterface{
                 button.addEventListener('click', () => {
                     if (this.isEnoughMoney(1500)) {
                         this.multiplier *= 1.2
-                        this.money -= 1500
+                        this.addFunds(-1500)
                         // console.log(this.multiplier)
                     }
                 })
@@ -1162,10 +1168,10 @@ class SimulatingBot extends Player {
 
     afterMoveArmy() {
         super.afterMoveArmy()
-        // if (this.money > 2000) {
-        //     this.multiplier *= 1.2
-        //     this.money -= 1500
-        // }
+        if (this.money > 2000) {
+            this.multiplier *= 1.2
+            this.addFunds(-1500)
+        }
         let enc = this.encouragement()
         document.getElementById(`pull${this.side}`).innerText = 'Mode: ' + (enc > 2.2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal')
         if (this.cooldown <= 0 && !this.shouldPull(1, enc)) {
@@ -1577,7 +1583,7 @@ try {
     document.getElementById('bot').addEventListener('click', () => {
         new Game(new Player(55, 'left', !shiftDown),
             new SimulatingBot(55, 'right', !shiftDown),
-            true, true, [1,1], [])
+            true, true, [], [])
 
         initializeUI(160, 120)
         }
