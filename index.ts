@@ -56,10 +56,10 @@ const troopArr = [
         name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 2, span: 20, range: 40, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 105, damage: 1.5, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Shield Troop', health: 105, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
-        name: 'Doggo', health: 20, damage: 30, baseDamage: 0, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
+        name: 'Doggo', health: 20, damage: 30, baseDamage: 2, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
     },
     {
         name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 210, researchPrice: 400
@@ -801,8 +801,8 @@ class Player implements playerInterface{
         this.checkForMoneyAvail = checkForAvailMoney
         // this.playerUnits = playerUnits
         // this.enemyUnits = enemyUnits
-        // this.unlockedUnits = [true, false, false, false, false, false, false, false, false]
-        this.unlockedUnits = [true, true, true, true, true, true, true, true, true]
+        this.unlockedUnits = [true, false, false, false, false, false, false, false, false, false, false, false]
+        // this.unlockedUnits = [true, true, true, true, true, true, true, true, true, true, true, true]
         this.maxUnits = 10
         this.stats = {
             damageDealt: 0,
@@ -1216,7 +1216,7 @@ class SimulatingBot extends Player {
         }
         if (this.side === 'left' ? this.playerUnits[0].position > canvasWidth / 2 : this.playerUnits[0].position < canvasWidth / 2) {
             this.roundsSpentAtOpponentsHalf += increase
-            if (this.roundsSpentAtOpponentsHalf > 2300) { // 45 seconds = 2700
+            if (this.roundsSpentAtOpponentsHalf > 2700) { // 45 seconds = 2700
                 return true
             }
         }
