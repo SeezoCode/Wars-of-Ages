@@ -28,8 +28,9 @@
         }
         body {
             text-align: center;
-            overflow-y: hidden;
+            overflow-y: hidden !important;
         }
+        html, body {margin: 0; height: 100%; overflow: hidden}
         @media (prefers-color-scheme: dark) {
             button {
                 box-shadow:0 0 15px 4px rgb(14, 14, 14);
@@ -167,7 +168,7 @@
 
 </head>
 <!--; -->
-<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0; margin-bottom: 100px !important;">
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0; margin-bottom: 0;">
     <div id="startingScreen" class="vertical-center">
         <h1>Wars of Ages</h1>
         <p style="color: #c3c3c3">Filip Hostinský</p>
@@ -208,7 +209,7 @@
         </div>
     </div>
 
-    <div id="controls" class="row" style="margin-top: 0; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
+    <div id="controls" class="row" style="margin-top: 0; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: scroll">
         <div id="left" class="col" style="overflow:auto">
             <p></p>
             <p id="unlleft"></p>
