@@ -52,13 +52,16 @@
             .indicator {
                 background: rgb(235, 235, 235) !important;
             }
+            #shBot {
+                border-bottom: 1px solid rgb(50, 50, 50) !important;
+            }
         }
         * {
             box-sizing: border-box;
             -ms-touch-action: manipulation;
             touch-action: manipulation;
         }
-        @media only screen and (min-height: 500px) {
+        @media only screen and (min-height: 530px) {
             .vertical-center {
                 margin: 0;
                 position: absolute;
@@ -68,6 +71,21 @@
                 transform: translate(-50%, -50%);
             }
         }
+        @media only screen and (min-height: 900px) {
+            .vertical-center {
+                margin: 0;
+                position: absolute;
+                top: 46%;
+                left: 50%;
+                -ms-transform: translate(-50%, -50%);
+                transform: translate(-50%, -50%);
+            }
+        }
+        /*@media only screen and (max-width: 440px) {*/
+        /*    button {*/
+        /*        width: auto !important;*/
+        /*    }*/
+        /*}*/
         /*@media only screen and (max-width: 477px) {*/
         /*    button {*/
         /*        width: 145px;*/
@@ -135,11 +153,21 @@
         .toggle-state:checked ~ .toggle-inner .indicator {
             transform: translate3d(25%, 0, 0);
         }
+
+        #shBot {
+            /*border-bottom-style: 1px solid black;*/
+            border-bottom: 1px solid lightgray;
+            height: 55px;
+            display: none;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
     </style>
 
 </head>
 <!--; -->
-<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0;">
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-top: 0; margin-bottom: 100px !important;">
     <div id="startingScreen" class="vertical-center">
         <h1>Wars of Ages</h1>
         <p style="color: #c3c3c3">Filip Hostinský</p>
@@ -166,13 +194,23 @@
 
     <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px; display: none; padding: 0; margin-bottom: 0"></canvas>
     <script type="module" src="index.js"></script>
-    <script src="Client.js"></script>
+
+    <div id="shBot">
+        <div class="row" style="max-width: 700px; text-align: center; margin-left: auto; margin-right: auto; margin-bottom: 0; padding-bottom: 0">
+            <div class="col">
+                <p id="leftMoney" style="display: none">Money: 55</p>
+                <p id="trsleft"></p>
+            </div>
+            <div class="col">
+                <p id="rightMoney" style="display: none">Money: 55</p>
+                <p id="trsright"></p>
+            </div>
+        </div>
+    </div>
 
     <div id="controls" class="row" style="margin-top: 0; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
         <div id="left" class="col" style="overflow:auto">
-            <p id="leftMoney">Money: 55</p>
-            <p id="encleft"></p>
-            <p id="trsleft"></p>
+            <p></p>
             <p id="unlleft"></p>
             <p id="perleft" style="color: rgba(100, 100, 100, .4)"></p>
             <p id="pullleft" style="color: rgba(100, 100, 100, .4)"></p>
@@ -180,9 +218,7 @@
         </div>
         <br>
         <div id="right" class="col" style="overflow:auto; margin-bottom: 35px">
-            <p id="rightMoney">Money: 55</p>
-            <p id="encright"></p>
-            <p id="trsright"></p>
+            <p></p>
             <p id="unlright"></p>
             <p id="perright" style="color: rgba(100, 100, 100, .4)"></p>
             <p id="pullright" style="color: rgba(100, 100, 100, .4)"></p>

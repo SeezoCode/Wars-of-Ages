@@ -99,6 +99,10 @@ var io = require('socket.io')(http, {
 });
 var game = new ServerSideGame(new index.Player(55, 'left', checkForAvailMoney), new index.Player(55, 'right', checkForAvailMoney), false, false, [], [], 60);
 io.on('connection', function (socket) {
+    if (game.connectedUsersCount > 20) {
+        socket.emit('message', 'Connections Full');
+        return;
+    }
     game.connectedUsersCount++;
     console.log("Port", process.argv[2], ': A user has connected. Connected users: ' + (game.connectedUsersCount));
     if (!game.leftID) {
@@ -114,18 +118,22 @@ io.on('connection', function (socket) {
         socket.emit('side', 'Server Full');
     }
     socket.on('AddTroop', function (side, index) {
-        if (index === 10 && game.atomicDoomPending)
-            return;
-        if (side === 'left' && game.players[0].unlockedUnits[index])
-            game.players[0].addTroop(index);
-        if (side === 'right' && game.players[1].unlockedUnits[index])
-            game.players[1].addTroop(index);
+        if (socket.id === game.leftID || socket.id === game.rightID) { // so that playing only can send troops
+            if (index === 10 && game.atomicDoomPending)
+                return;
+            if (side === 'left' && game.players[0].unlockedUnits[index])
+                game.players[0].addTroop(index);
+            if (side === 'right' && game.players[1].unlockedUnits[index])
+                game.players[1].addTroop(index);
+        }
     });
     socket.on('AddMoney', function (side, amount) {
-        if (side === 'left')
-            game.players[0].addFunds(amount);
-        if (side === 'right')
-            game.players[1].addFunds(amount);
+        if (socket.id === game.leftID || socket.id === game.rightID) {
+            if (side === 'left')
+                game.players[0].addFunds(amount);
+            if (side === 'right')
+                game.players[1].addFunds(amount);
+        }
     });
     socket.on('disconnect', function () {
         game.connectedUsersCount--;
@@ -144,17 +152,21 @@ io.on('connection', function (socket) {
         console.log("Port", process.argv[2], ': A user has disconnected. Connected users:', game.connectedUsersCount);
     });
     socket.on('unlockTroop', function (side, i) {
-        if (game.players[side === 'left' ? 0 : 1].money >= index.troopArr[i].researchPrice) {
-            game.players[side === 'left' ? 0 : 1].unlockedUnits[i] = true;
-            game.players[side === 'left' ? 0 : 1].money -= index.troopArr[i].researchPrice;
+        if (socket.id === game.leftID || socket.id === game.rightID) {
+            if (game.players[side === 'left' ? 0 : 1].money >= index.troopArr[i].researchPrice) {
+                game.players[side === 'left' ? 0 : 1].unlockedUnits[i] = true;
+                game.players[side === 'left' ? 0 : 1].money -= index.troopArr[i].researchPrice;
+            }
         }
     });
     socket.on('multiplier', function (side) {
-        if (!checkForAvailMoney || game.players[side === 'left' ? 0 : 1].money >= 1500) {
-            game.players[side === 'left' ? 0 : 1].multiplier *= 1.2;
-            game.players[side === 'left' ? 0 : 1].money -= 1500;
+        if (socket.id === game.leftID || socket.id === game.rightID) {
+            if (!checkForAvailMoney || game.players[side === 'left' ? 0 : 1].money >= 1500) {
+                game.players[side === 'left' ? 0 : 1].multiplier *= 1.2;
+                game.players[side === 'left' ? 0 : 1].money -= 1500;
+            }
+            emitMultiplayer();
         }
-        emitMultiplayer();
     });
 });
 function emitMultiplayer() {

@@ -44,7 +44,7 @@ catch (e) {
 }
 var troopArr = [
     {
-        name: 'Basic Troop', health: 15, damage: 4, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
+        name: 'Basic Troop', health: 20, damage: 4.5, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
     },
     {
         name: 'Fast Troop', health: 10, damage: 1, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
@@ -56,28 +56,28 @@ var troopArr = [
         name: 'Advanced Troop', health: 35, damage: 13, baseDamage: 10, attackSpeed: 70, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
     },
     {
-        name: 'Base Destroyer', health: 40, damage: 8, baseDamage: 35, attackSpeed: 120, price: 30, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
+        name: 'Base Destroyer', health: 40, damage: 12, baseDamage: 120, attackSpeed: 120, price: 30, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
     },
     {
         name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 2, span: 20, range: 40, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 105, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Shield Troop', health: 110, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
         name: 'Doggo', health: 20, damage: 30, baseDamage: 2, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
     },
     {
-        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 210, researchPrice: 400
+        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .5, span: 50, range: 210, researchPrice: 400
     },
     {
-        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 60, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
+        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 50, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
     },
     {
         name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
     },
     {
-        name: 'Boss', health: 1100, damage: 40, baseDamage: 10, attackSpeed: 180, price: 10000, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 30000
+        name: 'Boss', health: 1000, damage: 40, baseDamage: 10, attackSpeed: 180, price: 7500, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 15000
     },
 ];
 var baseStats = {
@@ -269,7 +269,20 @@ var ExplodingTroop = /** @class */ (function (_super) {
     function ExplodingTroop(side, player, enemy, multiplier, specialParameters, troopStats) {
         if (specialParameters === void 0) { specialParameters = {}; }
         if (troopStats === void 0) { troopStats = troopArr[5]; }
-        return _super.call(this, troopStats, side, player.visualize, multiplier, specialParameters) || this;
+        var _this = _super.call(this, troopStats, side, player.visualize, multiplier, specialParameters) || this;
+        // @ts-ignore
+        if (player.visualize)
+            Array.from(document.getElementsByClassName(_this.side + "Button")).forEach(function (btn) {
+                if (btn.id === troopArr[5].name) {
+                    // @ts-ignore
+                    btn.disabled = true;
+                    setTimeout(function () {
+                        // @ts-ignore
+                        btn.disabled = false;
+                    }, 1500);
+                }
+            });
+        return _this;
     }
     ExplodingTroop.prototype.attack = function (enemyTroopers) {
         // console.log('attacked enemy BOOM: ', enemyTroopers)
@@ -319,7 +332,7 @@ var ShieldTroop = /** @class */ (function (_super) {
             cx.fillStyle = this.color;
             cx.fillRect(this.position - this.span / 2, canvasHeight - 65, this.span, 35);
             cx.fillStyle = 'brown';
-            cx.fillRect(this.position - (this.side === 'left' ? 0 : this.span) + this.span / 2 - 3, canvasHeight - 65, 3, 35);
+            cx.fillRect(this.position - (this.side === 'left' ? 3 : this.span) + this.span / 2, canvasHeight - 65, 3, 35);
             this.drawHealth();
         }
     };
@@ -350,15 +363,21 @@ var HealerTroop = /** @class */ (function (_super) {
         }
         // console.log(player)
         if (_this.puppy) {
-            _this.health = 15 * multiplier;
+            _this.health = 20 * multiplier;
             _this.maxHealth = _this.health * multiplier;
-            _this.damage = Math.random() * 15 * multiplier;
-            _this.attackSpeed = 30;
-            _this.speed = 2;
+            _this.damage = 2.5 * multiplier;
+            _this.attackSpeed = 10;
+            _this.speed = 2.2;
             _this.span = 10;
         }
+        _this.multiplier = multiplier;
         return _this;
     }
+    HealerTroop.prototype.attack = function (enemyTroopers, stats) {
+        if (this.puppy)
+            this.damage = Math.random() * 6 * this.multiplier;
+        _super.prototype.attack.call(this, enemyTroopers, stats);
+    };
     HealerTroop.prototype.draw = function () {
         if (this.visualize) {
             cx.fillStyle = this.color;
@@ -414,7 +433,7 @@ var AtomicTroop = /** @class */ (function (_super) {
         return _super.call(this, troopArr[9], side, player.visualize, multiplier, specialParameters) || this;
     }
     AtomicTroop.prototype.isInFront = function (playerUnits, index) {
-        this.health -= (this.maxHealth / 7) / canvasWidth;
+        this.health -= (this.maxHealth / 8) / canvasWidth;
         return _super.prototype.isInFront.call(this, playerUnits, index);
     };
     AtomicTroop.prototype.draw = function () {
@@ -690,8 +709,11 @@ var Player = /** @class */ (function () {
         this.enemyBase = enemyBase;
         this.playerBase = playerBase;
         this.playerUnits = playerUnits;
-        if (!this.checkForMoneyAvail && visualize)
+        if (!this.checkForMoneyAvail && visualize) {
             document.getElementById(this.side + "Money").innerHTML = "";
+            document.getElementById('shBot').style.height = '30px';
+            this.unlockedUnits = [true, true, true, true, true, true, true, true, true, true, true, true];
+        }
         if (startingPlayerUnits.length > 0) {
             startingPlayerUnits.forEach(function (i) { return _this.addTroop(i); });
         }
@@ -706,6 +728,8 @@ var Player = /** @class */ (function () {
         //         if (troopArr[5].name === troopArr[index].name && unit.name === troopArr[5].name) return
         //     }
         // }
+        if (index === undefined)
+            return;
         if (this.isEnoughMoney(troopArr[index].price) && this.playerUnits.length < this.maxUnits) {
             if (this.DOMAccess) {
                 this.stats.units[Object.keys(this.stats.units)[index]] += 1;
@@ -780,6 +804,13 @@ var Player = /** @class */ (function () {
                     }
                     else if (playerUnit.name === troopArr[5].name) {
                         _this.game.boomerDoomer(playerUnit.position);
+                        enemy.addFunds(playerUnit.price * 2.5);
+                        // this.boomerDoomer(playerUnit.position)
+                    }
+                    // @ts-ignore
+                    else if (playerUnit.name === troopArr[7].name && playerUnit.puppy) {
+                        _this.game.boomerDoomer(playerUnit.position);
+                        enemy.addFunds(playerUnit.price * 2);
                         // this.boomerDoomer(playerUnit.position)
                     }
                     else {
@@ -868,10 +899,12 @@ var Player = /** @class */ (function () {
                 button.id = stat.name;
                 div_1.appendChild(document.createElement('br'));
                 if (!_this.unlockedUnits[i])
-                    button.innerHTML = "Purchase for " + troopArr[i].researchPrice;
+                    button.innerHTML = "<span style=\"color: " + stat.color + "\"><i class=\"fas fa-lock\"></i></span> Purchase for " + troopArr[i].researchPrice;
                 if (bindEventListeners)
                     button.addEventListener('click', function () {
-                        if (_this.unlockedUnits[i])
+                        if (_this.unlockedUnits[i] && !_this.isEnoughMoney(stat.price))
+                            _this.redden(button, 280);
+                        else if (_this.unlockedUnits[i])
                             _this.addTroop(i);
                         else
                             _this.purchaseUnit(i, button);
@@ -883,20 +916,29 @@ var Player = /** @class */ (function () {
                     });
             });
             div_1.appendChild(document.createElement('hr'));
-            var button = document.createElement('button');
-            button.innerHTML = "Increase all troop stats by 20%: 1500";
-            div_1.appendChild(button);
-            button.id = 'incMult';
+            var button_1 = document.createElement('button');
+            button_1.innerHTML = "Increase all troop stats by 20%: 1500";
+            div_1.appendChild(button_1);
+            button_1.id = 'incMult';
             if (bindEventListeners) {
-                button.addEventListener('click', function () {
+                button_1.addEventListener('click', function () {
                     if (_this.isEnoughMoney(1500)) {
                         _this.multiplier *= 1.2;
                         _this.addFunds(-1500);
                         // console.log(this.multiplier)
                     }
+                    else
+                        _this.redden(button_1, 800);
                 });
             }
+            for (var i = 0; i <= 3; i++) {
+                div_1.appendChild(document.createElement('br'));
+            }
         }
+    };
+    Player.prototype.redden = function (element, time) {
+        element.style.backgroundColor = 'red';
+        setTimeout(function () { element.style.backgroundColor = buttonBg; }, time);
     };
     Player.prototype.parseUnits = function (units) {
         var arr = [];
@@ -924,12 +966,7 @@ var Player = /** @class */ (function () {
         }
         else {
             // @ts-ignore
-            element.style.backgroundColor = 'red';
-            setTimeout(function () {
-                // @ts-ignore
-                element.style.backgroundColor = buttonBg;
-            }, 800);
-            // console.log('Not enough money, dummy')
+            this.redden(element, 520);
         }
     };
     return Player;
@@ -1049,6 +1086,10 @@ var SimulatingBot = /** @class */ (function (_super) {
                     // console.log(e.data)
                     if (e.data.length)
                         addTroop_1(e.data[0]);
+                    if (enc > 2.2)
+                        addTroop_1(e.data[1]);
+                    if (enc > 3.2)
+                        addTroop_1(e.data[2]);
                     cancelWork_1();
                     document.getElementById("per" + side_1).innerText = "Computed in: " + Math.round((performance.now() - p_1) * 1000) / 1000 + "ms";
                 };
@@ -1139,7 +1180,7 @@ var SimulatingBot = /** @class */ (function (_super) {
     };
     SimulatingBot.prototype.purchaseUnit = function (index) {
         if (this.isEnoughMoney(troopArr[index].researchPrice)) {
-            this.money -= troopArr[index].researchPrice - 5;
+            this.money -= troopArr[index].researchPrice;
             this.unlockedUnits[index] = true;
         }
     };
@@ -1312,6 +1353,10 @@ var InternetPlayer = /** @class */ (function (_super) {
             if (i >= troopArr.length)
                 return;
             button.addEventListener('click', function () {
+                if (_this.unlockedUnits[i] && _this.money < troopArr[i].price) {
+                    // @ts-ignore
+                    _this.redden(button, 280);
+                }
                 if (_this.unlockedUnits[i]) {
                     // @ts-ignore
                     socket.emit("AddTroop", _this.side, i);
@@ -1324,15 +1369,14 @@ var InternetPlayer = /** @class */ (function (_super) {
                 }
                 else {
                     // @ts-ignore
-                    button.style.backgroundColor = 'red';
-                    setTimeout(function () {
-                        // @ts-ignore
-                        button.style.backgroundColor = buttonBg;
-                    }, 800);
+                    _this.redden(button, 500);
                 }
             });
         });
         document.getElementById('incMult').addEventListener('click', function () {
+            if (_this.money < 1500) {
+                _this.redden(document.getElementById('incMult'), 800);
+            }
             // @ts-ignore
             socket.emit('multiplier', _this.side);
         });
@@ -1344,8 +1388,8 @@ var InternetPlayer = /** @class */ (function (_super) {
             this.money = rightMoney;
         document.getElementById('leftMoney').innerText = "Money: " + leftMoney;
         document.getElementById('rightMoney').innerText = "Money: " + rightMoney;
-        document.getElementById('encleft').innerText = leftTroops + " / " + 10;
-        document.getElementById('encright').innerText = rightTroops + " / " + 10;
+        document.getElementById('trsleft').innerText = leftTroops + " / " + 10;
+        document.getElementById('trsright').innerText = rightTroops + " / " + 10;
     };
     return InternetPlayer;
 }(Player));
@@ -1362,26 +1406,26 @@ try {
 }
 catch (e) { }
 function initializeUI(btnWiderWidth, btnNarrowerWidth) {
+    document.getElementById('leftMoney').style.display = 'initial';
+    document.getElementById('rightMoney').style.display = 'initial';
     document.getElementById('startingScreen').style.display = 'none';
     document.getElementById('cx').style.display = 'initial';
     document.getElementById('controls').style.display = '';
+    document.getElementById('shBot').style.display = 'block';
     window.addEventListener('resize', function () { resize(btnWiderWidth, btnNarrowerWidth); });
     resize(btnWiderWidth, btnNarrowerWidth);
 }
 function resize(btnWiderWidth, btnNarrowerWidth) {
     document.querySelectorAll('button').forEach(function (e) {
-        if (document.body.scrollWidth > 477) {
+        if (document.body.scrollWidth > 440) {
             e.style.width = 200 + 'px';
             if (darkTheme)
                 e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)';
             e.style.margin = '4px';
             return;
         }
-        if (document.body.scrollWidth <= 477) {
-            e.style.width = btnWiderWidth + 'px';
-        }
-        if (document.body.scrollWidth <= 347) {
-            e.style.width = btnNarrowerWidth + 'px';
+        if (document.body.scrollWidth <= 440) {
+            e.style.width = 'auto';
         }
         if (darkTheme)
             e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)';
