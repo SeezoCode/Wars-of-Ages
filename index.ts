@@ -1064,9 +1064,9 @@ class Player implements playerInterface{
                     else this.redden(button, 800)
                 })
             }
-            for (let i = 0; i <= 3; i++) {
-                div.appendChild(document.createElement('br'))
-            }
+            // for (let i = 0; i <= 10; i++) {
+            div.appendChild(document.createElement('br'))
+            // }
         }
     }
 
@@ -1587,7 +1587,7 @@ function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
 
     })
     let cxHeight = document.getElementById('cx').offsetHeight
-    document.getElementById('controls').style.height = window.innerHeight - cxHeight + 'px'
+    document.getElementById('controls').style.height = window.innerHeight - cxHeight - 50 + 'px'
 }
 
 

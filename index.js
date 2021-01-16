@@ -931,9 +931,9 @@ var Player = /** @class */ (function () {
                         _this.redden(button_1, 800);
                 });
             }
-            for (var i = 0; i <= 3; i++) {
-                div_1.appendChild(document.createElement('br'));
-            }
+            // for (let i = 0; i <= 10; i++) {
+            div_1.appendChild(document.createElement('br'));
+            // }
         }
     };
     Player.prototype.redden = function (element, time) {
@@ -1434,7 +1434,7 @@ function resize(btnWiderWidth, btnNarrowerWidth) {
         e.style.backgroundColor = buttonBg;
     });
     var cxHeight = document.getElementById('cx').offsetHeight;
-    document.getElementById('controls').style.height = window.innerHeight - cxHeight + 'px';
+    document.getElementById('controls').style.height = window.innerHeight - cxHeight - 50 + 'px';
 }
 try {
     var hostIP_1 = self.location.hostname;
