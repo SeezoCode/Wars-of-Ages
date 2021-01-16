@@ -81,6 +81,11 @@
                 transform: translate(-50%, -50%);
             }
         }
+        /*@media only screen and (max-width: 440px) {*/
+        /*    button {*/
+        /*        width: auto !important;*/
+        /*    }*/
+        /*}*/
         /*@media only screen and (max-width: 477px) {*/
         /*    button {*/
         /*        width: 145px;*/
@@ -154,7 +159,7 @@
             border-bottom: 1px solid lightgray;
             height: 55px;
             display: none;
-            width: 700px;
+            max-width: 700px;
             margin-left: auto;
             margin-right: auto;
         }
@@ -205,7 +210,7 @@
 
     <div id="controls" class="row" style="margin-top: 0; max-width: 700px; display: none; margin-left: auto; margin-right: auto; overflow-y: auto">
         <div id="left" class="col" style="overflow:auto">
-            <p id="encleft"></p>
+            <p></p>
             <p id="unlleft"></p>
             <p id="perleft" style="color: rgba(100, 100, 100, .4)"></p>
             <p id="pullleft" style="color: rgba(100, 100, 100, .4)"></p>
@@ -213,7 +218,7 @@
         </div>
         <br>
         <div id="right" class="col" style="overflow:auto; margin-bottom: 35px">
-            <p id="encright"></p>
+            <p></p>
             <p id="unlright"></p>
             <p id="perright" style="color: rgba(100, 100, 100, .4)"></p>
             <p id="pullright" style="color: rgba(100, 100, 100, .4)"></p>

@@ -50,7 +50,7 @@ const troopArr = [
         name: 'Advanced Troop', health: 35, damage: 13, baseDamage: 10, attackSpeed: 70, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
     },
     {
-        name: 'Base Destroyer', health: 40, damage: 12, baseDamage: 35, attackSpeed: 120, price: 30, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
+        name: 'Base Destroyer', health: 40, damage: 12, baseDamage: 120, attackSpeed: 120, price: 30, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
     },
     {
         name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 2, span: 20, range: 40, researchPrice: 200
@@ -62,7 +62,7 @@ const troopArr = [
         name: 'Doggo', health: 20, damage: 30, baseDamage: 2, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
     },
     {
-        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .4, span: 50, range: 210, researchPrice: 400
+        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .5, span: 50, range: 210, researchPrice: 400
     },
     {
         name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 50, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
@@ -350,7 +350,7 @@ class ShieldTroop extends Trooper {
             cx.fillStyle = this.color
             cx.fillRect(this.position - this.span / 2, canvasHeight - 65, this.span, 35)
             cx.fillStyle = 'brown'
-            cx.fillRect(this.position - (this.side === 'left' ? 0 : this.span) + this.span / 2 - 3, canvasHeight - 65, 3, 35)
+            cx.fillRect(this.position - (this.side === 'left' ? 3 : this.span) + this.span / 2, canvasHeight - 65, 3, 35)
             this.drawHealth()
         }
     }
@@ -848,12 +848,17 @@ class Player implements playerInterface{
         this.enemyBase = enemyBase
         this.playerBase = playerBase
         this.playerUnits = playerUnits
-        if (!this.checkForMoneyAvail && visualize) document.getElementById(`${this.side}Money`).innerHTML = ``
+        if (!this.checkForMoneyAvail && visualize) {
+            document.getElementById(`${this.side}Money`).innerHTML = ``
+            document.getElementById('shBot').style.height = '30px'
+            this.unlockedUnits = [true, true, true, true, true, true, true, true, true, true, true, true]
+        }
         if (startingPlayerUnits.length > 0) {
             startingPlayerUnits.forEach(i => this.addTroop(i))
         }
         this.enemyUnits = enemyUnits
         this.game = game
+
         this.unlockUnits()
     }
 
@@ -1313,7 +1318,7 @@ class SimulatingBot extends Player {
 
     purchaseUnit(index) {
         if (this.isEnoughMoney(troopArr[index].researchPrice)) {
-            this.money -= troopArr[index].researchPrice - 5
+            this.money -= troopArr[index].researchPrice
             this.unlockedUnits[index] = true
         }
     }
@@ -1498,6 +1503,10 @@ class InternetPlayer extends Player implements playerInterface {
         buttons.forEach((button, i) => {
             if (i >= troopArr.length) return
             button.addEventListener('click', () => {
+                if (this.unlockedUnits[i] && this.money < troopArr[i].price) {
+                    // @ts-ignore
+                    this.redden(button, 280)
+                }
                 if (this.unlockedUnits[i]) {
                     // @ts-ignore
                     socket.emit(`AddTroop`, this.side, i)
@@ -1511,15 +1520,14 @@ class InternetPlayer extends Player implements playerInterface {
                 }
                 else {
                     // @ts-ignore
-                    button.style.backgroundColor = 'red'
-                    setTimeout(() => {
-                        // @ts-ignore
-                        button.style.backgroundColor = buttonBg
-                    }, 800)
+                    this.redden(button, 500)
                 }
             })
         })
         document.getElementById('incMult').addEventListener('click', () => {
+            if (this.money < 1500) {
+                this.redden(document.getElementById('incMult'), 800)
+            }
             // @ts-ignore
             socket.emit('multiplier', this.side)
         })
@@ -1530,8 +1538,8 @@ class InternetPlayer extends Player implements playerInterface {
         else this.money = rightMoney
         document.getElementById('leftMoney').innerText = `Money: ${leftMoney}`
         document.getElementById('rightMoney').innerText = `Money: ${rightMoney}`
-        document.getElementById('encleft').innerText = `${leftTroops} / ${10}`
-        document.getElementById('encright').innerText = `${rightTroops} / ${10}`
+        document.getElementById('trsleft').innerText = `${leftTroops} / ${10}`
+        document.getElementById('trsright').innerText = `${rightTroops} / ${10}`
 
     }
 }
@@ -1563,17 +1571,14 @@ function initializeUI(btnWiderWidth: number, btnNarrowerWidth: number,) {
 }
 function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
     document.querySelectorAll('button').forEach(e => {
-        if (document.body.scrollWidth > 477) {
+        if (document.body.scrollWidth > 440) {
             e.style.width = 200 + 'px'
             if (darkTheme) e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)'
             e.style.margin = '4px'
             return
         }
-        if (document.body.scrollWidth <= 477) {
-            e.style.width = btnWiderWidth + 'px'
-        }
-        if (document.body.scrollWidth <= 347) {
-            e.style.width = btnNarrowerWidth + 'px'
+        if (document.body.scrollWidth <= 440) {
+            e.style.width = 'auto'
         }
         if (darkTheme) e.style.boxShadow = '0 0 7px 2px rgb(20,20,20)'
         e.style.margin = '0'
