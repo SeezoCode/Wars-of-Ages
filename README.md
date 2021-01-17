@@ -2,15 +2,13 @@
 The Ultimate Fighting Strategy 3000
 
 
-## Compile and run server
+## How to compile and run the server
 Make sure you have [Node.js](https://nodejs.org/en/) installed on your computer
 
-
-### How to run the server
-Navigate to the directory in terminal and then type:
+Then navigate to the directory in terminal and type:
 - "npm i"
 - "npx tsc"
 - "node ServerHandler.js"
   
 
-Then open the IP address in your browser
+After that open the IP address in your browser and play
