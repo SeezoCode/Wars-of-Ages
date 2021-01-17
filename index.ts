@@ -41,7 +41,7 @@ const troopArr = [
         name: 'Basic Troop', health: 20, damage: 4.5, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
     },
     {
-        name: 'Fast Troop', health: 10, damage: 1, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
+        name: 'Fast Troop', health: 12, damage: 2, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
     },
     {
         name: 'Range Troop', health: 20, damage: 3.8, baseDamage: 3, attackSpeed: 50, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
@@ -56,7 +56,7 @@ const troopArr = [
         name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 2, span: 20, range: 40, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 110, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Shield Troop', health: 120, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
         name: 'Doggo', health: 20, damage: 30, baseDamage: 2, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
@@ -65,7 +65,7 @@ const troopArr = [
         name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .5, span: 50, range: 210, researchPrice: 400
     },
     {
-        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 50, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
+        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 30, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
     },
     {
         name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
@@ -121,6 +121,7 @@ class Trooper implements trooperStatsInterface{
     baseDamage: number
     visualize: boolean
     protected puppy?: boolean;
+    static draw?: () => void;
 
     constructor(stats: trooperStatsInterface, side: string, visualize: boolean = true, multiplier: number = 1, specialParameters: object = {}) {
         this.health = stats.health * multiplier
@@ -364,14 +365,13 @@ class ShieldTroop extends Trooper {
         super.attack(enemyTroopers, stats);
     }
 }
-class HealerTroop extends Trooper {
-    index: number
-    amountOfDogsPresent: number = 0
+class DoggoTroop extends Trooper {
+    // index: number
+    // amountOfDogsPresent: number = 0
     protected puppy: boolean = false
-    protected height = 0
-    private multiplier
-    player: playerInterface
-    playerUnits: Array<trooperStatsInterface>
+    multiplier: number
+    // player: playerInterface
+    // playerUnits: Array<trooperStatsInterface>
 
     constructor(side: string, player: playerInterface, enemy: playerInterface, multiplier: number, specialParameters: object = {}) {
         super(troopArr[7], side, player.visualize, multiplier, specialParameters);
@@ -384,7 +384,7 @@ class HealerTroop extends Trooper {
         if (this.puppy) {
             this.health = 20 * multiplier
             this.maxHealth = this.health * multiplier
-            this.damage = 2.5 * multiplier
+            this.damage = 3.2 * multiplier
             this.attackSpeed = 10
             this.speed = 2.2
             this.span = 10
@@ -457,8 +457,8 @@ class AtomicTroop extends Trooper {
     }
 }
 class AtomicBomb extends ExplodingTroop {
-    player: playerInterface
-    enemy: playerInterface
+    // player: playerInterface
+    // enemy: playerInterface
     constructor(side: string, player: playerInterface, enemy: playerInterface, multiplier: number, specialParameters: object = {}) {
         super(side, player, enemy, multiplier, specialParameters, troopArr[10]);
         // this.player = player
@@ -524,7 +524,7 @@ function holdDeathAnim(position: number, span: number, visualize: boolean) {
 
 
 
-let troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, HealerTroop, TrebuchetTroop, AtomicTroop, AtomicBomb, BossTroop]
+let troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, DoggoTroop, TrebuchetTroop, AtomicTroop, AtomicBomb, BossTroop]
 
 interface baseInterface {
     health: number
@@ -810,7 +810,6 @@ class Player implements playerInterface{
     maxUnits: number
     DOMAccess: boolean
     multiplier: number = 1
-    private online: boolean;
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean) {
         this.money = money
@@ -1039,9 +1038,14 @@ class Player implements playerInterface{
                 div.appendChild(document.createElement('br'))
                 if (!this.unlockedUnits[i]) button.innerHTML = `<span style="color: ${stat.color}"><i class="fas fa-lock"></i></span> Purchase for ${troopArr[i].researchPrice}`
                 if (bindEventListeners) button.addEventListener('click', () => {
-                    if (this.unlockedUnits[i] && !this.isEnoughMoney(stat.price)) this.redden(button, 280)
+                    if (!this.unlockedUnits[i]) this.purchaseUnit(i, button)
+                    else if (this.unlockedUnits[i] && !this.isEnoughMoney(stat.price)) {
+                        this.redden(button, 280)
+                    }
+                    else if (this.playerUnits.length >= 10) {
+                        this.redden(button, 230)
+                    }
                     else if (this.unlockedUnits[i]) this.addTroop(i)
-                    else this.purchaseUnit(i, button)
                     if (this.checkForMoneyAvail) document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
                     else {
                         document.getElementById(`${this.side}Money`).innerHTML = ``
@@ -1110,13 +1114,11 @@ class Player implements playerInterface{
 
 
 
-interface botInterface extends playerInterface {
-
-}
 
 // This bot is an idiot and should not be used!
 // His performance, however, is, compared to other options, spectacular
-class CalculatingBot extends Player implements botInterface {
+/*
+class CalculatingBot extends Player implements playerInterface {
     toUnlockUnit: number
     cooldown: number = 0
     constructor(money = 0, side: string, checkForAvailMoney: boolean) {
@@ -1129,8 +1131,7 @@ class CalculatingBot extends Player implements botInterface {
         if (this.cooldown <= 0) {
             if (this.DPR(this.enemyUnits) >= this.DPR(this.playerUnits) ||
                 this.healthOverall(this.enemyUnits) / 10 * 7 > this.healthOverall(this.playerUnits)) {
-                let i = this.neededUnit(this.DPR(this.enemyUnits) - this.DPR(this.playerUnits),
-                    this.healthOverall(this.enemyUnits) / 10 * 9 - this.healthOverall(this.playerUnits))
+                let i = this.neededUnit()
                 if (i) this.addTroop(i)
                 else this.addTroop(0)
             }
@@ -1161,10 +1162,6 @@ class CalculatingBot extends Player implements botInterface {
         return damage / health
     }
 
-    DPHPP() { // damage per health per money
-
-    }
-
     healthOverall(units: Array<trooperStatsInterface>): number {
         let healthOfTroops = 0
         for (let unit of units) {
@@ -1173,7 +1170,7 @@ class CalculatingBot extends Player implements botInterface {
         return healthOfTroops
     }
 
-    neededUnit(damage: number, health: number): number {
+    neededUnit(): number {
         let mostSuitable = {
             DPH: null,
             index: null
@@ -1190,7 +1187,7 @@ class CalculatingBot extends Player implements botInterface {
     }
 
 }
-
+*/
 
 class SimulatingBot extends Player {
     cooldown: number = 100
@@ -1206,7 +1203,7 @@ class SimulatingBot extends Player {
 
     afterMoveArmy() {
         super.afterMoveArmy()
-        if (this.money > 2000) {
+        if (this.money > 1800) {
             this.multiplier *= 1.2
             this.addFunds(-1500)
         }
@@ -1264,7 +1261,7 @@ class SimulatingBot extends Player {
     }
 
     tryToUnlock() {
-        if (!this.unlockedUnits[this.unlockedUnits.length - 1] && this.money > troopArr[this.toUnlockUnit].researchPrice * 1.5) {
+        if (!this.unlockedUnits[this.unlockedUnits.length - 1] && this.money > troopArr[this.toUnlockUnit].researchPrice * 1.25) {
             this.purchaseUnit(this.toUnlockUnit)
             this.toUnlockUnit++ // should be done better
         }
@@ -1339,12 +1336,12 @@ class InternetPlayer extends Player implements playerInterface {
     checkForAvailMoney: boolean
     boomerDoom: boolean = false
     boomerDoomAt: number = -1
+    private cash = 0
 
     constructor(money, side, checkForAvailMoney, address: string) {
         super(money, side, checkForAvailMoney);
         playingHostedGame = true
         let socket = io(address) // ws://localhost:8080
-
         // this.map(new Player(1000, 'right', false), true, true, [], [], [], new Base(baseStats, 'right'), new Base(baseStats, 'left'))
         this.DOMAccess = true
         this.playerUnits = []
@@ -1385,12 +1382,12 @@ class InternetPlayer extends Player implements playerInterface {
 
         socket.on('atomic', (atomicDoomPending) => {
             if (atomicDoomPending && this.firstTimeAtomicDoom) {
-                console.log('atomicDoomPending')
+                // console.log('atomicDoomPending')
                 this.firstTimeAtomicDoom = false
 
                 holdDeathAnim(canvasWidth / 2, 28, true)
+                setTimeout(() => {this.firstTimeAtomicDoom = true}, 22000)
             }
-            if (!atomicDoomPending) this.firstTimeAtomicDoom = true
         })
 
         socket.on('win', message => {
@@ -1461,7 +1458,11 @@ class InternetPlayer extends Player implements playerInterface {
 
     display(playerOneBase: baseInterface, playerTwoBase: baseInterface,
             playerUnits: Array<trooperStatsInterface>, enemyUnits: Array<trooperStatsInterface>, time: number) {
+        this.playerUnits = []
+        this.enemyUnits = []
+
         cx.clearRect(0, 0, canvasWidth, canvasHeight)
+
         let playerUnitsNumber = this.parseUnits(playerUnits)
         let enemyUnitsNumber = this.parseUnits(enemyUnits)
 
@@ -1481,9 +1482,6 @@ class InternetPlayer extends Player implements playerInterface {
             unit.draw()
             unit.drawAttack(time)
         }
-        this.playerUnits = []
-        this.enemyUnits = []
-
         if (this.boomerDoom) this.boomerBoom(this.boomerDoomAt)
 
         if (this.message) this.displayText(this.message)
@@ -1493,7 +1491,7 @@ class InternetPlayer extends Player implements playerInterface {
         this.enemyUnits.push(new troopers[index]((this.side === 'left' ? 'right' : 'left'), this, this.enemy, this.multiplier, params))
     }
 
-    addGUI(socket: object) {
+    addGUI(socket: WebSocket) {
         document.querySelectorAll('button').forEach(button => button.remove())
         document.querySelectorAll('br').forEach(br => br.remove())
         document.querySelectorAll('hr').forEach(hr => hr.remove())
@@ -1503,20 +1501,22 @@ class InternetPlayer extends Player implements playerInterface {
         buttons.forEach((button, i) => {
             if (i >= troopArr.length) return
             button.addEventListener('click', () => {
-                if (this.unlockedUnits[i] && this.money < troopArr[i].price) {
-                    // @ts-ignore
-                    this.redden(button, 280)
-                }
-                if (this.unlockedUnits[i]) {
-                    // @ts-ignore
-                    socket.emit(`AddTroop`, this.side, i)
-                }
-                else if (this.money > troopArr[i].researchPrice || !this.checkForAvailMoney) {
+                if ((!this.unlockedUnits[i] && this.cash >= troopArr[i].researchPrice) || !this.checkForAvailMoney) {
                     this.purchaseUnit(i, button)
                     // @ts-ignore
                     socket.emit(`unlockTroop`, this.side, i)
-
-                    // socket.emit(`AddMoney`, this.side, -troopArr[i].researchPrice)
+                }
+                else if (this.unlockedUnits[i] && this.cash < troopArr[i].price) {
+                    // @ts-ignore
+                    this.redden(button, 280)
+                }
+                else if (this.playerUnits.length >= 10) {
+                    //@ts-ignore
+                    this.redden(button, 230)
+                }
+                else if (this.unlockedUnits[i]) {
+                    // @ts-ignore
+                    socket.emit(`AddTroop`, this.side, i)
                 }
                 else {
                     // @ts-ignore
@@ -1534,8 +1534,14 @@ class InternetPlayer extends Player implements playerInterface {
     }
 
     updateMoney(leftMoney: number, rightMoney: number, leftTroops: number, rightTroops: number) {
-        if (this.side === 'left') this.money = leftMoney
-        else this.money = rightMoney
+        if (this.side === 'left') {
+            this.money = leftMoney
+            this.cash = leftMoney
+        }
+        else {
+            this.money = rightMoney
+            this.cash = rightMoney
+        }
         document.getElementById('leftMoney').innerText = `Money: ${leftMoney}`
         document.getElementById('rightMoney').innerText = `Money: ${rightMoney}`
         document.getElementById('trsleft').innerText = `${leftTroops} / ${10}`
@@ -1559,17 +1565,17 @@ try {
 }
 catch (e) {}
 
-function initializeUI(btnWiderWidth: number, btnNarrowerWidth: number,) {
+function initializeUI() {
     document.getElementById('leftMoney').style.display = 'initial'
     document.getElementById('rightMoney').style.display = 'initial'
     document.getElementById('startingScreen').style.display = 'none'
     document.getElementById('cx').style.display = 'initial'
     document.getElementById('controls').style.display = ''
     document.getElementById('shBot').style.display = 'block'
-    window.addEventListener('resize', () => {resize(btnWiderWidth, btnNarrowerWidth)})
-    resize(btnWiderWidth, btnNarrowerWidth)
+    window.addEventListener('resize', () => {resize()})
+    resize()
 }
-function resize(btnWiderWidth: number, btnNarrowerWidth: number,) {
+function resize() {
     document.querySelectorAll('button').forEach(e => {
         if (document.body.scrollWidth > 440) {
             e.style.width = 200 + 'px'
@@ -1595,12 +1601,13 @@ try {
     let hostIP = self.location.hostname
     let hostPort = '8083'
     let onlineConnection = false
+    let game
 
     let audioPlaying = false
     let audio = new Audio('img/Age of War - Theme Soundtrack.mp3');
     document.getElementById('music').addEventListener('click', () => {
         if (!audioPlaying) {
-            audio.play();
+            audio.play().then(() => {});
             audio.loop = true
         }
         else audio.pause()
@@ -1617,18 +1624,18 @@ try {
     })
 
     document.getElementById('pl').addEventListener('click', () => {
-        new Game(new Player(55, 'left', !shiftDown),
+        game = new Game(new Player(55, 'left', !shiftDown),
             new Player(55, 'right', !shiftDown),
             true, true, [], [])
-        initializeUI(160, 140)
+        initializeUI()
         }
     )
     document.getElementById('bot').addEventListener('click', () => {
-        new Game(new Player(55, 'left', !shiftDown),
+        game = new Game(new Player(55, 'left', !shiftDown),
             new SimulatingBot(55, 'right', !shiftDown),
             true, true, [], [])
 
-        initializeUI(160, 120)
+        initializeUI()
         }
     )
     document.getElementById('mul').addEventListener('click', () => {
@@ -1645,7 +1652,7 @@ try {
             if (address === null) return
         }
         new InternetPlayer(0, 'left', false, address)
-        initializeUI(160, 120)
+        initializeUI()
         }
     )
     document.getElementById('code').addEventListener('click', () => {
@@ -1671,7 +1678,7 @@ try {
                 }
                 alert(`Game code is: ${res}`)
                 new InternetPlayer(0, 'left', false, `localhost:${res}`)
-                initializeUI(160, 120)
+                initializeUI()
             })
         })
     })
@@ -1712,6 +1719,25 @@ try {
         document.getElementById('code').disabled = false
     })
 
+    // ------ //
+    //@ts-ignore
+    window.cheat1000 = function(side: string = '', amount: number = 1000) {
+        if (!playingHostedGame && (side === 'left' || side === 'right')) {
+            game.players[side === 'left' ? 0 : 1].money += amount
+            document.getElementById(`${side}Money`).innerHTML = `Money: ${game.players[side === 'left' ? 0 : 1].money}`
+        }
+        else {
+            let a = document.createElement('a');
+            let link = document.createTextNode("");
+            a.appendChild(link);
+            a.href = "https://youtu.be/dQw4w9WgXcQ";
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            a.style.display = ''
+        }
+    }
+
 }
 // catch (e) {}
 
@@ -1728,6 +1754,7 @@ catch (e) {
             e.data[2].forEach(function (e) {
                 return e ? numberOfUnlockedUnits++ : 0;
             });
+            if (numberOfUnlockedUnits > troopArr.length - 2) {numberOfUnlockedUnits = troopArr.length - 2}
             // if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
             // let p = performance.now()
             for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
@@ -1800,3 +1827,4 @@ catch (e) {
 
     }
 }
+

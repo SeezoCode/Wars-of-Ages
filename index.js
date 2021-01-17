@@ -47,7 +47,7 @@ var troopArr = [
         name: 'Basic Troop', health: 20, damage: 4.5, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
     },
     {
-        name: 'Fast Troop', health: 10, damage: 1, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
+        name: 'Fast Troop', health: 12, damage: 2, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
     },
     {
         name: 'Range Troop', health: 20, damage: 3.8, baseDamage: 3, attackSpeed: 50, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
@@ -62,7 +62,7 @@ var troopArr = [
         name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 2, span: 20, range: 40, researchPrice: 200
     },
     {
-        name: 'Shield Troop', health: 110, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Shield Troop', health: 120, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
     },
     {
         name: 'Doggo', health: 20, damage: 30, baseDamage: 2, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
@@ -71,7 +71,7 @@ var troopArr = [
         name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .5, span: 50, range: 210, researchPrice: 400
     },
     {
-        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 50, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
+        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 30, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
     },
     {
         name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
@@ -348,14 +348,16 @@ var ShieldTroop = /** @class */ (function (_super) {
     };
     return ShieldTroop;
 }(Trooper));
-var HealerTroop = /** @class */ (function (_super) {
-    __extends(HealerTroop, _super);
-    function HealerTroop(side, player, enemy, multiplier, specialParameters) {
+var DoggoTroop = /** @class */ (function (_super) {
+    __extends(DoggoTroop, _super);
+    // player: playerInterface
+    // playerUnits: Array<trooperStatsInterface>
+    function DoggoTroop(side, player, enemy, multiplier, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
         var _this = _super.call(this, troopArr[7], side, player.visualize, multiplier, specialParameters) || this;
-        _this.amountOfDogsPresent = 0;
+        // index: number
+        // amountOfDogsPresent: number = 0
         _this.puppy = false;
-        _this.height = 0;
         if (!playingHostedGame && player.playerUnits.length >= 2) {
             if (player.playerUnits[player.playerUnits.length - 1].name === troopArr[7].name && player.playerUnits[player.playerUnits.length - 2].name === troopArr[7].name) {
                 _this.puppy = true;
@@ -365,7 +367,7 @@ var HealerTroop = /** @class */ (function (_super) {
         if (_this.puppy) {
             _this.health = 20 * multiplier;
             _this.maxHealth = _this.health * multiplier;
-            _this.damage = 2.5 * multiplier;
+            _this.damage = 3.2 * multiplier;
             _this.attackSpeed = 10;
             _this.speed = 2.2;
             _this.span = 10;
@@ -373,19 +375,19 @@ var HealerTroop = /** @class */ (function (_super) {
         _this.multiplier = multiplier;
         return _this;
     }
-    HealerTroop.prototype.attack = function (enemyTroopers, stats) {
+    DoggoTroop.prototype.attack = function (enemyTroopers, stats) {
         if (this.puppy)
             this.damage = Math.random() * 6 * this.multiplier;
         _super.prototype.attack.call(this, enemyTroopers, stats);
     };
-    HealerTroop.prototype.draw = function () {
+    DoggoTroop.prototype.draw = function () {
         if (this.visualize) {
             cx.fillStyle = this.color;
             cx.fillRect(this.position - this.span / 2, canvasHeight - 45 + (this.span == 10 ? 5 : 0), this.span, (this.span == 10 ? 10 : 15));
             this.drawHealth();
         }
     };
-    return HealerTroop;
+    return DoggoTroop;
 }(Trooper));
 var TrebuchetTroop = /** @class */ (function (_super) {
     __extends(TrebuchetTroop, _super);
@@ -446,6 +448,8 @@ var AtomicTroop = /** @class */ (function (_super) {
 }(Trooper));
 var AtomicBomb = /** @class */ (function (_super) {
     __extends(AtomicBomb, _super);
+    // player: playerInterface
+    // enemy: playerInterface
     function AtomicBomb(side, player, enemy, multiplier, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
         var _this = _super.call(this, side, player, enemy, multiplier, specialParameters, troopArr[10]) || this;
@@ -516,7 +520,7 @@ function holdDeathAnim(position, span, visualize) {
         }
     }
 }
-var troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, HealerTroop, TrebuchetTroop, AtomicTroop, AtomicBomb, BossTroop];
+var troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, DoggoTroop, TrebuchetTroop, AtomicTroop, AtomicBomb, BossTroop];
 var Base = /** @class */ (function () {
     function Base(stats, side, visualize) {
         if (visualize === void 0) { visualize = true; }
@@ -902,12 +906,16 @@ var Player = /** @class */ (function () {
                     button.innerHTML = "<span style=\"color: " + stat.color + "\"><i class=\"fas fa-lock\"></i></span> Purchase for " + troopArr[i].researchPrice;
                 if (bindEventListeners)
                     button.addEventListener('click', function () {
-                        if (_this.unlockedUnits[i] && !_this.isEnoughMoney(stat.price))
+                        if (!_this.unlockedUnits[i])
+                            _this.purchaseUnit(i, button);
+                        else if (_this.unlockedUnits[i] && !_this.isEnoughMoney(stat.price)) {
                             _this.redden(button, 280);
+                        }
+                        else if (_this.playerUnits.length >= 10) {
+                            _this.redden(button, 230);
+                        }
                         else if (_this.unlockedUnits[i])
                             _this.addTroop(i);
-                        else
-                            _this.purchaseUnit(i, button);
                         if (_this.checkForMoneyAvail)
                             document.getElementById(_this.side + "Money").innerHTML = "Money: " + Math.round(_this.money);
                         else {
@@ -973,80 +981,77 @@ var Player = /** @class */ (function () {
 }());
 // This bot is an idiot and should not be used!
 // His performance, however, is, compared to other options, spectacular
-var CalculatingBot = /** @class */ (function (_super) {
-    __extends(CalculatingBot, _super);
-    function CalculatingBot(money, side, checkForAvailMoney) {
-        if (money === void 0) { money = 0; }
-        var _this = _super.call(this, money, side, checkForAvailMoney) || this;
-        _this.cooldown = 0;
-        _this.toUnlockUnit = 1;
-        return _this;
+/*
+class CalculatingBot extends Player implements playerInterface {
+    toUnlockUnit: number
+    cooldown: number = 0
+    constructor(money = 0, side: string, checkForAvailMoney: boolean) {
+        super(money, side, checkForAvailMoney);
+        this.toUnlockUnit = 1
     }
-    CalculatingBot.prototype.afterMoveArmy = function () {
-        _super.prototype.afterMoveArmy.call(this);
+
+    protected afterMoveArmy() {
+        super.afterMoveArmy()
         if (this.cooldown <= 0) {
             if (this.DPR(this.enemyUnits) >= this.DPR(this.playerUnits) ||
                 this.healthOverall(this.enemyUnits) / 10 * 7 > this.healthOverall(this.playerUnits)) {
-                var i = this.neededUnit(this.DPR(this.enemyUnits) - this.DPR(this.playerUnits), this.healthOverall(this.enemyUnits) / 10 * 9 - this.healthOverall(this.playerUnits));
-                if (i)
-                    this.addTroop(i);
-                else
-                    this.addTroop(0);
+                let i = this.neededUnit()
+                if (i) this.addTroop(i)
+                else this.addTroop(0)
             }
             if (!this.unlockedUnits[this.unlockedUnits.length - 1] && this.money > troopArr[this.toUnlockUnit].researchPrice * 2) {
-                this.purchaseUnit(this.toUnlockUnit, document.getElementsByClassName(this.side)[this.toUnlockUnit]);
-                this.toUnlockUnit++;
+                this.purchaseUnit(this.toUnlockUnit, document.getElementsByClassName(this.side)[this.toUnlockUnit])
+                this.toUnlockUnit++
             }
         }
-        this.cooldown--;
-    };
-    CalculatingBot.prototype.addTroop = function (index) {
-        _super.prototype.addTroop.call(this, index);
-        this.cooldown = 45;
-    };
-    CalculatingBot.prototype.DPR = function (units) {
-        var troopAttackPerRound = 0;
-        for (var _i = 0, units_1 = units; _i < units_1.length; _i++) {
-            var unit = units_1[_i];
+        this.cooldown--
+    }
+
+    addTroop(index: number) {
+        super.addTroop(index);
+        this.cooldown = 45
+    }
+
+    DPR(units: Array<trooperStatsInterface>): number {
+        let troopAttackPerRound = 0
+        for (let unit of units) {
             // has to be changed when troopArr changes
-            if (unit.name === troopArr[2].name)
-                troopAttackPerRound += unit.damage * 2 / unit.attackSpeed;
-            else if (unit.name != troopArr[5].name)
-                troopAttackPerRound += unit.damage / unit.attackSpeed;
+            if (unit.name === troopArr[2].name) troopAttackPerRound += unit.damage * 2 / unit.attackSpeed
+            else if (unit.name != troopArr[5].name) troopAttackPerRound += unit.damage / unit.attackSpeed
         }
-        return troopAttackPerRound;
-    };
-    CalculatingBot.prototype.DPH = function (damage, health) {
-        return damage / health;
-    };
-    CalculatingBot.prototype.DPHPP = function () {
-    };
-    CalculatingBot.prototype.healthOverall = function (units) {
-        var healthOfTroops = 0;
-        for (var _i = 0, units_2 = units; _i < units_2.length; _i++) {
-            var unit = units_2[_i];
-            healthOfTroops += unit.health;
+        return troopAttackPerRound
+    }
+
+    DPH(damage: number, health: number) { // damage per health
+        return damage / health
+    }
+
+    healthOverall(units: Array<trooperStatsInterface>): number {
+        let healthOfTroops = 0
+        for (let unit of units) {
+            healthOfTroops += unit.health
         }
-        return healthOfTroops;
-    };
-    CalculatingBot.prototype.neededUnit = function (damage, health) {
-        var _this = this;
-        var mostSuitable = {
+        return healthOfTroops
+    }
+
+    neededUnit(): number {
+        let mostSuitable = {
             DPH: null,
             index: null
-        };
-        troopArr.forEach(function (elem, i) {
-            if (elem.price < _this.money && _this.unlockedUnits[i]) {
-                if (_this.DPH(elem.damage, elem.health) >= mostSuitable.DPH) {
-                    mostSuitable.DPH = _this.DPH(elem.damage, elem.health);
-                    mostSuitable.index = i;
+        }
+        troopArr.forEach((elem, i) => {
+            if (elem.price < this.money && this.unlockedUnits[i]) {
+                if (this.DPH(elem.damage, elem.health) >= mostSuitable.DPH) {
+                    mostSuitable.DPH = this.DPH(elem.damage, elem.health)
+                    mostSuitable.index = i
                 }
             }
-        });
-        return mostSuitable.index;
-    };
-    return CalculatingBot;
-}(Player));
+        })
+        return mostSuitable.index
+    }
+
+}
+*/
 var SimulatingBot = /** @class */ (function (_super) {
     __extends(SimulatingBot, _super);
     function SimulatingBot() {
@@ -1065,7 +1070,7 @@ var SimulatingBot = /** @class */ (function (_super) {
     SimulatingBot.prototype.afterMoveArmy = function () {
         var _this = this;
         _super.prototype.afterMoveArmy.call(this);
-        if (this.money > 2000) {
+        if (this.money > 1800) {
             this.multiplier *= 1.2;
             this.addFunds(-1500);
         }
@@ -1128,7 +1133,7 @@ var SimulatingBot = /** @class */ (function (_super) {
         return false;
     };
     SimulatingBot.prototype.tryToUnlock = function () {
-        if (!this.unlockedUnits[this.unlockedUnits.length - 1] && this.money > troopArr[this.toUnlockUnit].researchPrice * 1.5) {
+        if (!this.unlockedUnits[this.unlockedUnits.length - 1] && this.money > troopArr[this.toUnlockUnit].researchPrice * 1.25) {
             this.purchaseUnit(this.toUnlockUnit);
             this.toUnlockUnit++; // should be done better
         }
@@ -1199,6 +1204,7 @@ var InternetPlayer = /** @class */ (function (_super) {
         _this.enemyMultiplier = 1;
         _this.boomerDoom = false;
         _this.boomerDoomAt = -1;
+        _this.cash = 0;
         playingHostedGame = true;
         var socket = io(address); // ws://localhost:8080
         // this.map(new Player(1000, 'right', false), true, true, [], [], [], new Base(baseStats, 'right'), new Base(baseStats, 'left'))
@@ -1241,12 +1247,11 @@ var InternetPlayer = /** @class */ (function (_super) {
             });
         socket.on('atomic', function (atomicDoomPending) {
             if (atomicDoomPending && _this.firstTimeAtomicDoom) {
-                console.log('atomicDoomPending');
+                // console.log('atomicDoomPending')
                 _this.firstTimeAtomicDoom = false;
                 holdDeathAnim(canvasWidth / 2, 28, true);
+                setTimeout(function () { _this.firstTimeAtomicDoom = true; }, 22000);
             }
-            if (!atomicDoomPending)
-                _this.firstTimeAtomicDoom = true;
         });
         socket.on('win', function (message) {
             _this.message = message;
@@ -1311,6 +1316,8 @@ var InternetPlayer = /** @class */ (function (_super) {
     };
     InternetPlayer.prototype.display = function (playerOneBase, playerTwoBase, playerUnits, enemyUnits, time) {
         var _this = this;
+        this.playerUnits = [];
+        this.enemyUnits = [];
         cx.clearRect(0, 0, canvasWidth, canvasHeight);
         var playerUnitsNumber = this.parseUnits(playerUnits);
         var enemyUnitsNumber = this.parseUnits(enemyUnits);
@@ -1331,8 +1338,6 @@ var InternetPlayer = /** @class */ (function (_super) {
             unit.draw();
             unit.drawAttack(time);
         }
-        this.playerUnits = [];
-        this.enemyUnits = [];
         if (this.boomerDoom)
             this.boomerBoom(this.boomerDoomAt);
         if (this.message)
@@ -1353,19 +1358,22 @@ var InternetPlayer = /** @class */ (function (_super) {
             if (i >= troopArr.length)
                 return;
             button.addEventListener('click', function () {
-                if (_this.unlockedUnits[i] && _this.money < troopArr[i].price) {
-                    // @ts-ignore
-                    _this.redden(button, 280);
-                }
-                if (_this.unlockedUnits[i]) {
-                    // @ts-ignore
-                    socket.emit("AddTroop", _this.side, i);
-                }
-                else if (_this.money > troopArr[i].researchPrice || !_this.checkForAvailMoney) {
+                if ((!_this.unlockedUnits[i] && _this.cash >= troopArr[i].researchPrice) || !_this.checkForAvailMoney) {
                     _this.purchaseUnit(i, button);
                     // @ts-ignore
                     socket.emit("unlockTroop", _this.side, i);
-                    // socket.emit(`AddMoney`, this.side, -troopArr[i].researchPrice)
+                }
+                else if (_this.unlockedUnits[i] && _this.cash < troopArr[i].price) {
+                    // @ts-ignore
+                    _this.redden(button, 280);
+                }
+                else if (_this.playerUnits.length >= 10) {
+                    //@ts-ignore
+                    _this.redden(button, 230);
+                }
+                else if (_this.unlockedUnits[i]) {
+                    // @ts-ignore
+                    socket.emit("AddTroop", _this.side, i);
                 }
                 else {
                     // @ts-ignore
@@ -1382,10 +1390,14 @@ var InternetPlayer = /** @class */ (function (_super) {
         });
     };
     InternetPlayer.prototype.updateMoney = function (leftMoney, rightMoney, leftTroops, rightTroops) {
-        if (this.side === 'left')
+        if (this.side === 'left') {
             this.money = leftMoney;
-        else
+            this.cash = leftMoney;
+        }
+        else {
             this.money = rightMoney;
+            this.cash = rightMoney;
+        }
         document.getElementById('leftMoney').innerText = "Money: " + leftMoney;
         document.getElementById('rightMoney').innerText = "Money: " + rightMoney;
         document.getElementById('trsleft').innerText = leftTroops + " / " + 10;
@@ -1405,17 +1417,17 @@ try {
     };
 }
 catch (e) { }
-function initializeUI(btnWiderWidth, btnNarrowerWidth) {
+function initializeUI() {
     document.getElementById('leftMoney').style.display = 'initial';
     document.getElementById('rightMoney').style.display = 'initial';
     document.getElementById('startingScreen').style.display = 'none';
     document.getElementById('cx').style.display = 'initial';
     document.getElementById('controls').style.display = '';
     document.getElementById('shBot').style.display = 'block';
-    window.addEventListener('resize', function () { resize(btnWiderWidth, btnNarrowerWidth); });
-    resize(btnWiderWidth, btnNarrowerWidth);
+    window.addEventListener('resize', function () { resize(); });
+    resize();
 }
-function resize(btnWiderWidth, btnNarrowerWidth) {
+function resize() {
     document.querySelectorAll('button').forEach(function (e) {
         if (document.body.scrollWidth > 440) {
             e.style.width = 200 + 'px';
@@ -1440,11 +1452,12 @@ try {
     var hostIP_1 = self.location.hostname;
     var hostPort_1 = '8083';
     var onlineConnection_1 = false;
+    var game_1;
     var audioPlaying_1 = false;
     var audio_1 = new Audio('img/Age of War - Theme Soundtrack.mp3');
     document.getElementById('music').addEventListener('click', function () {
         if (!audioPlaying_1) {
-            audio_1.play();
+            audio_1.play().then(function () { });
             audio_1.loop = true;
         }
         else
@@ -1461,12 +1474,12 @@ try {
         shiftDown_1 = false;
     });
     document.getElementById('pl').addEventListener('click', function () {
-        new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
-        initializeUI(160, 140);
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
+        initializeUI();
     });
     document.getElementById('bot').addEventListener('click', function () {
-        new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
-        initializeUI(160, 120);
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
+        initializeUI();
     });
     document.getElementById('mul').addEventListener('click', function () {
         var address;
@@ -1484,7 +1497,7 @@ try {
                 return;
         }
         new InternetPlayer(0, 'left', false, address);
-        initializeUI(160, 120);
+        initializeUI();
     });
     document.getElementById('code').addEventListener('click', function () {
         // document.getElementById('code').innerHTML = `<i class="fa fa-spinner fa-spin"></i> ${document.getElementById('code').innerHTML}`
@@ -1509,7 +1522,7 @@ try {
                 }
                 alert("Game code is: " + res);
                 new InternetPlayer(0, 'left', false, "localhost:" + res);
-                initializeUI(160, 120);
+                initializeUI();
             });
         });
     });
@@ -1549,6 +1562,26 @@ try {
         // @ts-ignore
         document.getElementById('code').disabled = false;
     });
+    // ------ //
+    //@ts-ignore
+    window.cheat1000 = function (side, amount) {
+        if (side === void 0) { side = ''; }
+        if (amount === void 0) { amount = 1000; }
+        if (!playingHostedGame && (side === 'left' || side === 'right')) {
+            game_1.players[side === 'left' ? 0 : 1].money += amount;
+            document.getElementById(side + "Money").innerHTML = "Money: " + game_1.players[side === 'left' ? 0 : 1].money;
+        }
+        else {
+            var a = document.createElement('a');
+            var link = document.createTextNode("");
+            a.appendChild(link);
+            a.href = "https://youtu.be/dQw4w9WgXcQ";
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            a.style.display = '';
+        }
+    };
 }
 // catch (e) {}
 catch (e) {
@@ -1563,6 +1596,9 @@ catch (e) {
             e.data[2].forEach(function (e) {
                 return e ? numberOfUnlockedUnits++ : 0;
             });
+            if (numberOfUnlockedUnits > troopArr.length - 2) {
+                numberOfUnlockedUnits = troopArr.length - 2;
+            }
             // if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
             // let p = performance.now()
             for (var i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
@@ -1578,10 +1614,10 @@ catch (e) {
                         plTroops.push(i);
                         plTroops.push(j);
                         plTroops.push(k);
-                        var game_1 = simulate(plTroops, e.data[1].slice());
-                        var stats = getGameStats(game_1);
-                        stats.playerUnitsLength = game_1.players[0].playerUnits.length;
-                        stats.enemyUnitsLength = game_1.players[1].enemyUnits.length;
+                        var game_2 = simulate(plTroops, e.data[1].slice());
+                        var stats = getGameStats(game_2);
+                        stats.playerUnitsLength = game_2.players[0].playerUnits.length;
+                        stats.enemyUnitsLength = game_2.players[1].enemyUnits.length;
                         if (damageCalc(stats) > bestDPM && Math.random() > .2) {
                             bestDPM = damageCalc(stats);
                             bestStats = stats;

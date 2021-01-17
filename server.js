@@ -128,6 +128,8 @@ io.on('connection', function (socket) {
         }
     });
     socket.on('AddMoney', function (side, amount) {
+        if (amount > 0)
+            return; // so that no player can cheat
         if (socket.id === game.leftID || socket.id === game.rightID) {
             if (side === 'left')
                 game.players[0].addFunds(amount);
