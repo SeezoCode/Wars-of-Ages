@@ -126,6 +126,7 @@ io.on('connection', (socket) => {
         }
     })
     socket.on('AddMoney', (side, amount) => {
+        if (amount > 0) return // so that no player can cheat
         if (socket.id === game.leftID || socket.id === game.rightID) {
             if (side === 'left') game.players[0].addFunds(amount)
             if (side === 'right') game.players[1].addFunds(amount)
