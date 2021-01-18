@@ -11,12 +11,12 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
+// But be careful not to write it wrong since it has a powerful resolution going for the people that test my forms
 var canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, buttonColor, deathAnimPending, radioactivityPending, bgColor, buttonBg, darkTheme, playingHostedGame;
 try {
     var canvas = document.querySelector('canvas');
     canvasWidth = canvas.width = 700;
     canvasHeight = canvas.height = 250;
-    console.log(canvas);
     cx = canvas.getContext('2d');
     explosionIMG = new Image(68, 55);
     explosionIMG.src = 'img/explosion.png';
@@ -25,7 +25,6 @@ try {
     radiationSymbolIMG = new Image(255, 255);
     radiationSymbolIMG.src = 'img/radiationSymbol.png';
     darkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    console.log(darkTheme);
     if (darkTheme) {
         buttonColor = 'darkgray';
         buttonBg = '#1c1c1c';
@@ -44,40 +43,160 @@ catch (e) {
 }
 var troopArr = [
     {
-        name: 'Basic Troop', health: 20, damage: 4.5, baseDamage: 4, attackSpeed: 40, price: 5, color: 'limegreen', speed: 1, span: 20, range: 0, researchPrice: 0
+        name: 'Basic Troop',
+        health: 20,
+        damage: 4.4,
+        baseDamage: 4,
+        attackSpeed: 40,
+        price: 5,
+        color: 'limegreen',
+        speed: 1,
+        span: 20,
+        range: 0,
+        researchPrice: 0
     },
     {
-        name: 'Fast Troop', health: 12, damage: 2, baseDamage: .8, attackSpeed: 15, price: 5, color: 'lightpink', speed: 2.5, span: 15, range: 10, researchPrice: 60
+        name: 'Fast Troop',
+        health: 12,
+        damage: 2.3,
+        baseDamage: .8,
+        attackSpeed: 13,
+        price: 5,
+        color: 'lightpink',
+        speed: 2.5,
+        span: 15,
+        range: 10,
+        researchPrice: 60
     },
     {
-        name: 'Range Troop', health: 20, damage: 3.8, baseDamage: 3, attackSpeed: 50, price: 8, color: 'blue', speed: 1, span: 20, range: 79, researchPrice: 120
+        name: 'Range Troop',
+        health: 20,
+        damage: 4.3,
+        baseDamage: 3,
+        attackSpeed: 50,
+        price: 8,
+        color: 'blue',
+        speed: 1,
+        span: 20,
+        range: 79,
+        researchPrice: 100
     },
     {
-        name: 'Advanced Troop', health: 35, damage: 13, baseDamage: 10, attackSpeed: 70, price: 10, color: 'darkgreen', speed: 1, span: 20, range: 0, researchPrice: 150
+        name: 'Advanced Troop',
+        health: 36,
+        damage: 15,
+        baseDamage: 10,
+        attackSpeed: 70,
+        price: 10,
+        color: 'darkgreen',
+        speed: 1,
+        span: 20,
+        range: 0,
+        researchPrice: 120
     },
     {
-        name: 'Base Destroyer', health: 40, damage: 12, baseDamage: 120, attackSpeed: 120, price: 30, color: 'yellow', speed: .8, span: 45, range: 0, researchPrice: 175
+        name: 'Shield Troop',
+        health: 115,
+        damage: 3,
+        baseDamage: 1.75,
+        attackSpeed: 200,
+        price: 12,
+        color: 'cadetblue',
+        speed: 1,
+        span: 20,
+        range: 0,
+        researchPrice: 150
     },
     {
-        name: 'Boomer Troop', health: 1, damage: 50, baseDamage: 30, attackSpeed: 17, price: 20, color: 'red', speed: 2, span: 20, range: 40, researchPrice: 200
+        name: 'Catapult',
+        health: 15,
+        damage: 3.2,
+        baseDamage: 12,
+        attackSpeed: 100,
+        price: 20,
+        color: 'yellow',
+        speed: .9,
+        span: 32,
+        range: 140,
+        researchPrice: 140
     },
     {
-        name: 'Shield Troop', health: 120, damage: 1.4, baseDamage: 4, attackSpeed: 300, price: 18, color: 'cadetblue', speed: 1, span: 20, range: 0, researchPrice: 250
+        name: 'Boomer Troop',
+        health: 1,
+        damage: 50,
+        baseDamage: 30,
+        attackSpeed: 17,
+        price: 20,
+        color: 'red',
+        speed: 2,
+        span: 20,
+        range: 40,
+        researchPrice: 140
     },
     {
-        name: 'Doggo', health: 20, damage: 30, baseDamage: 2, attackSpeed: 60, price: 20, color: 'chocolate', speed: 1.8, span: 15, range: 0, researchPrice: 250
+        name: 'Doggo',
+        health: 30,
+        damage: 30,
+        baseDamage: 2,
+        attackSpeed: 60,
+        price: 20,
+        color: 'chocolate',
+        speed: 1.8,
+        span: 15,
+        range: 0,
+        researchPrice: 175
     },
     {
-        name: 'Trebuchet', health: 5, damage: 0, baseDamage: 100, attackSpeed: 300, price: 75, color: 'brown', speed: .5, span: 50, range: 210, researchPrice: 400
+        name: 'Trebuchet',
+        health: 5,
+        damage: 0,
+        baseDamage: 100,
+        attackSpeed: 300,
+        price: 45,
+        color: 'brown',
+        speed: .5,
+        span: 50,
+        range: 210,
+        researchPrice: 250
     },
     {
-        name: 'Atomic Troop', health: 280, damage: .6, baseDamage: .75, attackSpeed: 1, price: 30, color: 'forestgreen', speed: .8, span: 18, range: 0, researchPrice: 600
+        name: 'Atomic Troop',
+        health: 280,
+        damage: .6,
+        baseDamage: .75,
+        attackSpeed: 1,
+        price: 30,
+        color: 'forestgreen',
+        speed: .8,
+        span: 18,
+        range: 0,
+        researchPrice: 250
     },
     {
-        name: 'Atomic Bomb', health: 5000, damage: 9999, baseDamage: 0, attackSpeed: 1, price: 500, color: 'forestgreen', speed: 3, span: 28, range: 100, researchPrice: 1000
+        name: 'Atomic Bomb',
+        health: 5000,
+        damage: 9999,
+        baseDamage: 0,
+        attackSpeed: 1,
+        price: 500,
+        color: 'forestgreen',
+        speed: 3,
+        span: 28,
+        range: 100,
+        researchPrice: 1000
     },
     {
-        name: 'Boss', health: 1000, damage: 40, baseDamage: 10, attackSpeed: 180, price: 7500, color: 'crimson', speed: .3, span: 35, range: 0, researchPrice: 15000
+        name: 'Boss',
+        health: 1000,
+        damage: 40,
+        baseDamage: 10,
+        attackSpeed: 180,
+        price: 7500,
+        color: 'crimson',
+        speed: .3,
+        span: 35,
+        range: 0,
+        researchPrice: 15000
     },
 ];
 var baseStats = {
@@ -149,11 +268,9 @@ var Trooper = /** @class */ (function () {
             this.attack(enemyTroopers, stats);
             this.targetTime = null;
         }
-        // }
-        // else this.attack(enemyTroopers, stats) // This is a shortcut, may not be as precise!
     };
+    // else this.attack(enemyTroopers, stats) // This is a shortcut, may not be as precise!
     Trooper.prototype.isInFront = function (playerUnits, index) {
-        // takes an array and queue number to find out if one in front of him is '11' near
         // if (radioactivityPending && this.name != troopArr[4].name) this.health -= .04
         if (index === 0)
             return false;
@@ -249,37 +366,96 @@ var AdvancedTroop = /** @class */ (function (_super) {
     }
     return AdvancedTroop;
 }(Trooper));
-var BaseDestroyerTroop = /** @class */ (function (_super) {
-    __extends(BaseDestroyerTroop, _super);
-    function BaseDestroyerTroop(side, player, enemy, multiplier, specialParameters) {
+var ShieldTroop = /** @class */ (function (_super) {
+    __extends(ShieldTroop, _super);
+    function ShieldTroop(side, player, enemy, multiplier, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
         return _super.call(this, troopArr[4], side, player.visualize, multiplier, specialParameters) || this;
     }
-    BaseDestroyerTroop.prototype.drawAttack = function (time) {
-        if (this.targetTime !== null && this.visualize) {
-            _super.prototype.drawAttack.call(this, time);
-            cx.fillStyle = 'orangered';
-            cx.fillRect(this.position - (this.side === 'left' ? this.span / 4 : -this.span / 4), canvasHeight - 45, this.side === 'left' ? (1 / (this.targetTime - time)) * this.span : -(1 / (this.targetTime - time)) * this.span, 5);
+    ShieldTroop.prototype.draw = function () {
+        if (this.visualize) {
+            cx.fillStyle = this.color;
+            cx.fillRect(this.position - this.span / 2, canvasHeight - 65, this.span, 35);
+            cx.fillStyle = 'brown';
+            cx.fillRect(this.position - (this.side === 'left' ? 3 : this.span) + this.span / 2, canvasHeight - 65, 3, 35);
+            this.drawHealth();
         }
     };
-    return BaseDestroyerTroop;
+    ShieldTroop.prototype.attack = function (enemyTroopers, stats, specialParameters) {
+        if (specialParameters === void 0) { specialParameters = {}; }
+        if (enemyTroopers[0].name === troopArr[6].name) {
+            this.damage = 33;
+        }
+        else {
+            this.damage = .5;
+        }
+        _super.prototype.attack.call(this, enemyTroopers, stats);
+    };
+    return ShieldTroop;
+}(Trooper));
+var CatapultTroop = /** @class */ (function (_super) {
+    __extends(CatapultTroop, _super);
+    function CatapultTroop(side, player, enemy, multiplier, specialParameters) {
+        if (specialParameters === void 0) { specialParameters = {}; }
+        var _this = _super.call(this, troopArr[5], side, player.visualize, multiplier, specialParameters) || this;
+        _this.blast = 60;
+        return _this;
+    }
+    CatapultTroop.prototype.drawAttack = function (time) {
+        if (!this.visualize)
+            return;
+        if (this.targetTime !== null && this.visualize) {
+            _super.prototype.drawAttack.call(this, time);
+        }
+        var y;
+        if (this.targetTime)
+            y = canvasHeight - 100 -
+                Math.abs(Math.sin(((this.attackSpeed / 8) / (this.targetTime - time)) / (this.attackSpeed / 8) * Math.PI)) * 50 + 5;
+        else
+            y = canvasHeight - 100;
+        if (this.targetTime) {
+            cx.fillStyle = 'silver';
+            cx.beginPath();
+            if (this.side === 'left') {
+                cx.arc(this.position + this.attackSpeed / Math.abs(time - this.targetTime), y, 5, 0, 2 * Math.PI); // y = canvasHeight - 100
+            }
+            else if (this.side === 'right') {
+                cx.arc(this.position - this.attackSpeed / Math.abs(time - this.targetTime), y, 5, 0, 2 * Math.PI); // y = canvasHeight - 100
+            }
+            cx.fill();
+        }
+    };
+    CatapultTroop.prototype.attack = function (enemyTroopers, stats) {
+        for (var _i = 0, enemyTroopers_1 = enemyTroopers; _i < enemyTroopers_1.length; _i++) {
+            var troop = enemyTroopers_1[_i];
+            if (this.side === 'left' && this.position + this.range > troop.position && this.position + this.range - this.blast < troop.position) {
+                troop.health -= this.damage;
+                stats.damageDealt += this.damage;
+            }
+            else if (this.side === 'right' && this.position - this.range < troop.position && this.position - this.range + this.blast > troop.position) {
+                troop.health -= this.damage;
+                stats.damageDealt += this.damage;
+            }
+        }
+    };
+    return CatapultTroop;
 }(Trooper));
 var ExplodingTroop = /** @class */ (function (_super) {
     __extends(ExplodingTroop, _super);
     function ExplodingTroop(side, player, enemy, multiplier, specialParameters, troopStats) {
         if (specialParameters === void 0) { specialParameters = {}; }
-        if (troopStats === void 0) { troopStats = troopArr[5]; }
+        if (troopStats === void 0) { troopStats = troopArr[6]; }
         var _this = _super.call(this, troopStats, side, player.visualize, multiplier, specialParameters) || this;
         // @ts-ignore
         if (player.visualize)
             Array.from(document.getElementsByClassName(_this.side + "Button")).forEach(function (btn) {
-                if (btn.id === troopArr[5].name) {
+                if (btn.id === troopArr[6].name) {
                     // @ts-ignore
                     btn.disabled = true;
                     setTimeout(function () {
                         // @ts-ignore
                         btn.disabled = false;
-                    }, 1500);
+                    }, 400);
                 }
             });
         return _this;
@@ -321,33 +497,6 @@ var ExplodingTroop = /** @class */ (function (_super) {
     };
     return ExplodingTroop;
 }(Trooper));
-var ShieldTroop = /** @class */ (function (_super) {
-    __extends(ShieldTroop, _super);
-    function ShieldTroop(side, player, enemy, multiplier, specialParameters) {
-        if (specialParameters === void 0) { specialParameters = {}; }
-        return _super.call(this, troopArr[6], side, player.visualize, multiplier, specialParameters) || this;
-    }
-    ShieldTroop.prototype.draw = function () {
-        if (this.visualize) {
-            cx.fillStyle = this.color;
-            cx.fillRect(this.position - this.span / 2, canvasHeight - 65, this.span, 35);
-            cx.fillStyle = 'brown';
-            cx.fillRect(this.position - (this.side === 'left' ? 3 : this.span) + this.span / 2, canvasHeight - 65, 3, 35);
-            this.drawHealth();
-        }
-    };
-    ShieldTroop.prototype.attack = function (enemyTroopers, stats, specialParameters) {
-        if (specialParameters === void 0) { specialParameters = {}; }
-        if (enemyTroopers[0].name === troopArr[6].name) {
-            this.damage = 33;
-        }
-        else {
-            this.damage = .5;
-        }
-        _super.prototype.attack.call(this, enemyTroopers, stats);
-    };
-    return ShieldTroop;
-}(Trooper));
 var DoggoTroop = /** @class */ (function (_super) {
     __extends(DoggoTroop, _super);
     // player: playerInterface
@@ -365,7 +514,7 @@ var DoggoTroop = /** @class */ (function (_super) {
         }
         // console.log(player)
         if (_this.puppy) {
-            _this.health = 20 * multiplier;
+            _this.health = 22 * multiplier;
             _this.maxHealth = _this.health * multiplier;
             _this.damage = 3.2 * multiplier;
             _this.attackSpeed = 10;
@@ -520,7 +669,7 @@ function holdDeathAnim(position, span, visualize) {
         }
     }
 }
-var troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, BaseDestroyerTroop, ExplodingTroop, ShieldTroop, DoggoTroop, TrebuchetTroop, AtomicTroop, AtomicBomb, BossTroop];
+var troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, ShieldTroop, CatapultTroop, ExplodingTroop, DoggoTroop, TrebuchetTroop, AtomicTroop, AtomicBomb, BossTroop];
 var Base = /** @class */ (function () {
     function Base(stats, side, visualize) {
         if (visualize === void 0) { visualize = true; }
@@ -646,7 +795,9 @@ var Game = /** @class */ (function () {
     };
     Game.prototype.animation = function () {
         var _this = this;
-        var move = function () { _this.move(); };
+        var move = function () {
+            _this.move();
+        };
         var aliveBases = function () {
             return _this.players[0].doesBaseHaveHealth() && _this.players[1].doesBaseHaveHealth();
         };
@@ -658,7 +809,7 @@ var Game = /** @class */ (function () {
         //     }, .001)
         // }
         else {
-            while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 1000000) { //
+            while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 120000) { //
                 move();
             }
             // console.log('Game ended,',
@@ -717,6 +868,7 @@ var Player = /** @class */ (function () {
             document.getElementById(this.side + "Money").innerHTML = "";
             document.getElementById('shBot').style.height = '30px';
             this.unlockedUnits = [true, true, true, true, true, true, true, true, true, true, true, true];
+            this.money = 1999;
         }
         if (startingPlayerUnits.length > 0) {
             startingPlayerUnits.forEach(function (i) { return _this.addTroop(i); });
@@ -804,18 +956,18 @@ var Player = /** @class */ (function () {
                     playerUnit.deleteAnim();
                     if (playerUnit.name === troopArr[10].name) {
                         _this.game.atomicDoomPending = true;
-                        setTimeout(function () { _this.game.atomicDoomPending = false; }, 22000);
+                        setTimeout(function () {
+                            _this.game.atomicDoomPending = false;
+                        }, 22000);
                     }
-                    else if (playerUnit.name === troopArr[5].name) {
+                    else if (playerUnit.name === troopArr[6].name) {
                         _this.game.boomerDoomer(playerUnit.position);
                         enemy.addFunds(playerUnit.price * 2.5);
                         // this.boomerDoomer(playerUnit.position)
                     }
                     // @ts-ignore
                     else if (playerUnit.name === troopArr[7].name && playerUnit.puppy) {
-                        _this.game.boomerDoomer(playerUnit.position);
                         enemy.addFunds(playerUnit.price * 2);
-                        // this.boomerDoomer(playerUnit.position)
                     }
                     else {
                         enemy.addFunds(playerUnit.price * 3);
@@ -912,7 +1064,7 @@ var Player = /** @class */ (function () {
                             _this.redden(button, 280);
                         }
                         else if (_this.playerUnits.length >= 10) {
-                            _this.redden(button, 230);
+                            _this.redden(button, 180);
                         }
                         else if (_this.unlockedUnits[i])
                             _this.addTroop(i);
@@ -946,7 +1098,9 @@ var Player = /** @class */ (function () {
     };
     Player.prototype.redden = function (element, time) {
         element.style.backgroundColor = 'red';
-        setTimeout(function () { element.style.backgroundColor = buttonBg; }, time);
+        setTimeout(function () {
+            element.style.backgroundColor = buttonBg;
+        }, time);
     };
     Player.prototype.parseUnits = function (units) {
         var arr = [];
@@ -969,7 +1123,8 @@ var Player = /** @class */ (function () {
                     element.innerHTML =
                         "<span style=\"color: " + troopArr[index].color + "\"><i class=\"fa-circle\"></i></span> " + troopArr[index].name + ": " + troopArr[index].price;
             }
-            catch (e) { }
+            catch (e) {
+            }
             // document.querySelectorAll(`.${this.side}`)[index].removeAttribute('disabled')
         }
         else {
@@ -1075,9 +1230,10 @@ var SimulatingBot = /** @class */ (function (_super) {
             this.addFunds(-1500);
         }
         var enc = this.encouragement();
-        document.getElementById("pull" + this.side).innerText = 'Mode: ' + (enc > 2.2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal');
+        if (enc > 50 && this.playerUnits.length <= 1)
+            this.addTroop(0);
+        document.getElementById("pull" + this.side).innerText = 'Mode: ' + (enc > 2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal');
         if (this.cooldown <= 0 && !this.shouldPull(1, enc)) {
-            // console.log(enc)
             if (enc >= .8 && !this.working && this.playerUnits.length < this.maxUnits) {
                 this.working = true;
                 var cancelWork_1 = function () { return _this.working = false; };
@@ -1086,14 +1242,14 @@ var SimulatingBot = /** @class */ (function (_super) {
                 var p_1 = performance.now();
                 var worker = new Worker('index.js');
                 worker.postMessage([this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits),
-                    this.unlockedUnits, 'right', this.money, this.game]);
+                    this.unlockedUnits, 'right', this.money, this.game, enc > 3]);
                 worker.onmessage = function (e) {
                     // console.log(e.data)
                     if (e.data.length)
                         addTroop_1(e.data[0]);
-                    if (enc > 2.2)
+                    if (enc > 1.8)
                         addTroop_1(e.data[1]);
-                    if (enc > 3.2)
+                    if (enc > 2.8)
                         addTroop_1(e.data[2]);
                     cancelWork_1();
                     document.getElementById("per" + side_1).innerText = "Computed in: " + Math.round((performance.now() - p_1) * 1000) / 1000 + "ms";
@@ -1106,9 +1262,11 @@ var SimulatingBot = /** @class */ (function (_super) {
             }
             this.tryToUnlock();
             var numberOfUnlockedUnits_1 = 0;
-            this.unlockedUnits.forEach(function (e) { if (e) {
-                numberOfUnlockedUnits_1++;
-            } });
+            this.unlockedUnits.forEach(function (e) {
+                if (e) {
+                    numberOfUnlockedUnits_1++;
+                }
+            });
             // document.getElementById(`enc${this.side}`).innerText = `Enc: ${Math.round(enc * 1000) / 1000}`
             document.getElementById("unl" + this.side).innerText = "Unlocked Units: " + numberOfUnlockedUnits_1;
         }
@@ -1212,11 +1370,15 @@ var InternetPlayer = /** @class */ (function (_super) {
         _this.playerUnits = [];
         _this.enemyUnits = [];
         _this.firstTimeAtomicDoom = true;
-        socket.on('mess', function (message) { console.log(message); });
+        socket.on('mess', function (message) {
+            console.log(message);
+        });
         socket.on('side', function (side, checkForAvailMoney, unlockedUnits) {
             if (side === 'Server Full') {
                 _this.message = 'Logged in as spectator';
-                setTimeout(function () { _this.message = ''; }, 7000);
+                setTimeout(function () {
+                    _this.message = '';
+                }, 7000);
                 return;
             }
             else {
@@ -1235,7 +1397,9 @@ var InternetPlayer = /** @class */ (function (_super) {
         socket.on('boomer', function (position) {
             _this.boomerDoom = true;
             _this.boomerDoomAt = position;
-            setTimeout(function () { _this.boomerDoom = false; }, 85);
+            setTimeout(function () {
+                _this.boomerDoom = false;
+            }, 85);
         });
         if (_this.side || _this.spectator)
             socket.on('game', function (playerOneBase, playerTwoBase, playerOneUnits, playerTwoUnits, leftMoney, rightMoney, time) {
@@ -1250,12 +1414,16 @@ var InternetPlayer = /** @class */ (function (_super) {
                 // console.log('atomicDoomPending')
                 _this.firstTimeAtomicDoom = false;
                 holdDeathAnim(canvasWidth / 2, 28, true);
-                setTimeout(function () { _this.firstTimeAtomicDoom = true; }, 22000);
+                setTimeout(function () {
+                    _this.firstTimeAtomicDoom = true;
+                }, 22000);
             }
         });
         socket.on('win', function (message) {
             _this.message = message;
-            setTimeout(function () { location.reload(); }, 7500);
+            setTimeout(function () {
+                location.reload();
+            }, 7500);
         });
         socket.on('multiplier', function (left, right) {
             if (_this.side === 'left') {
@@ -1369,7 +1537,7 @@ var InternetPlayer = /** @class */ (function (_super) {
                 }
                 else if (_this.playerUnits.length >= 10) {
                     //@ts-ignore
-                    _this.redden(button, 230);
+                    _this.redden(button, 180);
                 }
                 else if (_this.unlockedUnits[i]) {
                     // @ts-ignore
@@ -1416,7 +1584,8 @@ try {
         troopArr: troopArr,
     };
 }
-catch (e) { }
+catch (e) {
+}
 function initializeUI() {
     document.getElementById('leftMoney').style.display = 'initial';
     document.getElementById('rightMoney').style.display = 'initial';
@@ -1424,7 +1593,9 @@ function initializeUI() {
     document.getElementById('cx').style.display = 'initial';
     document.getElementById('controls').style.display = '';
     document.getElementById('shBot').style.display = 'block';
-    window.addEventListener('resize', function () { resize(); });
+    window.addEventListener('resize', function () {
+        resize();
+    });
     resize();
 }
 function resize() {
@@ -1452,12 +1623,13 @@ try {
     var hostIP_1 = self.location.hostname;
     var hostPort_1 = '8083';
     var onlineConnection_1 = false;
-    var game_1;
+    // let game
     var audioPlaying_1 = false;
     var audio_1 = new Audio('img/Age of War - Theme Soundtrack.mp3');
     document.getElementById('music').addEventListener('click', function () {
         if (!audioPlaying_1) {
-            audio_1.play().then(function () { });
+            audio_1.play().then(function () {
+            });
             audio_1.loop = true;
         }
         else
@@ -1474,11 +1646,11 @@ try {
         shiftDown_1 = false;
     });
     document.getElementById('pl').addEventListener('click', function () {
-        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
+        new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
     });
     document.getElementById('bot').addEventListener('click', function () {
-        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
+        new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
     });
     document.getElementById('mul').addEventListener('click', function () {
@@ -1568,8 +1740,8 @@ try {
         if (side === void 0) { side = ''; }
         if (amount === void 0) { amount = 1000; }
         if (!playingHostedGame && (side === 'left' || side === 'right')) {
-            game_1.players[side === 'left' ? 0 : 1].money += amount;
-            document.getElementById(side + "Money").innerHTML = "Money: " + game_1.players[side === 'left' ? 0 : 1].money;
+            game.players[side === 'left' ? 0 : 1].money += amount;
+            document.getElementById(side + "Money").innerHTML = "Money: " + game.players[side === 'left' ? 0 : 1].money;
         }
         else {
             var a = document.createElement('a');
@@ -1587,7 +1759,7 @@ try {
 catch (e) {
     try {
         onmessage = function (e) {
-            // e[0] playerTroops e[1] enemyTroops e[2] unlockedUnits e[3] side e[4] money e[5] game
+            // e[0] playerTroops e[1] enemyTroops e[2] unlockedUnits e[3] side e[4] money e[5] game e[6] quick compute mode
             // console.log(e);
             var bestDPM = -9999;
             var bestStats;
@@ -1596,34 +1768,56 @@ catch (e) {
             e.data[2].forEach(function (e) {
                 return e ? numberOfUnlockedUnits++ : 0;
             });
-            if (numberOfUnlockedUnits > troopArr.length - 2) {
+            if (numberOfUnlockedUnits >= troopArr.length - 2) {
                 numberOfUnlockedUnits = troopArr.length - 2;
             }
             // if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
             // let p = performance.now()
-            for (var i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
-                if (i === 4 || i === 8)
-                    continue;
-                for (var j = 0; j < numberOfUnlockedUnits; j++) {
-                    if (j === 4 || j === 8 || (i === 5 && j === 5))
+            if (!e[6]) {
+                for (var i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
+                    if (i === 8)
                         continue;
-                    for (var k = 0; k < numberOfUnlockedUnits; k++) {
-                        if (k === 4 || k === 8 || ((i === 5 && k === 5) || (j === 5 && k === 5)))
+                    for (var j = 0; j < numberOfUnlockedUnits; j++) {
+                        if (j === 8 || (i === 6 && j === 6))
+                            continue;
+                        for (var k = 0; k < numberOfUnlockedUnits; k++) {
+                            if (((i === 6 && k === 6) || (j === 6 && k === 6)))
+                                continue;
+                            var plTroops = e.data[0].slice();
+                            plTroops.push(i);
+                            plTroops.push(j);
+                            plTroops.push(k);
+                            // let p = performance.now()
+                            simulationHandler(plTroops);
+                        }
+                    }
+                }
+            }
+            else {
+                for (var i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
+                    if (i === 8)
+                        continue;
+                    for (var j = 0; j < numberOfUnlockedUnits; j++) {
+                        if (j === 8 || (i === 6 && j === 6))
+                            continue;
+                        if (j === 6)
                             continue;
                         var plTroops = e.data[0].slice();
                         plTroops.push(i);
                         plTroops.push(j);
-                        plTroops.push(k);
-                        var game_2 = simulate(plTroops, e.data[1].slice());
-                        var stats = getGameStats(game_2);
-                        stats.playerUnitsLength = game_2.players[0].playerUnits.length;
-                        stats.enemyUnitsLength = game_2.players[1].enemyUnits.length;
-                        if (damageCalc(stats) > bestDPM && Math.random() > .2) {
-                            bestDPM = damageCalc(stats);
-                            bestStats = stats;
-                            bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]];
-                        }
+                        simulationHandler(plTroops);
                     }
+                }
+            }
+            function simulationHandler(plTroops) {
+                var game = simulate(plTroops, e.data[1].slice());
+                var stats = getGameStats(game);
+                stats.playerUnitsLength = game.players[0].playerUnits.length;
+                stats.enemyUnitsLength = game.players[1].enemyUnits.length;
+                if (damageCalc(stats) > bestDPM && Math.random() > .2) {
+                    bestDPM = damageCalc(stats);
+                    bestStats = stats;
+                    bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]];
                 }
             }
             // console.log(bestDPM, bestStats, bestTroops);
