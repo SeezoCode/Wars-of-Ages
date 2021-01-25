@@ -370,7 +370,9 @@ var ShieldTroop = /** @class */ (function (_super) {
     __extends(ShieldTroop, _super);
     function ShieldTroop(side, player, enemy, multiplier, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
-        return _super.call(this, troopArr[4], side, player.visualize, multiplier, specialParameters) || this;
+        var _this = _super.call(this, troopArr[4], side, player.visualize, multiplier, specialParameters) || this;
+        _this.multiplier = multiplier;
+        return _this;
     }
     ShieldTroop.prototype.draw = function () {
         if (this.visualize) {
@@ -383,11 +385,11 @@ var ShieldTroop = /** @class */ (function (_super) {
     };
     ShieldTroop.prototype.attack = function (enemyTroopers, stats, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
-        if (enemyTroopers[0].name === troopArr[6].name) {
-            this.damage = 33;
+        if (enemyTroopers[0].name === troopArr[4].name) {
+            this.damage = troopArr[4].damage * 20 * this.multiplier;
         }
         else {
-            this.damage = .5;
+            this.damage = troopArr[4].damage * this.multiplier;
         }
         _super.prototype.attack.call(this, enemyTroopers, stats);
     };
@@ -1521,6 +1523,7 @@ var InternetPlayer = /** @class */ (function (_super) {
         document.querySelectorAll('hr').forEach(function (hr) { return hr.remove(); });
         // if (this.spectator) return
         this.unlockUnits(false);
+        //@ts-ignore
         var buttons = Array.from(document.getElementsByClassName(this.side + 'Button'));
         buttons.forEach(function (button, i) {
             if (i >= troopArr.length)
