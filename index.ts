@@ -399,8 +399,10 @@ class AdvancedTroop extends Trooper {
 }
 
 class ShieldTroop extends Trooper {
+    private readonly multiplier: number;
     constructor(side: string, player: playerInterface, enemy: playerInterface, multiplier: number, specialParameters: object = {}) {
         super(troopArr[4], side, player.visualize, multiplier, specialParameters);
+        this.multiplier = multiplier;
     }
 
     draw() {
@@ -414,10 +416,11 @@ class ShieldTroop extends Trooper {
     }
 
     attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface, specialParameters: object = {}) {
-        if (enemyTroopers[0].name === troopArr[6].name) {
-            this.damage = 33
-        } else {
-            this.damage = .5
+        if (enemyTroopers[0].name === troopArr[4].name) {
+            this.damage = troopArr[4].damage * 20 * this.multiplier;
+        }
+        else {
+            this.damage = troopArr[4].damage * this.multiplier;
         }
         super.attack(enemyTroopers, stats);
     }
@@ -1670,6 +1673,7 @@ class InternetPlayer extends Player implements playerInterface {
         document.querySelectorAll('hr').forEach(hr => hr.remove())
         // if (this.spectator) return
         this.unlockUnits(false)
+        //@ts-ignore
         let buttons = Array.from(document.getElementsByClassName(this.side + 'Button'))
         buttons.forEach((button, i) => {
             if (i >= troopArr.length) return
@@ -1943,19 +1947,18 @@ catch (e) {
                         }
                     }
                 }
-            }
-            else {
+            } else {
                 for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
                     if (i === 8) continue;
                     for (let j = 0; j < numberOfUnlockedUnits; j++) {
                         if (j === 8 || (i === 6 && j === 6)) continue;
-                            if (j === 6) continue;
-                            let plTroops = e.data[0].slice();
-                            plTroops.push(i);
-                            plTroops.push(j);
-                            simulationHandler(plTroops)
-                        }
+                        if (j === 6) continue;
+                        let plTroops = e.data[0].slice();
+                        plTroops.push(i);
+                        plTroops.push(j);
+                        simulationHandler(plTroops)
                     }
+                }
             }
 
             function simulationHandler(plTroops: Array<number>) {
@@ -1969,6 +1972,7 @@ catch (e) {
                     bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]];
                 }
             }
+
             // console.log(bestDPM, bestStats, bestTroops);
             // console.log(bestTroops, damageCalc(bestStats))
             // console.log(bestTroops, 'in', performance.now() - p, 'ms')
