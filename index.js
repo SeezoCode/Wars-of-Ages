@@ -1817,7 +1817,7 @@ catch (e) {
                 var stats = getGameStats(game);
                 stats.playerUnitsLength = game.players[0].playerUnits.length;
                 stats.enemyUnitsLength = game.players[1].enemyUnits.length;
-                if (damageCalc(stats) > bestDPM && Math.random() > .2) {
+                if (damageCalc(stats) > bestDPM && Math.random() > .0) {
                     bestDPM = damageCalc(stats);
                     bestStats = stats;
                     bestTroops = [plTroops[plTroops.length - 3], plTroops[plTroops.length - 2], plTroops[plTroops.length - 1]];

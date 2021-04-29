@@ -9,9 +9,9 @@ for (let i = 0; true; i++) {
     let sim = singleSimHandler()
     data.push(sim)
 
-    if (i >= 4) {
+    if (i >= 256) {
         console.log('datasetBatchCore' + process.argv[2] + 'batch' + i)
-        fs.writeFileSync('./dataset/datasetBatchCore' + process.argv[2] + ' ' + Date.now(), JSON.stringify(data));
+        fs.writeFileSync('./dataset/datasetBatchNRCore' + process.argv[2] + ' ' + Date.now(), JSON.stringify(data));
         while (data.length) data.pop()
         i = 0
     }
