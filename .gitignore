@@ -1,0 +1,5 @@
+/node_modules/
+/venv/lib/
+source_files/.DS_Store
+venv/.DS_Store
+.DS_Store

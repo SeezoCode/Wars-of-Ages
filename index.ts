@@ -9,11 +9,11 @@ try {
     cx = canvas.getContext('2d')
     explosionIMG = new Image(68, 55)
 
-    explosionIMG.src = 'img/explosion.png'
+    explosionIMG.src = 'source_files/explosion.png'
     explosionAtomicIMG = new Image(255, 255)
-    explosionAtomicIMG.src = 'img/nuke.png'
+    explosionAtomicIMG.src = 'source_files/nuke.png'
     radiationSymbolIMG = new Image(255, 255)
-    radiationSymbolIMG.src = 'img/radiationSymbol.png'
+    radiationSymbolIMG.src = 'source_files/radiationSymbol.png'
 
     darkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
     if (darkTheme) {

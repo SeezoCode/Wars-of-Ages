@@ -2,6 +2,7 @@
 // node SeverHandler false (launch without http-server)
 
 const httpServer = require("http");
+// @ts-ignore
 const { fork } = require('child_process');
 let tcpPortUsed = require('tcp-port-used');
 

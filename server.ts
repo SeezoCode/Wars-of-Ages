@@ -10,6 +10,8 @@ let initialMoney = 55
 console.log('\n---', 'port: ', process.argv[2], '\n    ' +
     'check for money:', process.argv[4], '\n    ' +
     'automatic game pause:', process.argv[5])
+
+// @ts-ignore
 let index = require('./index')
 
 class ServerSideGame extends index.Game {
@@ -82,7 +84,6 @@ class ServerSideGame extends index.Game {
             // console.log(this.playerOneUnits.length)
         }, 1000/60)
     }
-
 }
 
 
@@ -181,3 +182,4 @@ Object.keys(ifaces).forEach(function (dev) {
     });
 });
 http.listen(process.argv[2], () => console.log('listening on ' + ip + '\n'));
+
