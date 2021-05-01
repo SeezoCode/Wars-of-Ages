@@ -5,13 +5,16 @@ const fs = require('fs');
 console.log('Simulation', process.argv[2], 'started')
 let data = []
 
+
+
 for (let i = 0; true; i++) {
     let sim = singleSimHandler()
     data.push(sim)
-
-    if (i >= 256) {
+    console.log(i)
+    if (i >= 32) {
         console.log('datasetBatchCore' + process.argv[2] + 'batch' + i)
         fs.writeFileSync('./dataset/datasetBatchNRCore' + process.argv[2] + ' ' + Date.now(), JSON.stringify(data));
+
         while (data.length) data.pop()
         i = 0
     }
@@ -147,3 +150,4 @@ function sim(e: any) {
     // @ts-ignore
     return([bestTroops, worstTroops]);
 }
+

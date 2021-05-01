@@ -1031,7 +1031,7 @@ var Player = /** @class */ (function () {
         }
         this.afterMoveArmy();
     };
-    Player.prototype.afterMoveArmy = function () {
+    Player.prototype.aMA = function () {
         if (this.DOMAccess) {
             document.getElementById("trs" + this.side).innerText = this.playerUnits.length + "/" + this.maxUnits + " Troops";
         }
@@ -1041,6 +1041,9 @@ var Player = /** @class */ (function () {
                 this.financialAid[i] = false;
             }
         }
+    };
+    Player.prototype.afterMoveArmy = function () {
+        this.aMA();
     };
     Player.prototype.unlockUnits = function (bindEventListeners) {
         var _this = this;
@@ -1355,6 +1358,85 @@ var SimulatingBot = /** @class */ (function (_super) {
     };
     return SimulatingBot;
 }(Player));
+var tfAi = /** @class */ (function (_super) {
+    __extends(tfAi, _super);
+    function tfAi() {
+        return _super !== null && _super.apply(this, arguments) || this;
+    }
+    tfAi.prototype.afterMoveArmy = function () {
+        var _this = this;
+        // super.afterMoveArmy()
+        // this.prototype
+        this.aMA();
+        if (this.money > 1800) {
+            this.multiplier *= 1.2;
+            this.addFunds(-1500);
+        }
+        var enc = this.encouragement();
+        if (enc > 50 && this.playerUnits.length <= 1)
+            this.addTroop(0);
+        document.getElementById("pull" + this.side).innerText = 'Mode: ' + (enc > 2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal');
+        if (this.cooldown <= 0 && !this.shouldPull(1, enc)) {
+            if (enc >= .8 && !this.working && this.playerUnits.length < this.maxUnits) {
+                this.working = true;
+                var cancelWork_2 = function () { return _this.working = false; };
+                var addTroop_2 = function (i) { return _this.addTroop(i); };
+                var side_2 = this.side;
+                var p_2 = performance.now();
+                var unlockedUnits = this.unlockedUnits.map(function (unlocked) {
+                    return (unlocked ? 1 : 0);
+                });
+                unlockedUnits[0] = 1;
+                // @ts-ignore
+                var playerUnits = this.parseUnits(this.playerUnits);
+                if (!playerUnits[0])
+                    playerUnits[0] = 0;
+                console.log(this.parseUnits(this.enemyUnits) + "/" + unlockedUnits + "/" + playerUnits + "/" + unlockedUnits);
+                fetch("http://10.0.0.33:8000/" + this.parseUnits(this.enemyUnits) + "/" + unlockedUnits + "/" + playerUnits + "/" + unlockedUnits)
+                    .then(function (e) {
+                    e.text().then(function (data) {
+                        var data2 = data.replace('[', '').replace(']', '')
+                            .replace('\\n', '').replace('\"', '')
+                            .split(' ');
+                        var data3 = data2.map(function (e) { return Number.parseInt(e); });
+                        var i = data3.indexOf(Math.max.apply(Math, data3));
+                        console.log(data2, i);
+                        addTroop_2(i);
+                        cancelWork_2();
+                        document.getElementById("per" + side_2).innerText = "Computed in: " + Math.round((performance.now() - p_2) * 1000) / 1000 + "ms";
+                    });
+                });
+                // let worker = new Worker('index.js')
+                // worker.postMessage([this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits),
+                //     this.unlockedUnits, 'right', this.money, this.game, enc > 3])
+                // worker.onmessage = function (e) {
+                //     // console.log(e.data)
+                //     if (e.data.length) addTroop(e.data[0])
+                //     if (enc > 1.8) addTroop(e.data[1])
+                //     if (enc > 2.8) addTroop(e.data[2])
+                //     cancelWork()
+                //     document.getElementById(`per${side}`).innerText = `Computed in: ${Math.round((performance.now() - p) * 1000) / 1000}ms`
+                // }
+                this.cooldown = 10;
+            }
+            if (this.playerUnits.length) {
+                if (this.money > 1000 && (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300))
+                    this.shouldSpawnBaseDestroyer(enc);
+            }
+            this.tryToUnlock();
+            var numberOfUnlockedUnits_2 = 0;
+            this.unlockedUnits.forEach(function (e) {
+                if (e) {
+                    numberOfUnlockedUnits_2++;
+                }
+            });
+            // document.getElementById(`enc${this.side}`).innerText = `Enc: ${Math.round(enc * 1000) / 1000}`
+            document.getElementById("unl" + this.side).innerText = "Unlocked Units: " + numberOfUnlockedUnits_2;
+        }
+        this.cooldown--;
+    };
+    return tfAi;
+}(SimulatingBot));
 var InternetPlayer = /** @class */ (function (_super) {
     __extends(InternetPlayer, _super);
     function InternetPlayer(money, side, checkForAvailMoney, address) {
@@ -1589,6 +1671,12 @@ try {
 }
 catch (e) {
 }
+fetch("http://10.0.0.33:8000/" + [1, 1, 1] + "/" + [1, 1, 1] + "/" + [0, 0, 0] + "/" + [1, 1, 1])
+    .then(function (e) {
+    e.json().then(function (data) {
+        console.log(data);
+    });
+});
 function initializeUI() {
     document.getElementById('leftMoney').style.display = 'initial';
     document.getElementById('rightMoney').style.display = 'initial';
@@ -1653,7 +1741,7 @@ try {
         initializeUI();
     });
     document.getElementById('bot').addEventListener('click', function () {
-        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new tfAi(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
     });
     document.getElementById('mul').addEventListener('click', function () {

@@ -1185,7 +1185,7 @@ class Player implements playerInterface {
         this.afterMoveArmy()
     }
 
-    protected afterMoveArmy() {
+    aMA() {
         if (this.DOMAccess) {
             document.getElementById(`trs${this.side}`).innerText = `${this.playerUnits.length}/${this.maxUnits} Troops`
         }
@@ -1195,6 +1195,10 @@ class Player implements playerInterface {
                 this.financialAid[i] = false
             }
         }
+    }
+
+    protected afterMoveArmy() {
+        this.aMA()
     }
 
     protected unlockUnits(bindEventListeners: boolean = true): void {
@@ -1495,6 +1499,83 @@ class SimulatingBot extends Player {
 }
 
 
+class tfAi extends SimulatingBot {
+    afterMoveArmy() {
+        // super.afterMoveArmy()
+        // this.prototype
+        this.aMA()
+        if (this.money > 1800) {
+            this.multiplier *= 1.2
+            this.addFunds(-1500)
+        }
+        let enc = this.encouragement()
+        if (enc > 50 && this.playerUnits.length <= 1) this.addTroop(0)
+        document.getElementById(`pull${this.side}`).innerText = 'Mode: ' + (enc > 2 ? 'Panic' : this.shouldPull(0, enc) ? 'Pull' : 'Normal')
+        if (this.cooldown <= 0 && !this.shouldPull(1, enc)) {
+            if (enc >= .8 && !this.working && this.playerUnits.length < this.maxUnits) {
+                this.working = true
+                let cancelWork = () => this.working = false
+                let addTroop = (i) => this.addTroop(i)
+                let side = this.side
+                let p = performance.now()
+
+                let unlockedUnits = this.unlockedUnits.map(unlocked => {
+                    return (unlocked ? 1 : 0)
+                })
+                unlockedUnits[0] = 1
+
+                // @ts-ignore
+                let playerUnits = this.parseUnits(this.playerUnits)
+                if (!playerUnits[0]) playerUnits[0] = 0
+
+                console.log(`${this.parseUnits(this.enemyUnits)}/${unlockedUnits}/${playerUnits}/${unlockedUnits}`)
+                fetch(`http://10.0.0.33:8000/${this.parseUnits(this.enemyUnits)}/${unlockedUnits}/${playerUnits}/${unlockedUnits}`)
+                    .then(e => {
+                        e.text().then((data) => {
+                            let data2 = data.replace('[', '').replace(']', '')
+                                .replace('\\n', '').replace('\"', '')
+                                .split(' ')
+                            let data3 = data2.map((e) => {return Number.parseInt(e)})
+                            let i = data3.indexOf(Math.max(...data3))
+                            console.log(data2, i)
+                            addTroop(i)
+                            cancelWork()
+                            document.getElementById(`per${side}`).innerText = `Computed in: ${Math.round((performance.now() - p) * 1000) / 1000}ms`
+                        })
+                })
+
+                // let worker = new Worker('index.js')
+                // worker.postMessage([this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits),
+                //     this.unlockedUnits, 'right', this.money, this.game, enc > 3])
+                // worker.onmessage = function (e) {
+                //     // console.log(e.data)
+                //     if (e.data.length) addTroop(e.data[0])
+                //     if (enc > 1.8) addTroop(e.data[1])
+                //     if (enc > 2.8) addTroop(e.data[2])
+                //     cancelWork()
+                //     document.getElementById(`per${side}`).innerText = `Computed in: ${Math.round((performance.now() - p) * 1000) / 1000}ms`
+                // }
+                this.cooldown = 10
+            }
+            if (this.playerUnits.length) {
+                if (this.money > 1000 && (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300))
+                    this.shouldSpawnBaseDestroyer(enc)
+            }
+            this.tryToUnlock()
+            let numberOfUnlockedUnits = 0
+            this.unlockedUnits.forEach(e => {
+                if (e) {
+                    numberOfUnlockedUnits++
+                }
+            })
+            // document.getElementById(`enc${this.side}`).innerText = `Enc: ${Math.round(enc * 1000) / 1000}`
+            document.getElementById(`unl${this.side}`).innerText = `Unlocked Units: ${numberOfUnlockedUnits}`
+        }
+        this.cooldown--
+    }
+}
+
+
 class InternetPlayer extends Player implements playerInterface {
     private firstTimeAtomicDoom: boolean;
     private message: string = ''
@@ -1737,6 +1818,13 @@ try {
 } catch (e) {
 }
 
+fetch(`http://10.0.0.33:8000/${[1,1,1]}/${[1,1,1]}/${[0,0,0]}/${[1,1,1]}`)
+    .then(e => {
+        e.json().then((data) => {
+            console.log(data)
+        })
+    })
+
 function initializeUI() {
     document.getElementById('leftMoney').style.display = 'initial'
     document.getElementById('rightMoney').style.display = 'initial'
@@ -1807,7 +1895,7 @@ try {
     )
     document.getElementById('bot').addEventListener('click', () => {
             game = new Game(new Player(55, 'left', !shiftDown),
-                new SimulatingBot(55, 'right', !shiftDown),
+                new tfAi(55, 'right', !shiftDown),
                 true, true, [], [])
 
             initializeUI()
