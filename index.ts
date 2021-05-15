@@ -156,7 +156,7 @@ const troopArr = [
         damage: .6,
         baseDamage: .75,
         attackSpeed: 1,
-        price: 30,
+        price: 40,
         color: 'forestgreen',
         speed: .8,
         span: 18,
@@ -169,12 +169,12 @@ const troopArr = [
         damage: 9999,
         baseDamage: 0,
         attackSpeed: 1,
-        price: 500,
+        price: 250,
         color: 'forestgreen',
         speed: 3,
         span: 28,
         range: 100,
-        researchPrice: 1000
+        researchPrice: 800
     },
     {
         name: 'Boss',
@@ -182,12 +182,12 @@ const troopArr = [
         damage: 40,
         baseDamage: 10,
         attackSpeed: 180,
-        price: 7500,
+        price: 5000,
         color: 'crimson',
         speed: .3,
         span: 35,
         range: 0,
-        researchPrice: 15000
+        researchPrice: 10000
     },
 ]
 
@@ -400,6 +400,7 @@ class AdvancedTroop extends Trooper {
 
 class ShieldTroop extends Trooper {
     private readonly multiplier: number;
+
     constructor(side: string, player: playerInterface, enemy: playerInterface, multiplier: number, specialParameters: object = {}) {
         super(troopArr[4], side, player.visualize, multiplier, specialParameters);
         this.multiplier = multiplier;
@@ -418,8 +419,7 @@ class ShieldTroop extends Trooper {
     attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface, specialParameters: object = {}) {
         if (enemyTroopers[0].name === troopArr[4].name) {
             this.damage = troopArr[4].damage * 20 * this.multiplier;
-        }
-        else {
+        } else {
             this.damage = troopArr[4].damage * this.multiplier;
         }
         super.attack(enemyTroopers, stats);
@@ -1776,7 +1776,7 @@ try {
     let hostIP = self.location.hostname
     let hostPort = '8083'
     let onlineConnection = false
-    // let game
+    let game
 
     let audioPlaying = false
     let audio = new Audio('img/Age of War - Theme Soundtrack.mp3');
@@ -1799,14 +1799,14 @@ try {
     })
 
     document.getElementById('pl').addEventListener('click', () => {
-            new Game(new Player(55, 'left', !shiftDown),
+            game = new Game(new Player(55, 'left', !shiftDown),
                 new Player(55, 'right', !shiftDown),
                 true, true, [], [])
             initializeUI()
         }
     )
     document.getElementById('bot').addEventListener('click', () => {
-            new Game(new Player(55, 'left', !shiftDown),
+            game = new Game(new Player(55, 'left', !shiftDown),
                 new SimulatingBot(55, 'right', !shiftDown),
                 true, true, [], [])
 
@@ -1850,7 +1850,7 @@ try {
                     return
                 }
                 alert(`Game code is: ${res}`)
-                new InternetPlayer(0, 'left', false, `localhost:${res}`)
+                new InternetPlayer(0, 'left', false, `${hostIP}:${res}`)
                 initializeUI()
             })
         })
@@ -2018,4 +2018,3 @@ catch (e) {
 
     }
 }
-

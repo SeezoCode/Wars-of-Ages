@@ -165,7 +165,7 @@ var troopArr = [
         damage: .6,
         baseDamage: .75,
         attackSpeed: 1,
-        price: 30,
+        price: 40,
         color: 'forestgreen',
         speed: .8,
         span: 18,
@@ -178,12 +178,12 @@ var troopArr = [
         damage: 9999,
         baseDamage: 0,
         attackSpeed: 1,
-        price: 500,
+        price: 250,
         color: 'forestgreen',
         speed: 3,
         span: 28,
         range: 100,
-        researchPrice: 1000
+        researchPrice: 800
     },
     {
         name: 'Boss',
@@ -191,12 +191,12 @@ var troopArr = [
         damage: 40,
         baseDamage: 10,
         attackSpeed: 180,
-        price: 7500,
+        price: 5000,
         color: 'crimson',
         speed: .3,
         span: 35,
         range: 0,
-        researchPrice: 15000
+        researchPrice: 10000
     },
 ];
 var baseStats = {
@@ -1626,7 +1626,7 @@ try {
     var hostIP_1 = self.location.hostname;
     var hostPort_1 = '8083';
     var onlineConnection_1 = false;
-    // let game
+    var game_1;
     var audioPlaying_1 = false;
     var audio_1 = new Audio('img/Age of War - Theme Soundtrack.mp3');
     document.getElementById('music').addEventListener('click', function () {
@@ -1649,11 +1649,11 @@ try {
         shiftDown_1 = false;
     });
     document.getElementById('pl').addEventListener('click', function () {
-        new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
     });
     document.getElementById('bot').addEventListener('click', function () {
-        new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
     });
     document.getElementById('mul').addEventListener('click', function () {
@@ -1696,7 +1696,7 @@ try {
                     return;
                 }
                 alert("Game code is: " + res);
-                new InternetPlayer(0, 'left', false, "localhost:" + res);
+                new InternetPlayer(0, 'left', false, hostIP_1 + ":" + res);
                 initializeUI();
             });
         });
@@ -1743,8 +1743,8 @@ try {
         if (side === void 0) { side = ''; }
         if (amount === void 0) { amount = 1000; }
         if (!playingHostedGame && (side === 'left' || side === 'right')) {
-            game.players[side === 'left' ? 0 : 1].money += amount;
-            document.getElementById(side + "Money").innerHTML = "Money: " + game.players[side === 'left' ? 0 : 1].money;
+            game_1.players[side === 'left' ? 0 : 1].money += amount;
+            document.getElementById(side + "Money").innerHTML = "Money: " + game_1.players[side === 'left' ? 0 : 1].money;
         }
         else {
             var a = document.createElement('a');

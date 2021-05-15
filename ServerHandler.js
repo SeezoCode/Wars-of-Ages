@@ -2,6 +2,8 @@
 var httpServer = require("http");
 var fork = require('child_process').fork;
 var tcpPortUsed = require('tcp-port-used');
+var express = require('express');
+var app = express();
 var connectedUsersThisSession = 0;
 var port = 8083; // port for Server Handler, Also change in index.ts on line 1513!
 var nextServerPort = 8085; // starting port for server
@@ -46,8 +48,8 @@ httpServer.createServer(function (req, res) {
     }
 }).listen(port);
 try {
-    if (process.argv[2] != 'false')
-        fork('node_modules/http-server/bin/http-server');
+    app.use("/", express.static('.'));
+    app.listen(8080, function () { return console.log("listening on port " + 8080 + "!"); });
 }
 catch (e) {
     console.log('Could not start http server');

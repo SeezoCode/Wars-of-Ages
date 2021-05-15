@@ -5,6 +5,9 @@ const httpServer = require("http");
 const { fork } = require('child_process');
 let tcpPortUsed = require('tcp-port-used');
 
+const express = require('express');
+const app = express();
+
 let connectedUsersThisSession = 0
 const port = 8083                   // port for Server Handler, Also change in index.ts on line 1513!
 let nextServerPort: number = 8085   // starting port for server
@@ -62,7 +65,8 @@ httpServer.createServer((req, res) => {
 }).listen(port);
 
 try {
-    if (process.argv[2] != 'false') fork('node_modules/http-server/bin/http-server')
+    app.use("/", express.static('.'));
+    app.listen(8080, () => console.log(`listening on port ${8080}!`))
 }
 catch (e) {
     console.log('Could not start http server')
