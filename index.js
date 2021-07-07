@@ -1219,6 +1219,7 @@ var SimulatingBot = /** @class */ (function (_super) {
         _this.working = false;
         _this.GUI = false;
         _this.maxUnits = 7;
+        _this.botWorker = new Worker('index.js');
         return _this;
     }
     // constructor(money = 0, side: string, checkForAvailMoney: boolean) {
@@ -1242,10 +1243,10 @@ var SimulatingBot = /** @class */ (function (_super) {
                 var addTroop_1 = function (i) { return _this.addTroop(i); };
                 var side_1 = this.side;
                 var p_1 = performance.now();
-                var worker = new Worker('index.js');
-                worker.postMessage([this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits),
-                    this.unlockedUnits, 'right', this.money, this.game, enc > 3]);
-                worker.onmessage = function (e) {
+                // let worker = new Worker('index.js')
+                this.botWorker.postMessage([this.parseUnits(this.playerUnits), this.parseUnits(this.enemyUnits),
+                    this.unlockedUnits, 'right', this.money, enc > 3]);
+                this.botWorker.onmessage = function (e) {
                     // console.log(e.data)
                     if (e.data.length)
                         addTroop_1(e.data[0]);
@@ -1762,7 +1763,7 @@ try {
 catch (e) {
     try {
         onmessage = function (e) {
-            // e[0] playerTroops e[1] enemyTroops e[2] unlockedUnits e[3] side e[4] money e[5] game e[6] quick compute mode
+            // e[0] playerTroops e[1] enemyTroops e[2] unlockedUnits e[3] side e[4] money e[5] quick compute mode
             // console.log(e);
             var bestDPM = -9999;
             var bestStats;
@@ -1776,7 +1777,7 @@ catch (e) {
             }
             // if (numberOfUnlockedUnits >= 4) numberOfUnlockedUnits = 4
             // let p = performance.now()
-            if (!e[6]) {
+            if (!e[5]) {
                 for (var i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
                     if (i === 8)
                         continue;
