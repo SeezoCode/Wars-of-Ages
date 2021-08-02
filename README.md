@@ -1,6 +1,8 @@
 # Wars of Ages
 The Ultimate Fighting Strategy 3000
 
+Enjoy [here](https://hosting-dot-testerislus.ew.r.appspot.com) an online version
+
 
 ## How to compile and run the server
 Make sure you have [Node.js](https://nodejs.org/en/) installed on your computer
