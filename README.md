@@ -1,6 +1,8 @@
 # Wars of Ages
 The Ultimate Fighting Strategy 3000
 
+Enjoy [here](https://hosting-dot-testerislus.ew.r.appspot.com) an online version
+
 
 ## [Play Right Now](http://testerislus.web.app)
 
