@@ -1800,75 +1800,47 @@ try {
         shiftDown = false
     })
 
-    document.getElementById('pl').addEventListener('click', () => {
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-player') {
             game = new Game(new Player(55, 'left', !shiftDown),
                 new Player(55, 'right', !shiftDown),
                 true, true, [], [])
             initializeUI()
         }
-    )
-    document.getElementById('bot').addEventListener('click', () => {
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-ai') {
             game = new Game(new Player(55, 'left', !shiftDown),
                 new SimulatingBot(55, 'right', !shiftDown),
                 true, true, [], [])
-
             initializeUI()
         }
-    )
-    document.getElementById('mul').addEventListener('click', () => {
-            let address
-            // let address = prompt('Enter address:', `http://${hostIP}:${hostPort}`)
-            // let address = `http://${hostIP}:${hostPort}`
-            if (onlineConnection) {
-                address = prompt('Enter code:', '')
-                if (address === null) return
-                address = `http://${hostIP}:${address}`
-            } else {
-                address = prompt('Enter address:', `http://localhost:${8085}`)
-                if (address === null) return
-            }
-            new InternetPlayer(0, 'left', false, address)
-            initializeUI()
-        }
-    )
-    document.getElementById('code').addEventListener('click', () => {
-        // document.getElementById('code').innerHTML = `<i class="fa fa-spinner fa-spin"></i> ${document.getElementById('code').innerHTML}`
-        let address
-        if (onlineConnection) {
-            address = `http://${hostIP}:${hostPort}`
-        } else {
-            address = prompt('Enter server address:', `http://localhost:8080`)
-            if (address === null) return
-        }
+    if (new URLSearchParams(window.location.search).get('mode') === 'multiplayer') {
+        new InternetPlayer(0, 'left', false, 'https://multiplayer1-dot-testerislus.ew.r.appspot.com')
+        initializeUI()
+    }
+    console.log(new URLSearchParams(window.location.search).get('mode'))
 
-        fetch(address, {
-            headers: new Headers(),
-            method: 'POST'
-        }).then((res) => {
-            res.json().then(res => {
-                console.log(res)
-                if (res === 'Too many requests') {
-                    alert('Too many requests, please wait a moment')
-                    return
-                }
-                alert(`Game code is: ${res}`)
-                new InternetPlayer(0, 'left', false, `${hostIP}:${res}`)
-                initializeUI()
-            })
-        })
+    document.getElementById('pl').addEventListener('click', () => {
+        window.open('/?mode=player-vs-player', '_self')
+    })
+    document.getElementById('bot').addEventListener('click', () => {
+        window.open('/?mode=player-vs-ai', '_self')
+    })
+    document.getElementById('mul1').addEventListener('click', () => {
+        window.open('/?mode=multiplayer', '_self')
     })
 
-    setTimeout(() => {
-        if (!onlineConnection) {
-            document.getElementById('onlineIndicator').innerHTML =
-                '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
-                ' target="blank">How to host the server</a>'
-            // @ts-ignore
-            document.getElementById('mul').disabled = false
-            // @ts-ignore
-            document.getElementById('code').disabled = false
-        }
-    }, 5000)
+        // document.getElementById('mul2').addEventListener('click', () => {
+    //     new InternetPlayer(0, 'left', false, 'https://multiplayer2-dot-testerislus.ew.r.appspot.com')
+    //     initializeUI()
+    // })
+    // document.getElementById('mul3').addEventListener('click', () => {
+    //     new InternetPlayer(0, 'left', false, 'https://testerislus.ew.r.appspot.com')
+    //     initializeUI()
+    // })
+    // document.getElementById('mul4').addEventListener('click', () => {
+    //     new InternetPlayer(0, 'left', false, 'https://multiplayer3-dot-testerislus.ew.r.appspot.com')
+    //     initializeUI()
+    // })
+
     fetch(`http://${hostIP}:${hostPort}`, {
         headers: new Headers(),
         method: 'GET'
@@ -1886,8 +1858,7 @@ try {
     }).catch(err => {
         console.log(err)
         document.getElementById('onlineIndicator').innerHTML =
-            '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
-            ' target="blank">How to host the server</a>'
+            'Play online: Available'
         // @ts-ignore
         document.getElementById('mul').disabled = false
         // @ts-ignore

@@ -1,5 +1,5 @@
 
-if (!process.argv[2]) process.argv[2] = `8085`
+if (!process.argv[2]) process.argv[2] = `8080`
 if (!process.argv[4]) process.argv[4] = `true` // check for overdraft, doesn't include server-side reasearch and other things
 if (!process.argv[5]) process.argv[5] = `true` // autopause
 let checkForAvailMoney = process.argv[4] === 'true'

@@ -25,7 +25,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             console.log('ser')
-            navigator.serviceWorker.register('./service-worker.js')
+            navigator.serviceWorker.register('/service-worker.js')
         }
     </script>
 
@@ -194,9 +194,8 @@
         <button id="pl">Player vs Player</button>
         <button id="bot">Player vs AI</button>
         <br> <hr>
-        <p id="onlineIndicator"><i class="fa fa-spinner fa-spin"></i> Play online: </p>
-        <button id="mul" disabled>Connect to multiplayer game with code</button>
-        <button id="code" disabled>Create multiplayer game and get code</button>
+        <p id="onlineIndicator">Play online</p>
+        <button id="mul1">Multiplayer Server</button>
         <br><hr>
         <label class="label">
             <a href="guide.html" style="margin-right: 20px">Guide</a>

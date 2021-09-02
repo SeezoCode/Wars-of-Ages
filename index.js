@@ -6,6 +6,8 @@ var __extends = (this && this.__extends) || (function () {
         return extendStatics(d, b);
     };
     return function (d, b) {
+        if (typeof b !== "function" && b !== null)
+            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
         extendStatics(d, b);
         function __() { this.constructor = d; }
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
@@ -1624,8 +1626,8 @@ function resize() {
     document.getElementById('controls').style.height = window.innerHeight - cxHeight - 50 + 'px';
 }
 try {
-    var hostIP_1 = self.location.hostname;
-    var hostPort_1 = '8083';
+    var hostIP = self.location.hostname;
+    var hostPort = '8083';
     var onlineConnection_1 = false;
     var game_1;
     var audioPlaying_1 = false;
@@ -1649,71 +1651,41 @@ try {
     window.addEventListener('keyup', function () {
         shiftDown_1 = false;
     });
-    document.getElementById('pl').addEventListener('click', function () {
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-player') {
         game_1 = new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
-    });
-    document.getElementById('bot').addEventListener('click', function () {
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-ai') {
         game_1 = new Game(new Player(55, 'left', !shiftDown_1), new SimulatingBot(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
-    });
-    document.getElementById('mul').addEventListener('click', function () {
-        var address;
-        // let address = prompt('Enter address:', `http://${hostIP}:${hostPort}`)
-        // let address = `http://${hostIP}:${hostPort}`
-        if (onlineConnection_1) {
-            address = prompt('Enter code:', '');
-            if (address === null)
-                return;
-            address = "http://" + hostIP_1 + ":" + address;
-        }
-        else {
-            address = prompt('Enter address:', "http://localhost:" + 8085);
-            if (address === null)
-                return;
-        }
-        new InternetPlayer(0, 'left', false, address);
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'multiplayer') {
+        new InternetPlayer(0, 'left', false, 'https://multiplayer1-dot-testerislus.ew.r.appspot.com');
         initializeUI();
+    }
+    console.log(new URLSearchParams(window.location.search).get('mode'));
+    document.getElementById('pl').addEventListener('click', function () {
+        window.open('/?mode=player-vs-player', '_self');
     });
-    document.getElementById('code').addEventListener('click', function () {
-        // document.getElementById('code').innerHTML = `<i class="fa fa-spinner fa-spin"></i> ${document.getElementById('code').innerHTML}`
-        var address;
-        if (onlineConnection_1) {
-            address = "http://" + hostIP_1 + ":" + hostPort_1;
-        }
-        else {
-            address = prompt('Enter server address:', "http://localhost:8080");
-            if (address === null)
-                return;
-        }
-        fetch(address, {
-            headers: new Headers(),
-            method: 'POST'
-        }).then(function (res) {
-            res.json().then(function (res) {
-                console.log(res);
-                if (res === 'Too many requests') {
-                    alert('Too many requests, please wait a moment');
-                    return;
-                }
-                alert("Game code is: " + res);
-                new InternetPlayer(0, 'left', false, hostIP_1 + ":" + res);
-                initializeUI();
-            });
-        });
+    document.getElementById('bot').addEventListener('click', function () {
+        window.open('/?mode=player-vs-ai', '_self');
     });
-    setTimeout(function () {
-        if (!onlineConnection_1) {
-            document.getElementById('onlineIndicator').innerHTML =
-                '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
-                    ' target="blank">How to host the server</a>';
-            // @ts-ignore
-            document.getElementById('mul').disabled = false;
-            // @ts-ignore
-            document.getElementById('code').disabled = false;
-        }
-    }, 5000);
-    fetch("http://" + hostIP_1 + ":" + hostPort_1, {
+    document.getElementById('mul1').addEventListener('click', function () {
+        window.open('/?mode=multiplayer', '_self');
+    });
+    // document.getElementById('mul2').addEventListener('click', () => {
+    //     new InternetPlayer(0, 'left', false, 'https://multiplayer2-dot-testerislus.ew.r.appspot.com')
+    //     initializeUI()
+    // })
+    // document.getElementById('mul3').addEventListener('click', () => {
+    //     new InternetPlayer(0, 'left', false, 'https://testerislus.ew.r.appspot.com')
+    //     initializeUI()
+    // })
+    // document.getElementById('mul4').addEventListener('click', () => {
+    //     new InternetPlayer(0, 'left', false, 'https://multiplayer3-dot-testerislus.ew.r.appspot.com')
+    //     initializeUI()
+    // })
+    fetch("http://" + hostIP + ":" + hostPort, {
         headers: new Headers(),
         method: 'GET'
     }).then(function (res) {
@@ -1731,8 +1703,7 @@ try {
     }).catch(function (err) {
         console.log(err);
         document.getElementById('onlineIndicator').innerHTML =
-            '<span style="color: red">&#10006;</span> Play online:<br><a href="https://github.com/SeezoCode/AgeOfWar/blob/master/README.md"' +
-                ' target="blank">How to host the server</a>';
+            'Play online: Available';
         // @ts-ignore
         document.getElementById('mul').disabled = false;
         // @ts-ignore

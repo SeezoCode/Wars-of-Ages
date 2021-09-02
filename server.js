@@ -6,13 +6,15 @@ var __extends = (this && this.__extends) || (function () {
         return extendStatics(d, b);
     };
     return function (d, b) {
+        if (typeof b !== "function" && b !== null)
+            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
         extendStatics(d, b);
         function __() { this.constructor = d; }
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
 if (!process.argv[2])
-    process.argv[2] = "8085";
+    process.argv[2] = "8080";
 if (!process.argv[4])
     process.argv[4] = "true"; // check for overdraft, doesn't include server-side reasearch and other things
 if (!process.argv[5])
