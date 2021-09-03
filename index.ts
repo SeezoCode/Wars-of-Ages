@@ -1801,17 +1801,17 @@ try {
     })
 
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-player') {
-            game = new Game(new Player(55, 'left', !shiftDown),
-                new Player(55, 'right', !shiftDown),
-                true, true, [], [])
-            initializeUI()
-        }
+        game = new Game(new Player(55, 'left', !shiftDown),
+            new Player(55, 'right', !shiftDown),
+            true, true, [], [])
+        initializeUI()
+    }
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-ai') {
-            game = new Game(new Player(55, 'left', !shiftDown),
-                new SimulatingBot(55, 'right', !shiftDown),
-                true, true, [], [])
-            initializeUI()
-        }
+        game = new Game(new Player(55, 'left', !shiftDown),
+            new SimulatingBot(55, 'right', !shiftDown),
+            true, true, [], [])
+        initializeUI()
+    }
     if (new URLSearchParams(window.location.search).get('mode') === 'multiplayer') {
         new InternetPlayer(0, 'left', false, 'https://multiplayer1-dot-testerislus.ew.r.appspot.com')
         initializeUI()
@@ -1828,18 +1828,6 @@ try {
         window.open('/?mode=multiplayer', '_self')
     })
 
-        // document.getElementById('mul2').addEventListener('click', () => {
-    //     new InternetPlayer(0, 'left', false, 'https://multiplayer2-dot-testerislus.ew.r.appspot.com')
-    //     initializeUI()
-    // })
-    // document.getElementById('mul3').addEventListener('click', () => {
-    //     new InternetPlayer(0, 'left', false, 'https://testerislus.ew.r.appspot.com')
-    //     initializeUI()
-    // })
-    // document.getElementById('mul4').addEventListener('click', () => {
-    //     new InternetPlayer(0, 'left', false, 'https://multiplayer3-dot-testerislus.ew.r.appspot.com')
-    //     initializeUI()
-    // })
 
     fetch(`http://${hostIP}:${hostPort}`, {
         headers: new Headers(),
@@ -1852,7 +1840,13 @@ try {
             // @ts-ignore
             document.getElementById('mul').disabled = false
             // @ts-ignore
+            document.getElementById('mul').style.display = 'initial'
+            // @ts-ignore
             document.getElementById('code').disabled = false
+            // @ts-ignore
+            document.getElementById('code').style.display = 'initial'
+            // @ts-ignore
+            document.getElementById('mul1').style.display = 'none'
             onlineConnection = true
         })
     }).catch(err => {

@@ -1673,18 +1673,6 @@ try {
     document.getElementById('mul1').addEventListener('click', function () {
         window.open('/?mode=multiplayer', '_self');
     });
-    // document.getElementById('mul2').addEventListener('click', () => {
-    //     new InternetPlayer(0, 'left', false, 'https://multiplayer2-dot-testerislus.ew.r.appspot.com')
-    //     initializeUI()
-    // })
-    // document.getElementById('mul3').addEventListener('click', () => {
-    //     new InternetPlayer(0, 'left', false, 'https://testerislus.ew.r.appspot.com')
-    //     initializeUI()
-    // })
-    // document.getElementById('mul4').addEventListener('click', () => {
-    //     new InternetPlayer(0, 'left', false, 'https://multiplayer3-dot-testerislus.ew.r.appspot.com')
-    //     initializeUI()
-    // })
     fetch("http://" + hostIP + ":" + hostPort, {
         headers: new Headers(),
         method: 'GET'
@@ -1697,7 +1685,13 @@ try {
             // @ts-ignore
             document.getElementById('mul').disabled = false;
             // @ts-ignore
+            document.getElementById('mul').style.display = 'initial';
+            // @ts-ignore
             document.getElementById('code').disabled = false;
+            // @ts-ignore
+            document.getElementById('code').style.display = 'initial';
+            // @ts-ignore
+            document.getElementById('mul1').style.display = 'none';
             onlineConnection_1 = true;
         });
     }).catch(function (err) {
