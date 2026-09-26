@@ -607,7 +607,7 @@ var TrebuchetTroop = /** @class */ (function (_super) {
         else if (this.side === 'right' && this.position - this.range - 55 < 0) {
             _super.prototype.timeAttackBase.call(this, time, this.enemyBase, stats);
         }
-        else if (enemyTroopers.length > 0 && enemyTroopers[0].name === troopArr[8].name) {
+        else if (enemyTroopers.length > 0 && (enemyTroopers[0].name === troopArr[8].name || enemyTroopers[0].name === troopArr[5].name)) {
             // ANTI-STALEMATE FIX:
             // If an enemy is blocking us, but we are too far to hit the base,
             // slowly decay health until destroyed (kills it in ~1.5 seconds).
