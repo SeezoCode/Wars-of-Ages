@@ -1643,8 +1643,8 @@ var LocalRLBot = /** @class */ (function (_super) {
         _this.net = null;
         _this.modelLoaded = false;
         _this.INPUT_SIZE = 147;
-        _this.HIDDEN_1 = 512;
-        _this.HIDDEN_2 = 256;
+        _this.HIDDEN_1 = 256;
+        _this.HIDDEN_2 = 128;
         _this.OUTPUT_SIZE = 14;
         _this.ACTIONS = [
             "Basic Troop", "Fast Troop", "Range Troop", "Advanced Troop",

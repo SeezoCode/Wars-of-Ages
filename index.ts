@@ -1774,8 +1774,8 @@ class LocalRLBot extends SimulatingBot {
     private modelLoaded: boolean = false;
 
     private INPUT_SIZE = 147;
-    private HIDDEN_1 = 512;
-    private HIDDEN_2 = 256;
+    private HIDDEN_1 = 256;
+    private HIDDEN_2 = 128;
     private OUTPUT_SIZE = 14;
     private ACTIONS = [
         "Basic Troop", "Fast Troop", "Range Troop", "Advanced Troop",
