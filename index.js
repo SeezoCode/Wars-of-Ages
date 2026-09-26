@@ -1623,8 +1623,10 @@ var HttpBot = /** @class */ (function (_super) {
             }
             this.tryToUnlock();
             var numberOfUnlockedUnits_2 = 0;
-            this.unlockedUnits.forEach(function (e) { if (e)
-                numberOfUnlockedUnits_2++; });
+            this.unlockedUnits.forEach(function (e) {
+                if (e)
+                    numberOfUnlockedUnits_2++;
+            });
             var unlEl = document.getElementById("unl" + this.side);
             if (unlEl)
                 unlEl.innerText = "Unlocked Units: " + numberOfUnlockedUnits_2;
@@ -1668,6 +1670,7 @@ var LocalRLBot = /** @class */ (function (_super) {
             "Upgrade Base": { id: 12, price: 0, hp: 0, dps: 0, range: 0 },
             "wait": { id: 13, price: 0, hp: 0, dps: 0, range: 0 },
         };
+        _this.probHistory = [];
         _this.cooldown = 5;
         if (_this.botWorker)
             _this.botWorker.terminate();
@@ -1878,8 +1881,16 @@ var LocalRLBot = /** @class */ (function (_super) {
             enemyBaseLevel: this.enemyBase.level || 1,
             canUpgradeBase: this.money >= upgradeCost,
             baseUpgradeCost: upgradeCost,
-            myUnits: this.playerUnits.map(function (u) { return ({ name: u.name, health: Math.round(u.health), distanceToMyBase: _this.getDistanceFromOurBase(u.position) }); }),
-            enemyUnits: this.enemyUnits.map(function (u) { return ({ name: u.name, health: Math.round(u.health), distanceToMyBase: _this.getDistanceFromOurBase(u.position) }); }),
+            myUnits: this.playerUnits.map(function (u) { return ({
+                name: u.name,
+                health: Math.round(u.health),
+                distanceToMyBase: _this.getDistanceFromOurBase(u.position)
+            }); }),
+            enemyUnits: this.enemyUnits.map(function (u) { return ({
+                name: u.name,
+                health: Math.round(u.health),
+                distanceToMyBase: _this.getDistanceFromOurBase(u.position)
+            }); }),
             summary: ''
         };
     };
@@ -1896,6 +1907,7 @@ var LocalRLBot = /** @class */ (function (_super) {
     };
     LocalRLBot.prototype.afterMoveArmy = function () {
         var _this = this;
+        var _a, _b;
         if (this.DOMAccess) {
             var trsEl = document.getElementById("trs" + this.side);
             if (trsEl)
@@ -1911,8 +1923,8 @@ var LocalRLBot = /** @class */ (function (_super) {
             this.historyBuffer.set(this.game.time, this.takeSnapshot());
             var oldestAllowed = this.game.time - (25 * 60);
             // @ts-ignore
-            for (var _i = 0, _a = this.historyBuffer.keys(); _i < _a.length; _i++) {
-                var key = _a[_i];
+            for (var _i = 0, _c = this.historyBuffer.keys(); _i < _c.length; _i++) {
+                var key = _c[_i];
                 // @ts-ignore
                 if (key < oldestAllowed)
                     this.historyBuffer.delete(key);
@@ -1952,29 +1964,115 @@ var LocalRLBot = /** @class */ (function (_super) {
                 this.cooldown = 100;
                 return;
             }
-            var bestQ = -Infinity;
-            var chosenIdx = 13;
-            for (var _b = 0, allowedIndices_1 = allowedIndices; _b < allowedIndices_1.length; _b++) {
-                var idx = allowedIndices_1[_b];
-                if (qValues[idx] > bestQ) {
-                    bestQ = qValues[idx];
-                    chosenIdx = idx;
+            // 1. Find both the Max AND Min Q-values among allowed choices
+            var maxQ = -Infinity;
+            var minQ = Infinity;
+            for (var _d = 0, allowedIndices_1 = allowedIndices; _d < allowedIndices_1.length; _d++) {
+                var idx = allowedIndices_1[_d];
+                var q = qValues[idx];
+                if (q > maxQ)
+                    maxQ = q;
+                if (q < minQ)
+                    minQ = q;
+            }
+            // Ensure range is never zero to prevent dividing by zero
+            var range = (maxQ - minQ) + 1e-8;
+            // Universal Temperature Scale:
+            // 0.1 = Very Strict (95% chance to pick #1)
+            // 0.2 = Dynamic (70-80% chance for #1, 20% for #2, small chance for others)
+            // 0.5 = Chaotic (Very spread out)
+            var TEMPERATURE = 0.2;
+            // 2. Normalize and convert to probabilities
+            var sumExp = 0;
+            var exps = [];
+            for (var _e = 0, allowedIndices_2 = allowedIndices; _e < allowedIndices_2.length; _e++) {
+                var idx = allowedIndices_2[_e];
+                // This scales the Q-value strictly between 0.0 and 1.0
+                var normalizedQ = (qValues[idx] - minQ) / range;
+                // Apply Softmax to the 0.0 - 1.0 normalized value
+                var val = Math.exp(normalizedQ / TEMPERATURE);
+                exps.push({ idx: idx, val: val });
+                sumExp += val;
+            }
+            // --- DEBUG: Print the % chance of top choices cleanly ---
+            //             if (this.game.time % 10 === 0) {
+            //                 let debugStr = "Probabilities: ";
+            //                 // Sort array so it prints the highest % first
+            //                 const sortedExps = [...exps].sort((a, b) => b.val - a.val);
+            //
+            //                 for (const expObj of sortedExps) {
+            //                     let percent = ((expObj.val / sumExp) * 100).toFixed(1);
+            //                     if (parseFloat(percent) > 0.5) {
+            //                         debugStr += `${this.ACTIONS[expObj.idx]}: ${percent}% | `;
+            //                     }
+            //                 }
+            //                 console.log(`[Top Q: ${Math.round(maxQ)}] ${debugStr}`);
+            // }
+            // --- VISUAL UI UPDATE ---
+            // --- VISUAL UI UPDATE (Fixed Order & 10-Decision Smoothing) ---
+            // Convert current probabilities to strict percentages
+            var currentProbs = {};
+            for (var _f = 0, exps_1 = exps; _f < exps_1.length; _f++) {
+                var expObj = exps_1[_f];
+                currentProbs[expObj.idx] = (expObj.val / sumExp) * 100;
+            }
+            // Store in history window (keep last 10 decisions)
+            this.probHistory.push(currentProbs);
+            if (this.probHistory.length > 10) {
+                this.probHistory.shift();
+            }
+            var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " AI Brain:</strong><br/>";
+            var _loop_1 = function (i) {
+                // Check if it is unlocked (0-11 are troops, 12 is Base, 13 is wait)
+                var isUnlocked = i < 12 ? this_1.unlockedUnits[i] : true;
+                if (isUnlocked) {
+                    // Find the maximum probability this unit had over the last 10 decisions
+                    var maxProbInWindow = 0;
+                    for (var _h = 0, _j = this_1.probHistory; _h < _j.length; _h++) {
+                        var hist = _j[_h];
+                        if (hist[i] !== undefined && hist[i] > maxProbInWindow) {
+                            maxProbInWindow = hist[i];
+                        }
+                    }
+                    var unitName_1 = this_1.ACTIONS[i];
+                    var color = ((_a = troopArr.find(function (t) { return t.name === unitName_1; })) === null || _a === void 0 ? void 0 : _a.color) || (i === 12 ? 'gold' : 'gray');
+                    html += "\n            <div style=\"margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;\">\n                <div style=\"width: 85px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;\">" + unitName_1 + "</div>\n                <div style=\"flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;\">\n                    <div style=\"width: " + maxProbInWindow + "%; background: " + color + "; height: 100%; border-radius: 4px; transition: width 0.2s ease-out;\"></div>\n                </div>\n                <div style=\"width: 35px; text-align: right;\">" + maxProbInWindow.toFixed(0) + "%</div>\n            </div>\n        ";
+                }
+            };
+            var this_1 = this;
+            // Loop through ALL actions in their strict default order so the rows never jump around
+            for (var i = 0; i < this.ACTIONS.length; i++) {
+                _loop_1(i);
+            }
+            html += "</div>";
+            // Target your existing HTML element
+            var uiEl = document.getElementById("ai-stats-" + this.side);
+            if (uiEl)
+                uiEl.innerHTML = html;
+            // --------------------------------------------------------------
+            // ------------------------
+            // --------------------------------------------------------
+            // 3. Spin the probability wheel
+            var rand = Math.random() * sumExp;
+            var chosenIdx = (_b = allowedIndices[0]) !== null && _b !== void 0 ? _b : 13;
+            for (var _g = 0, exps_2 = exps; _g < exps_2.length; _g++) {
+                var expObj = exps_2[_g];
+                rand -= expObj.val;
+                if (rand <= 0) {
+                    chosenIdx = expObj.idx;
+                    break;
                 }
             }
             var choice_1 = this.ACTIONS[chosenIdx];
-            // Debug Print (You can remove this once it's working)
-            if (this.game.time % 120 === 0) {
-                console.log("[LocalRLBot] AI decided to: " + choice_1 + ". Q-Value: " + bestQ.toFixed(2));
-            }
             if (choice_1 === "Upgrade Base") {
                 if (this.money >= 1500 && Math.random() > 0.5) {
                     this.multiplier *= 1.2;
                     this.addFunds(-1500);
+                    this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
+                    this.playerBase.health += 400;
+                    this.playerBase.level = (this.playerBase.level || 1) + 1;
+                    this.stats.spending += upgCost;
                 }
-                // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
-                // this.playerBase.health += 400;
-                this.playerBase.level = (this.playerBase.level || 1) + 1;
-                // this.stats.spending += upgCost;
                 // this.addFunds(-upgCost);
             }
             else if (choice_1 !== "wait") {
@@ -1989,6 +2087,7 @@ var LocalRLBot = /** @class */ (function (_super) {
                 perEl.innerText = "Local Inference: " + Math.round((performance.now() - p) * 100) / 100 + "ms";
             this.cooldown = enc > 2.0 ? 15 : enc >= 0.8 ? 25 : 40;
         }
+        this.tryToUnlock();
         if (this.cooldown <= 0) {
             if (this.playerUnits.length && this.money > 1000 && (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300))
                 this.shouldSpawnBaseDestroyer(enc);
@@ -2304,7 +2403,7 @@ try {
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-reinforcementai') {
-        game_1 = new Game(new Player(700, 'left', !shiftDown_1), new HttpBot(700, 'right', !shiftDown_1), // <-- Using HttpBot here
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new HttpBot(55, 'right', !shiftDown_1), // <-- Using HttpBot here
         true, true, [], []);
         initializeUI();
     }
@@ -2314,19 +2413,19 @@ try {
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'reinforcementai-vs-reinforcementai') {
-        game_1 = new Game(new HttpBot(700, 'left', !shiftDown_1), new HttpBot(700, 'right', !shiftDown_1), true, true, [0], [], 10);
+        game_1 = new Game(new HttpBot(55, 'left', !shiftDown_1), new HttpBot(55, 'right', !shiftDown_1), true, true, [0], [], 5);
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-local-reinforcementai') {
-        game_1 = new Game(new Player(700, 'left', !shiftDown_1), new LocalRLBot(700, 'right', !shiftDown_1), true, true, [], []);
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new LocalRLBot(55, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-reinforcementai') {
-        game_1 = new Game(new LocalRLBot(700, 'left', !shiftDown_1), new LocalRLBot(700, 'right', !shiftDown_1), true, true, [0], [], 10);
+        game_1 = new Game(new LocalRLBot(55, 'left', !shiftDown_1), new LocalRLBot(55, 'right', !shiftDown_1), true, true, [0], [], 5);
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'local-old-vs-reinforcementai') {
-        game_1 = new Game(new SimulatingBot(700, 'left', !shiftDown_1), new LocalRLBot(700, 'right', !shiftDown_1), true, true, [0], [], 1);
+        game_1 = new Game(new SimulatingBot(55, 'left', !shiftDown_1), new LocalRLBot(55, 'right', !shiftDown_1), true, true, [0], [], 1);
         initializeUI();
     }
     console.log(new URLSearchParams(window.location.search).get('mode'));

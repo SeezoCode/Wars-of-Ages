@@ -1517,8 +1517,6 @@ class SimulatingBot extends Player {
 }
 
 
-
-
 interface FieldSnapshot {
     time: number
     money: number
@@ -1679,12 +1677,12 @@ class HttpBot extends SimulatingBot {
 
         if (this.playerUnits.length < this.maxUnits) {
             availableUnits = troopArr
-                .map((t, index) => ({ index, name: t.name, price: t.price }))
+                .map((t, index) => ({index, name: t.name, price: t.price}))
                 .filter((t, index) => this.unlockedUnits[index] && this.money >= t.price);
         }
 
         if (this.money >= upgCost) {
-            availableUnits.push({ index: 12, name: "Upgrade Base", price: upgCost });
+            availableUnits.push({index: 12, name: "Upgrade Base", price: upgCost});
         }
 
         // Only ask the server if there are valid choices available
@@ -1711,7 +1709,7 @@ class HttpBot extends SimulatingBot {
 
             fetch(this.endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             })
                 .then(res => res.json())
@@ -1758,7 +1756,9 @@ class HttpBot extends SimulatingBot {
             this.tryToUnlock()
 
             let numberOfUnlockedUnits = 0
-            this.unlockedUnits.forEach(e => { if (e) numberOfUnlockedUnits++ })
+            this.unlockedUnits.forEach(e => {
+                if (e) numberOfUnlockedUnits++
+            })
             const unlEl = document.getElementById(`unl${this.side}`)
             if (unlEl) unlEl.innerText = `Unlocked Units: ${numberOfUnlockedUnits}`
         }
@@ -1785,21 +1785,23 @@ class LocalRLBot extends SimulatingBot {
     ];
 
     private UNIT_META: any = {
-        "Basic Troop":    { id: 0,  price: 5,    hp: 20,   dps: 4.4 / 40, range: 0   },
-        "Fast Troop":     { id: 1,  price: 5,    hp: 12,   dps: 2.3 / 13, range: 10  },
-        "Range Troop":    { id: 2,  price: 8,    hp: 20,   dps: 4.3 / 50, range: 79  },
-        "Advanced Troop": { id: 3,  price: 10,   hp: 36,   dps: 15 / 70,  range: 0   },
-        "Shield Troop":   { id: 4,  price: 12,   hp: 115,  dps: 3 / 200,  range: 0   },
-        "Catapult":       { id: 5,  price: 20,   hp: 15,   dps: 3.2 / 100,range: 140 },
-        "Boomer Troop":   { id: 6,  price: 20,   hp: 1,    dps: 50 / 17,  range: 40  },
-        "Doggo":          { id: 7,  price: 20,   hp: 30,   dps: 30 / 60,  range: 0   },
-        "Trebuchet":      { id: 8,  price: 45,   hp: 5,    dps: 100 / 300,range: 210 },
-        "Atomic Troop":   { id: 9,  price: 40,   hp: 280,  dps: 0.6 / 1,  range: 0   },
-        "Atomic Bomb":    { id: 10, price: 250,  hp: 5000, dps: 99,       range: 100 },
-        "Boss":           { id: 11, price: 5000, hp: 1000, dps: 40 / 180, range: 0   },
-        "Upgrade Base":   { id: 12, price: 0,    hp: 0,    dps: 0,        range: 0   },
-        "wait":           { id: 13, price: 0,    hp: 0,    dps: 0,        range: 0   },
+        "Basic Troop": {id: 0, price: 5, hp: 20, dps: 4.4 / 40, range: 0},
+        "Fast Troop": {id: 1, price: 5, hp: 12, dps: 2.3 / 13, range: 10},
+        "Range Troop": {id: 2, price: 8, hp: 20, dps: 4.3 / 50, range: 79},
+        "Advanced Troop": {id: 3, price: 10, hp: 36, dps: 15 / 70, range: 0},
+        "Shield Troop": {id: 4, price: 12, hp: 115, dps: 3 / 200, range: 0},
+        "Catapult": {id: 5, price: 20, hp: 15, dps: 3.2 / 100, range: 140},
+        "Boomer Troop": {id: 6, price: 20, hp: 1, dps: 50 / 17, range: 40},
+        "Doggo": {id: 7, price: 20, hp: 30, dps: 30 / 60, range: 0},
+        "Trebuchet": {id: 8, price: 45, hp: 5, dps: 100 / 300, range: 210},
+        "Atomic Troop": {id: 9, price: 40, hp: 280, dps: 0.6 / 1, range: 0},
+        "Atomic Bomb": {id: 10, price: 250, hp: 5000, dps: 99, range: 100},
+        "Boss": {id: 11, price: 5000, hp: 1000, dps: 40 / 180, range: 0},
+        "Upgrade Base": {id: 12, price: 0, hp: 0, dps: 0, range: 0},
+        "wait": {id: 13, price: 0, hp: 0, dps: 0, range: 0},
     };
+
+    private probHistory: { [idx: number]: number }[] = [];
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_dqn_model.json') {
         super(money, side, checkForAvailMoney);
@@ -1884,10 +1886,10 @@ class LocalRLBot extends SimulatingBot {
             const m = this.UNIT_META[u.name];
             if (m && m.id < 12) enemyCounts[m.id] += 1 / 7;
         }
-        const unlockedFlags = Array.from({ length: 12 }, (_, i) => (unlocked[i] ? 1.0 : 0.0));
+        const unlockedFlags = Array.from({length: 12}, (_, i) => (unlocked[i] ? 1.0 : 0.0));
         features.push(...myCounts, ...enemyCounts, ...unlockedFlags);
 
-        const zones = Array.from({ length: 7 }, () => ({ myHP: 0, myDPS: 0, enHP: 0, enDPS: 0, enCount: 0 }));
+        const zones = Array.from({length: 7}, () => ({myHP: 0, myDPS: 0, enHP: 0, enDPS: 0, enCount: 0}));
         for (const u of myUnits) {
             const z = Math.max(0, Math.min(6, Math.floor((u.distanceToMyBase || 0) / 100)));
             const m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
@@ -2003,8 +2005,16 @@ class LocalRLBot extends SimulatingBot {
             enemyBaseLevel: this.enemyBase.level || 1,
             canUpgradeBase: this.money >= upgradeCost,
             baseUpgradeCost: upgradeCost,
-            myUnits: this.playerUnits.map(u => ({ name: u.name, health: Math.round(u.health), distanceToMyBase: this.getDistanceFromOurBase(u.position) })),
-            enemyUnits: this.enemyUnits.map(u => ({ name: u.name, health: Math.round(u.health), distanceToMyBase: this.getDistanceFromOurBase(u.position) })),
+            myUnits: this.playerUnits.map(u => ({
+                name: u.name,
+                health: Math.round(u.health),
+                distanceToMyBase: this.getDistanceFromOurBase(u.position)
+            })),
+            enemyUnits: this.enemyUnits.map(u => ({
+                name: u.name,
+                health: Math.round(u.health),
+                distanceToMyBase: this.getDistanceFromOurBase(u.position)
+            })),
             summary: ''
         };
     }
@@ -2084,31 +2094,130 @@ class LocalRLBot extends SimulatingBot {
                 return;
             }
 
-            let bestQ = -Infinity;
-            let chosenIdx = 13;
+            // 1. Find both the Max AND Min Q-values among allowed choices
+            let maxQ = -Infinity;
+            let minQ = Infinity;
             for (const idx of allowedIndices) {
-                if (qValues[idx] > bestQ) {
-                    bestQ = qValues[idx];
-                    chosenIdx = idx;
+                const q = qValues[idx];
+                if (q > maxQ) maxQ = q;
+                if (q < minQ) minQ = q;
+            }
+
+// Ensure range is never zero to prevent dividing by zero
+            const range = (maxQ - minQ) + 1e-8;
+
+// Universal Temperature Scale:
+// 0.1 = Very Strict (95% chance to pick #1)
+// 0.2 = Dynamic (70-80% chance for #1, 20% for #2, small chance for others)
+// 0.5 = Chaotic (Very spread out)
+            const TEMPERATURE = 0.2;
+
+// 2. Normalize and convert to probabilities
+            let sumExp = 0;
+            const exps = [];
+            for (const idx of allowedIndices) {
+                // This scales the Q-value strictly between 0.0 and 1.0
+                const normalizedQ = (qValues[idx] - minQ) / range;
+
+                // Apply Softmax to the 0.0 - 1.0 normalized value
+                const val = Math.exp(normalizedQ / TEMPERATURE);
+                exps.push({idx, val});
+                sumExp += val;
+            }
+
+// --- DEBUG: Print the % chance of top choices cleanly ---
+//             if (this.game.time % 10 === 0) {
+//                 let debugStr = "Probabilities: ";
+//                 // Sort array so it prints the highest % first
+//                 const sortedExps = [...exps].sort((a, b) => b.val - a.val);
+//
+//                 for (const expObj of sortedExps) {
+//                     let percent = ((expObj.val / sumExp) * 100).toFixed(1);
+//                     if (parseFloat(percent) > 0.5) {
+//                         debugStr += `${this.ACTIONS[expObj.idx]}: ${percent}% | `;
+//                     }
+//                 }
+//                 console.log(`[Top Q: ${Math.round(maxQ)}] ${debugStr}`);
+            // }
+
+            // --- VISUAL UI UPDATE ---
+            // --- VISUAL UI UPDATE (Fixed Order & 10-Decision Smoothing) ---
+// Convert current probabilities to strict percentages
+            let currentProbs: { [idx: number]: number } = {};
+            for (const expObj of exps) {
+                currentProbs[expObj.idx] = (expObj.val / sumExp) * 100;
+            }
+
+// Store in history window (keep last 10 decisions)
+            this.probHistory.push(currentProbs);
+            if (this.probHistory.length > 10) {
+                this.probHistory.shift();
+            }
+
+            let html = `<div style="font-family: monospace;"><strong>${this.side.toUpperCase()} AI Brain:</strong><br/>`;
+
+// Loop through ALL actions in their strict default order so the rows never jump around
+            for (let i = 0; i < this.ACTIONS.length; i++) {
+                // Check if it is unlocked (0-11 are troops, 12 is Base, 13 is wait)
+                const isUnlocked = i < 12 ? this.unlockedUnits[i] : true;
+
+                if (isUnlocked) {
+                    // Find the maximum probability this unit had over the last 10 decisions
+                    let maxProbInWindow = 0;
+                    for (const hist of this.probHistory) {
+                        if (hist[i] !== undefined && hist[i] > maxProbInWindow) {
+                            maxProbInWindow = hist[i];
+                        }
+                    }
+
+                    const unitName = this.ACTIONS[i];
+                    const color = troopArr.find(t => t.name === unitName)?.color || (i === 12 ? 'gold' : 'gray');
+
+                    html += `
+            <div style="margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;">
+                <div style="width: 85px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${unitName}</div>
+                <div style="flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;">
+                    <div style="width: ${maxProbInWindow}%; background: ${color}; height: 100%; border-radius: 4px; transition: width 0.2s ease-out;"></div>
+                </div>
+                <div style="width: 35px; text-align: right;">${maxProbInWindow.toFixed(0)}%</div>
+            </div>
+        `;
+                }
+            }
+            html += `</div>`;
+
+// Target your existing HTML element
+            const uiEl = document.getElementById(`ai-stats-${this.side}`);
+            if (uiEl) uiEl.innerHTML = html;
+// --------------------------------------------------------------
+// ------------------------
+
+// --------------------------------------------------------
+
+// 3. Spin the probability wheel
+            let rand = Math.random() * sumExp;
+            let chosenIdx = allowedIndices[0] ?? 13;
+            for (const expObj of exps) {
+                rand -= expObj.val;
+                if (rand <= 0) {
+                    chosenIdx = expObj.idx;
+                    break;
                 }
             }
 
             const choice = this.ACTIONS[chosenIdx];
 
-            // Debug Print (You can remove this once it's working)
-            if (this.game.time % 120 === 0) {
-                console.log(`[LocalRLBot] AI decided to: ${choice}. Q-Value: ${bestQ.toFixed(2)}`);
-            }
 
             if (choice === "Upgrade Base") {
                 if (this.money >= 1500 && Math.random() > 0.5) {
                     this.multiplier *= 1.2;
                     this.addFunds(-1500);
+                    this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
+                    this.playerBase.health += 400;
+                    this.playerBase.level = (this.playerBase.level || 1) + 1;
+                    this.stats.spending += upgCost;
                 }
-                // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
-                // this.playerBase.health += 400;
-                this.playerBase.level = (this.playerBase.level || 1) + 1;
-                // this.stats.spending += upgCost;
+
                 // this.addFunds(-upgCost);
             } else if (choice !== "wait") {
                 let troopIndex = troopArr.findIndex(t => t.name === choice);
@@ -2121,6 +2230,8 @@ class LocalRLBot extends SimulatingBot {
 
             this.cooldown = enc > 2.0 ? 15 : enc >= 0.8 ? 25 : 40;
         }
+
+        this.tryToUnlock();
 
         if (this.cooldown <= 0) {
             if (this.playerUnits.length && this.money > 1000 && (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300)) this.shouldSpawnBaseDestroyer(enc);
@@ -2451,8 +2562,8 @@ try {
         initializeUI()
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-reinforcementai') {
-        game = new Game(new Player(700, 'left', !shiftDown),
-            new HttpBot(700, 'right', !shiftDown), // <-- Using HttpBot here
+        game = new Game(new Player(55, 'left', !shiftDown),
+            new HttpBot(55, 'right', !shiftDown), // <-- Using HttpBot here
             true, true, [], [])
         initializeUI()
     }
@@ -2464,27 +2575,27 @@ try {
         initializeUI()
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'reinforcementai-vs-reinforcementai') {
-        game = new Game(new HttpBot(700, 'left', !shiftDown),
-            new HttpBot(700, 'right', !shiftDown),
-            true, true, [0], [], 10)
+        game = new Game(new HttpBot(55, 'left', !shiftDown),
+            new HttpBot(55, 'right', !shiftDown),
+            true, true, [0], [], 5)
         initializeUI()
     }
 
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-local-reinforcementai') {
-        game = new Game(new Player(700, 'left', !shiftDown),
-            new LocalRLBot(700, 'right', !shiftDown),
+        game = new Game(new Player(55, 'left', !shiftDown),
+            new LocalRLBot(55, 'right', !shiftDown),
             true, true, [], [])
         initializeUI()
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-reinforcementai') {
-        game = new Game(new LocalRLBot(700, 'left', !shiftDown),
-            new LocalRLBot(700, 'right', !shiftDown),
-            true, true, [0], [], 10)
+        game = new Game(new LocalRLBot(55, 'left', !shiftDown),
+            new LocalRLBot(55, 'right', !shiftDown),
+            true, true, [0], [], 5)
         initializeUI()
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'local-old-vs-reinforcementai') {
-        game = new Game(new SimulatingBot(700, 'left', !shiftDown),
-            new LocalRLBot(700, 'right', !shiftDown),
+        game = new Game(new SimulatingBot(55, 'left', !shiftDown),
+            new LocalRLBot(55, 'right', !shiftDown),
             true, true, [0], [], 1)
         initializeUI()
     }
