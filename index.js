@@ -13,6 +13,47 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+var __spreadArray = (this && this.__spreadArray) || function (to, from) {
+    for (var i = 0, il = from.length, j = to.length; i < il; i++, j++)
+        to[j] = from[i];
+    return to;
+};
 // But be careful not to write it wrong since it has a powerful resolution going for the people that test my forms
 var canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, buttonColor, deathAnimPending, radioactivityPending, bgColor, buttonBg, darkTheme, playingHostedGame;
 try {
@@ -151,12 +192,12 @@ var troopArr = [
     {
         name: 'Trebuchet',
         health: 5,
-        damage: 0,
+        damage: 1,
         baseDamage: 100,
         attackSpeed: 300,
         price: 45,
         color: 'brown',
-        speed: .5,
+        speed: .65,
         span: 50,
         range: 210,
         researchPrice: 250
@@ -253,13 +294,11 @@ var Trooper = /** @class */ (function () {
         }
     };
     Trooper.prototype.attack = function (enemyTroopers, stats) {
-        // console.log('attacked enemy: ', enemyTroopers)
         if (enemyTroopers.length) {
-            stats.damageDealt += this.damage;
-            // (enemyTroopers[0].health < 0 ? 0 :
-            // enemyTroopers[0].health < this.damage ?
-            // enemyTroopers[0].health : this.damage)
-            enemyTroopers[0].health -= this.damage;
+            var enemy = enemyTroopers[0];
+            var actualDamage = Math.min(this.damage, Math.max(0, enemy.health));
+            stats.damageDealt += actualDamage;
+            enemy.health -= this.damage;
         }
     };
     Trooper.prototype.timeAttack = function (time, enemyTroopers, stats) {
@@ -308,8 +347,9 @@ var Trooper = /** @class */ (function () {
     };
     // else this.attackBase(base) // This is a shortcut, may not be as precise!
     Trooper.prototype.attackBase = function (base, stats) {
+        var actualDamage = Math.min(this.baseDamage, Math.max(0, base.health));
+        stats.damageDealt += actualDamage;
         base.health -= this.baseDamage;
-        stats.damageDealt += this.baseDamage;
     };
     Trooper.prototype.draw = function () {
         if (this.visualize) {
@@ -388,7 +428,7 @@ var ShieldTroop = /** @class */ (function (_super) {
     ShieldTroop.prototype.attack = function (enemyTroopers, stats, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
         if (enemyTroopers[0].name === troopArr[4].name) {
-            this.damage = troopArr[4].damage * 20 * this.multiplier;
+            // this.damage = troopArr[4].damage * 20 * this.multiplier;
         }
         else {
             this.damage = troopArr[4].damage * this.multiplier;
@@ -432,13 +472,19 @@ var CatapultTroop = /** @class */ (function (_super) {
     CatapultTroop.prototype.attack = function (enemyTroopers, stats) {
         for (var _i = 0, enemyTroopers_1 = enemyTroopers; _i < enemyTroopers_1.length; _i++) {
             var troop = enemyTroopers_1[_i];
-            if (this.side === 'left' && this.position + this.range > troop.position && this.position + this.range - this.blast < troop.position) {
+            if (this.side === "left" &&
+                this.position + this.range > troop.position &&
+                this.position + this.range - this.blast < troop.position) {
+                var actualDamage = Math.min(this.damage, Math.max(0, troop.health));
+                stats.damageDealt += actualDamage;
                 troop.health -= this.damage;
-                stats.damageDealt += this.damage;
             }
-            else if (this.side === 'right' && this.position - this.range < troop.position && this.position - this.range + this.blast > troop.position) {
+            else if (this.side === "right" &&
+                this.position - this.range < troop.position &&
+                this.position - this.range + this.blast > troop.position) {
+                var actualDamage = Math.min(this.damage, Math.max(0, troop.health));
+                stats.damageDealt += actualDamage;
                 troop.health -= this.damage;
-                stats.damageDealt += this.damage;
             }
         }
     };
@@ -464,9 +510,13 @@ var ExplodingTroop = /** @class */ (function (_super) {
             });
         return _this;
     }
-    ExplodingTroop.prototype.attack = function (enemyTroopers) {
-        // console.log('attacked enemy BOOM: ', enemyTroopers)
-        enemyTroopers[0].health -= this.damage;
+    ExplodingTroop.prototype.attack = function (enemyTroopers, stats) {
+        if (enemyTroopers[0]) {
+            var enemy = enemyTroopers[0];
+            var actualDamage = Math.min(this.damage, Math.max(0, enemy.health));
+            stats.damageDealt += actualDamage;
+            enemy.health -= this.damage;
+        }
         this.health = 0;
     };
     ExplodingTroop.prototype.timeAttack = function (time, enemyTroopers, stats) {
@@ -727,11 +777,13 @@ var Base = /** @class */ (function () {
 var Game = /** @class */ (function () {
     // money: number
     // score: number
-    function Game(player1, player2, visualize, DOMAccess, playerUnits1, playerUnits2) {
+    function Game(player1, player2, visualize, DOMAccess, playerUnits1, playerUnits2, moveCount) {
         if (playerUnits1 === void 0) { playerUnits1 = []; }
         if (playerUnits2 === void 0) { playerUnits2 = []; }
+        if (moveCount === void 0) { moveCount = 1; }
         this.time = 0;
         this.atomicDoomPending = false;
+        this.moveCount = 1;
         // this.msTime = performance.now()
         this.DOMAccess = DOMAccess;
         this.playerOneUnits = [];
@@ -744,6 +796,7 @@ var Game = /** @class */ (function () {
         // new Player(55, 'right', this.playerTwoUnits, this.playerOneUnits)
         this.players[0].map(this.players[1], visualize, DOMAccess, this.playerOneUnits, playerUnits1, this.playerTwoUnits, this.playerTwoBase, this.playerOneBase, this);
         this.players[1].map(this.players[0], visualize, DOMAccess, this.playerTwoUnits, playerUnits2, this.playerOneUnits, this.playerOneBase, this.playerTwoBase, this);
+        this.moveCount = moveCount;
         this.animation();
     }
     Game.prototype.move = function () {
@@ -799,6 +852,7 @@ var Game = /** @class */ (function () {
     };
     Game.prototype.animation = function () {
         var _this = this;
+        var mc = this.moveCount;
         var move = function () {
             _this.move();
         };
@@ -822,7 +876,8 @@ var Game = /** @class */ (function () {
             //     'Right player damage:', this.players[1].stats.damageDealt)
         }
         function hold() {
-            move();
+            for (var i = 0; i < mc; i++)
+                move();
             if (aliveBases())
                 requestAnimationFrame(hold);
         }
@@ -1358,6 +1413,591 @@ var SimulatingBot = /** @class */ (function (_super) {
     };
     return SimulatingBot;
 }(Player));
+var HttpBot = /** @class */ (function (_super) {
+    __extends(HttpBot, _super);
+    function HttpBot(money, side, checkForAvailMoney, endpoint) {
+        if (money === void 0) { money = 0; }
+        if (endpoint === void 0) { endpoint = 'http://localhost:6767'; }
+        var _this = _super.call(this, money, side, checkForAvailMoney) || this;
+        _this.historyBuffer = new Map();
+        _this.endpoint = 'http://localhost:6767';
+        _this.endpoint = endpoint;
+        _this.cooldown = 5;
+        if (_this.botWorker) {
+            _this.botWorker.terminate();
+        }
+        return _this;
+    }
+    HttpBot.prototype.getDistanceFromOurBase = function (position) {
+        return this.side === 'right'
+            ? Math.round((canvasWidth - 10) - position)
+            : Math.round(position - 10);
+    };
+    HttpBot.prototype.getUnitPower = function (unit) {
+        if (unit.name === 'Boomer Troop')
+            return unit.damage * 1.5;
+        if (unit.name === 'Trebuchet')
+            return 15;
+        var dps = unit.damage / Math.max(1, unit.attackSpeed);
+        var rangeMultiplier = unit.range > 50 ? 1.35 : 1.0;
+        return (unit.health + (dps * 60 * rangeMultiplier));
+    };
+    HttpBot.prototype.encouragement = function () {
+        var _this = this;
+        var myPower = this.playerUnits.reduce(function (sum, u) { return sum + _this.getUnitPower(u); }, 0);
+        var enemyPower = this.enemyUnits.reduce(function (sum, u) { return sum + _this.getUnitPower(u); }, 0);
+        if (myPower === 0 && enemyPower === 0)
+            return 1.0;
+        if (myPower === 0 && enemyPower > 0) {
+            var closestEnemyDist = this.getDistanceFromOurBase(this.enemyUnits[0].position);
+            var proximityPanic = 1 + ((canvasWidth - closestEnemyDist) / canvasWidth) * 2;
+            return Math.min(10, 2.0 * proximityPanic);
+        }
+        if (enemyPower === 0) {
+            return this.money > 40 ? 0.85 : 0.5;
+        }
+        var powerRatio = enemyPower / myPower;
+        var enemyFrontDist = this.getDistanceFromOurBase(this.enemyUnits[0].position);
+        var proximityFactor = 0.7 + 0.9 * (1 - Math.max(0, Math.min(canvasWidth, enemyFrontDist)) / canvasWidth);
+        return Math.round((powerRatio * proximityFactor) * 100) / 100;
+    };
+    HttpBot.prototype.takeSnapshot = function () {
+        var _this = this;
+        var myUnits = this.playerUnits.map(function (u) { return ({
+            name: u.name,
+            health: Math.round(u.health),
+            distanceToMyBase: _this.getDistanceFromOurBase(u.position)
+        }); });
+        var enemyUnits = this.enemyUnits.map(function (u) { return ({
+            name: u.name,
+            health: Math.round(u.health),
+            distanceToMyBase: _this.getDistanceFromOurBase(u.position)
+        }); });
+        var mySummary = myUnits.length ? myUnits.map(function (u) { return u.name + " (HP:" + u.health + ")"; }).join(', ') : 'none';
+        var enemySummary = enemyUnits.length ? enemyUnits.map(function (u) { return u.name + " (HP:" + u.health + ")"; }).join(', ') : 'none';
+        var baseDamageDealt = this.enemyBase.maxHealth - this.enemyBase.health;
+        var troopDamageDealt = Math.max(0, Math.round((this.stats.damageDealt - baseDamageDealt) * 10) / 10);
+        var upgradeCost = 350 * (this.playerBase.level || 1);
+        return {
+            time: this.game.time,
+            money: Math.round(this.money),
+            troopDamageDealt: troopDamageDealt,
+            playerBaseHealth: Math.round(this.playerBase.health),
+            enemyBaseHealth: Math.round(this.enemyBase.health),
+            myBaseLevel: this.playerBase.level || 1,
+            enemyBaseLevel: this.enemyBase.level || 1,
+            canUpgradeBase: this.money >= upgradeCost,
+            baseUpgradeCost: upgradeCost,
+            myUnits: myUnits,
+            enemyUnits: enemyUnits,
+            summary: "Our units: [" + mySummary + "] | Enemy units: [" + enemySummary + "]"
+        };
+    };
+    HttpBot.prototype.getHistoricalSnapshot = function (secondsAgo) {
+        var targetTick = this.game.time - (secondsAgo * 60);
+        var roundedTick = Math.floor(targetTick / 30) * 30;
+        return this.historyBuffer.get(roundedTick) || "Game had not reached this point yet.";
+    };
+    HttpBot.prototype.resolveTroopIndex = function (unitChoice) {
+        if (typeof unitChoice === 'number' && unitChoice >= 0 && unitChoice < troopArr.length) {
+            return unitChoice;
+        }
+        if (typeof unitChoice === 'string') {
+            if (unitChoice.toLowerCase() === 'wait' || unitChoice.toLowerCase() === 'none')
+                return -1;
+            return troopArr.findIndex(function (t) { return t.name.toLowerCase() === unitChoice.toLowerCase(); });
+        }
+        return -1;
+    };
+    HttpBot.prototype.doesBaseHaveHealth = function () {
+        var alive = _super.prototype.doesBaseHaveHealth.call(this);
+        if (!alive && !this.game.atomicDoomPending) {
+            setTimeout(function () { return location.reload(); }, 1000);
+        }
+        return alive;
+    };
+    HttpBot.prototype.afterMoveArmy = function () {
+        var _this = this;
+        if (this.DOMAccess) {
+            var trsEl = document.getElementById("trs" + this.side);
+            if (trsEl)
+                trsEl.innerText = this.playerUnits.length + "/" + this.maxUnits + " Troops";
+        }
+        for (var i = 0; i <= 2; i++) {
+            if (this.financialAid[i] && this.playerBase.health < (this.playerBase.maxHealth || baseStats.health) / 4 * (i + 1)) {
+                this.addFunds(100);
+                this.financialAid[i] = false;
+            }
+        }
+        if (this.game.time % 30 === 0) {
+            this.historyBuffer.set(this.game.time, this.takeSnapshot());
+            var oldestAllowed = this.game.time - (25 * 60);
+            // @ts-ignore
+            for (var _i = 0, _a = this.historyBuffer.keys(); _i < _a.length; _i++) {
+                var key = _a[_i];
+                if (key < oldestAllowed)
+                    this.historyBuffer.delete(key);
+            }
+        }
+        var enc = this.encouragement();
+        var pullEl = document.getElementById("pull" + this.side);
+        if (pullEl) {
+            pullEl.innerText = "Enc: " + enc.toFixed(2) + " | " + (enc > 2.2 ? 'Panic' : enc < 0.7 ? 'Winning' : 'Normal');
+        }
+        var upgCost = 350 * (this.playerBase.level || 1);
+        var availableUnits = [];
+        if (this.playerUnits.length < this.maxUnits) {
+            availableUnits = troopArr
+                .map(function (t, index) { return ({ index: index, name: t.name, price: t.price }); })
+                .filter(function (t, index) { return _this.unlockedUnits[index] && _this.money >= t.price; });
+        }
+        if (this.money >= upgCost) {
+            availableUnits.push({ index: 12, name: "Upgrade Base", price: upgCost });
+        }
+        // Only ask the server if there are valid choices available
+        if (this.cooldown <= 0 && !this.working && availableUnits.length > 0) {
+            this.working = true;
+            var p_2 = performance.now();
+            var side_2 = this.side;
+            var payload = {
+                side: this.side,
+                money: Math.round(this.money),
+                encouragement: enc,
+                unlockedUnits: this.unlockedUnits,
+                availableUnits: availableUnits,
+                currentField: this.takeSnapshot(),
+                fieldHistory: {
+                    "20s_ago": this.getHistoricalSnapshot(20),
+                    "10s_ago": this.getHistoricalSnapshot(10),
+                    "5s_ago": this.getHistoricalSnapshot(5),
+                    "2s_ago": this.getHistoricalSnapshot(2),
+                    "1s_ago": this.getHistoricalSnapshot(1),
+                }
+            };
+            fetch(this.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                var _a, _b;
+                var choice = (_b = (_a = data === null || data === void 0 ? void 0 : data.unit) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.unit_to_send) !== null && _b !== void 0 ? _b : (Array.isArray(data) ? data[0] : data);
+                if (choice === "Upgrade Base") {
+                    if (_this.money >= 1500) {
+                        _this.multiplier *= 1.2;
+                        _this.addFunds(-1500);
+                    }
+                    // this.stats.spending += upgCost
+                    // this.addFunds(-upgCost)
+                    // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400
+                    // this.playerBase.health += 400
+                    _this.playerBase.level = (_this.playerBase.level || 1) + 1;
+                }
+                else if (choice !== "wait") {
+                    var troopIndex = _this.resolveTroopIndex(choice);
+                    if (troopIndex === -1 && _this.playerUnits.length === 0)
+                        troopIndex = 0; // Anti stalemate
+                    if (troopIndex !== -1 && _this.unlockedUnits[troopIndex]) {
+                        _this.addTroop(troopIndex);
+                    }
+                }
+                _this.working = false;
+                var perEl = document.getElementById("per" + side_2);
+                if (perEl)
+                    perEl.innerText = "Computed in: " + Math.round((performance.now() - p_2) * 1000) / 1000 + "ms";
+            })
+                .catch(function (err) {
+                console.error("[HttpBot " + _this.side + "] Server unreachable at " + _this.endpoint + ":", err);
+                if (_this.playerUnits.length === 0)
+                    _this.addTroop(0);
+                _this.working = false;
+                _this.cooldown = 60;
+            });
+            this.cooldown = enc > 2.0 ? 15 : enc >= 0.8 ? 25 : 40;
+        }
+        if (this.cooldown <= 0) {
+            if (this.playerUnits.length && this.money > 1000 &&
+                (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300)) {
+                this.shouldSpawnBaseDestroyer(enc);
+            }
+            this.tryToUnlock();
+            var numberOfUnlockedUnits_2 = 0;
+            this.unlockedUnits.forEach(function (e) { if (e)
+                numberOfUnlockedUnits_2++; });
+            var unlEl = document.getElementById("unl" + this.side);
+            if (unlEl)
+                unlEl.innerText = "Unlocked Units: " + numberOfUnlockedUnits_2;
+        }
+        this.cooldown--;
+    };
+    return HttpBot;
+}(SimulatingBot));
+var LocalRLBot = /** @class */ (function (_super) {
+    __extends(LocalRLBot, _super);
+    function LocalRLBot(money, side, checkForAvailMoney, modelUrl) {
+        if (money === void 0) { money = 0; }
+        if (modelUrl === void 0) { modelUrl = 'ultimate_dqn_model.json'; }
+        var _this = _super.call(this, money, side, checkForAvailMoney) || this;
+        _this.historyBuffer = new Map();
+        _this.net = null;
+        _this.modelLoaded = false;
+        _this.INPUT_SIZE = 147;
+        _this.HIDDEN_1 = 512;
+        _this.HIDDEN_2 = 256;
+        _this.OUTPUT_SIZE = 14;
+        _this.ACTIONS = [
+            "Basic Troop", "Fast Troop", "Range Troop", "Advanced Troop",
+            "Shield Troop", "Catapult", "Boomer Troop", "Doggo",
+            "Trebuchet", "Atomic Troop", "Atomic Bomb", "Boss",
+            "Upgrade Base", "wait"
+        ];
+        _this.UNIT_META = {
+            "Basic Troop": { id: 0, price: 5, hp: 20, dps: 4.4 / 40, range: 0 },
+            "Fast Troop": { id: 1, price: 5, hp: 12, dps: 2.3 / 13, range: 10 },
+            "Range Troop": { id: 2, price: 8, hp: 20, dps: 4.3 / 50, range: 79 },
+            "Advanced Troop": { id: 3, price: 10, hp: 36, dps: 15 / 70, range: 0 },
+            "Shield Troop": { id: 4, price: 12, hp: 115, dps: 3 / 200, range: 0 },
+            "Catapult": { id: 5, price: 20, hp: 15, dps: 3.2 / 100, range: 140 },
+            "Boomer Troop": { id: 6, price: 20, hp: 1, dps: 50 / 17, range: 40 },
+            "Doggo": { id: 7, price: 20, hp: 30, dps: 30 / 60, range: 0 },
+            "Trebuchet": { id: 8, price: 45, hp: 5, dps: 100 / 300, range: 210 },
+            "Atomic Troop": { id: 9, price: 40, hp: 280, dps: 0.6 / 1, range: 0 },
+            "Atomic Bomb": { id: 10, price: 250, hp: 5000, dps: 99, range: 100 },
+            "Boss": { id: 11, price: 5000, hp: 1000, dps: 40 / 180, range: 0 },
+            "Upgrade Base": { id: 12, price: 0, hp: 0, dps: 0, range: 0 },
+            "wait": { id: 13, price: 0, hp: 0, dps: 0, range: 0 },
+        };
+        _this.cooldown = 5;
+        if (_this.botWorker)
+            _this.botWorker.terminate();
+        _this.loadModel(modelUrl);
+        return _this;
+    }
+    LocalRLBot.prototype.loadModel = function (url) {
+        return __awaiter(this, void 0, void 0, function () {
+            var res, weights, err_1;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        _a.trys.push([0, 3, , 4]);
+                        console.log("[LocalRLBot] Fetching model from " + url + "...");
+                        return [4 /*yield*/, fetch(url)];
+                    case 1:
+                        res = _a.sent();
+                        return [4 /*yield*/, res.json()];
+                    case 2:
+                        weights = _a.sent();
+                        this.net = {
+                            W1: new Float32Array(weights.W1),
+                            b1: new Float32Array(weights.b1),
+                            W2: new Float32Array(weights.W2),
+                            b2: new Float32Array(weights.b2),
+                            Wv: new Float32Array(weights.Wv),
+                            bv: new Float32Array(weights.bv),
+                            Wa: new Float32Array(weights.Wa),
+                            ba: new Float32Array(weights.ba),
+                        };
+                        this.modelLoaded = true;
+                        console.log("[LocalRLBot] Model loaded! Ready to destroy.");
+                        return [3 /*break*/, 4];
+                    case 3:
+                        err_1 = _a.sent();
+                        console.error("[LocalRLBot] Failed to load model:", err_1);
+                        return [3 /*break*/, 4];
+                    case 4: return [2 /*return*/];
+                }
+            });
+        });
+    };
+    LocalRLBot.prototype.forwardPass = function (x) {
+        var h1 = new Float32Array(this.HIDDEN_1);
+        for (var i = 0; i < this.HIDDEN_1; i++) {
+            var sum = this.net.b1[i];
+            var off = i * this.INPUT_SIZE;
+            for (var j = 0; j < this.INPUT_SIZE; j++)
+                sum += this.net.W1[off + j] * x[j];
+            h1[i] = sum > 0 ? sum : 0.01 * sum;
+        }
+        var h2 = new Float32Array(this.HIDDEN_2);
+        for (var i = 0; i < this.HIDDEN_2; i++) {
+            var sum = this.net.b2[i];
+            var off = i * this.HIDDEN_1;
+            for (var j = 0; j < this.HIDDEN_1; j++)
+                sum += this.net.W2[off + j] * h1[j];
+            h2[i] = sum > 0 ? sum : 0.01 * sum;
+        }
+        var value = this.net.bv[0];
+        for (var i = 0; i < this.HIDDEN_2; i++)
+            value += this.net.Wv[i] * h2[i];
+        var adv = new Float32Array(this.OUTPUT_SIZE);
+        var meanAdv = 0;
+        for (var a = 0; a < this.OUTPUT_SIZE; a++) {
+            var sum = this.net.ba[a];
+            var off = a * this.HIDDEN_2;
+            for (var i = 0; i < this.HIDDEN_2; i++)
+                sum += this.net.Wa[off + i] * h2[i];
+            adv[a] = sum;
+            meanAdv += sum;
+        }
+        meanAdv /= this.OUTPUT_SIZE;
+        var out = new Float32Array(this.OUTPUT_SIZE);
+        for (var a = 0; a < this.OUTPUT_SIZE; a++)
+            out[a] = value + (adv[a] - meanAdv);
+        return out;
+    };
+    LocalRLBot.prototype.extractFeatures = function (field) {
+        var _a, _b;
+        var myUnits = field.myUnits || [];
+        var enemyUnits = field.enemyUnits || [];
+        var unlocked = this.unlockedUnits || [];
+        var features = [];
+        var myCounts = new Array(12).fill(0);
+        var enemyCounts = new Array(12).fill(0);
+        for (var _i = 0, myUnits_1 = myUnits; _i < myUnits_1.length; _i++) {
+            var u = myUnits_1[_i];
+            var m = this.UNIT_META[u.name];
+            if (m && m.id < 12)
+                myCounts[m.id] += 1 / 7;
+        }
+        for (var _c = 0, enemyUnits_1 = enemyUnits; _c < enemyUnits_1.length; _c++) {
+            var u = enemyUnits_1[_c];
+            var m = this.UNIT_META[u.name];
+            if (m && m.id < 12)
+                enemyCounts[m.id] += 1 / 7;
+        }
+        var unlockedFlags = Array.from({ length: 12 }, function (_, i) { return (unlocked[i] ? 1.0 : 0.0); });
+        features.push.apply(features, __spreadArray(__spreadArray(__spreadArray([], myCounts), enemyCounts), unlockedFlags));
+        var zones = Array.from({ length: 7 }, function () { return ({ myHP: 0, myDPS: 0, enHP: 0, enDPS: 0, enCount: 0 }); });
+        for (var _d = 0, myUnits_2 = myUnits; _d < myUnits_2.length; _d++) {
+            var u = myUnits_2[_d];
+            var z = Math.max(0, Math.min(6, Math.floor((u.distanceToMyBase || 0) / 100)));
+            var m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+            zones[z].myHP += (u.health || 0) / 200;
+            zones[z].myDPS += (m.dps || 0);
+        }
+        for (var _e = 0, enemyUnits_2 = enemyUnits; _e < enemyUnits_2.length; _e++) {
+            var u = enemyUnits_2[_e];
+            var z = Math.max(0, Math.min(6, Math.floor((u.distanceToMyBase || 700) / 100)));
+            var m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+            zones[z].enHP += (u.health || 0) / 200;
+            zones[z].enDPS += (m.dps || 0);
+            zones[z].enCount += 1 / 5;
+        }
+        for (var _f = 0, zones_1 = zones; _f < zones_1.length; _f++) {
+            var z = zones_1[_f];
+            features.push(Math.min(2.5, z.myHP || 0), Math.min(2.5, z.myDPS || 0), Math.min(2.5, z.enHP || 0), Math.min(2.5, z.enDPS || 0), Math.min(2.5, z.enCount || 0));
+        }
+        for (var i = 0; i < 6; i++) {
+            var u = myUnits[i];
+            if (u) {
+                var m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+                features.push(1.0, (u.distanceToMyBase || 0) / 700, Math.min(2, (u.health || m.hp) / m.hp), (m.range || 0) / 210);
+            }
+            else
+                features.push(0, 0, 0, 0);
+        }
+        for (var i = 0; i < 6; i++) {
+            var u = enemyUnits[i];
+            if (u) {
+                var m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+                features.push(1.0, (u.distanceToMyBase || 700) / 700, Math.min(2, (u.health || m.hp) / m.hp), (m.range || 0) / 210, u.name === "Shield Troop" ? 1.0 : 0.0);
+            }
+            else
+                features.push(0, 1.0, 0, 0, 0);
+        }
+        var getFrontDist = function (snap, isEnemy) {
+            if (!snap || typeof snap !== "object")
+                return isEnemy ? 1.0 : 0.0;
+            var arr = isEnemy ? snap.enemyUnits : snap.myUnits;
+            return (arr === null || arr === void 0 ? void 0 : arr[0]) ? (arr[0].distanceToMyBase || 0) / 700 : (isEnemy ? 1.0 : 0.0);
+        };
+        var myFrontNow = getFrontDist(field, false);
+        var myFront1s = getFrontDist(this.getHistoricalSnapshot(1), false);
+        var myFront2s = getFrontDist(this.getHistoricalSnapshot(2), false);
+        var myFront5s = getFrontDist(this.getHistoricalSnapshot(5), false);
+        var myFront10s = getFrontDist(this.getHistoricalSnapshot(10), false);
+        var myFront20s = getFrontDist(this.getHistoricalSnapshot(20), false);
+        var enFrontNow = getFrontDist(field, true);
+        var enFront1s = getFrontDist(this.getHistoricalSnapshot(1), true);
+        var enFront2s = getFrontDist(this.getHistoricalSnapshot(2), true);
+        var enFront5s = getFrontDist(this.getHistoricalSnapshot(5), true);
+        var enFront10s = getFrontDist(this.getHistoricalSnapshot(10), true);
+        var enFront20s = getFrontDist(this.getHistoricalSnapshot(20), true);
+        var frontlineGap = Math.max(-1, Math.min(1, enFrontNow - myFrontNow));
+        var moneyNorm = Math.min(2.5, (this.money || 0) / 50);
+        var encNorm = Math.min(2.5, (this.encouragement() || 1) / 3);
+        var myBaseNorm = Math.min(2.5, (field.playerBaseHealth || 800) / 2000);
+        var enemyBaseNorm = Math.min(2.5, (field.enemyBaseHealth || 800) / 2000);
+        var myCapRatio = myUnits.length / 7;
+        var myBaseLevelNorm = Math.min(2.0, (field.myBaseLevel || 1) / 5);
+        var enBaseLevelNorm = Math.min(2.0, (field.enemyBaseLevel || 1) / 5);
+        var canUpg = field.canUpgradeBase ? 1.0 : 0.0;
+        var len = myUnits.length;
+        var doggoComboReady = len >= 2 && ((_a = myUnits[len - 1]) === null || _a === void 0 ? void 0 : _a.name) === "Doggo" && ((_b = myUnits[len - 2]) === null || _b === void 0 ? void 0 : _b.name) === "Doggo" ? 1.0 : 0.0;
+        features.push(myFrontNow, myFront1s, myFront2s, myFront5s, myFront10s, myFront20s, enFrontNow, enFront1s, enFront2s, enFront5s, enFront10s, enFront20s, frontlineGap, moneyNorm, encNorm, myBaseNorm, enemyBaseNorm, myCapRatio, doggoComboReady, myBaseLevelNorm, enBaseLevelNorm, canUpg);
+        // SAFEGUARD: Replace any NaNs with 0
+        var safeArray = features.map(function (f) { return isNaN(f) ? 0 : f; });
+        return Float32Array.from(safeArray);
+    };
+    LocalRLBot.prototype.getDistanceFromOurBase = function (position) {
+        return this.side === 'right' ? Math.round((canvasWidth - 10) - position) : Math.round(position - 10);
+    };
+    LocalRLBot.prototype.getUnitPower = function (unit) {
+        if (unit.name === 'Boomer Troop')
+            return unit.damage * 1.5;
+        if (unit.name === 'Trebuchet')
+            return 15;
+        var dps = unit.damage / Math.max(1, unit.attackSpeed);
+        var rangeMultiplier = unit.range > 50 ? 1.35 : 1.0;
+        return (unit.health + (dps * 60 * rangeMultiplier));
+    };
+    LocalRLBot.prototype.encouragement = function () {
+        var _this = this;
+        var myPower = this.playerUnits.reduce(function (sum, u) { return sum + _this.getUnitPower(u); }, 0);
+        var enemyPower = this.enemyUnits.reduce(function (sum, u) { return sum + _this.getUnitPower(u); }, 0);
+        if (myPower === 0 && enemyPower === 0)
+            return 1.0;
+        if (myPower === 0 && enemyPower > 0)
+            return Math.min(10, 2.0 * (1 + ((canvasWidth - this.getDistanceFromOurBase(this.enemyUnits[0].position)) / canvasWidth) * 2));
+        if (enemyPower === 0)
+            return this.money > 40 ? 0.85 : 0.5;
+        return Math.round(((enemyPower / myPower) * (0.7 + 0.9 * (1 - Math.max(0, Math.min(canvasWidth, this.getDistanceFromOurBase(this.enemyUnits[0].position))) / canvasWidth))) * 100) / 100;
+    };
+    LocalRLBot.prototype.takeSnapshot = function () {
+        var _this = this;
+        var baseDamageDealt = (this.enemyBase.maxHealth || 800) - this.enemyBase.health;
+        var upgradeCost = 350 * (this.playerBase.level || 1);
+        return {
+            time: this.game.time,
+            money: Math.round(this.money),
+            troopDamageDealt: Math.max(0, Math.round((this.stats.damageDealt - baseDamageDealt) * 10) / 10),
+            playerBaseHealth: Math.round(this.playerBase.health),
+            enemyBaseHealth: Math.round(this.enemyBase.health),
+            myBaseLevel: this.playerBase.level || 1,
+            enemyBaseLevel: this.enemyBase.level || 1,
+            canUpgradeBase: this.money >= upgradeCost,
+            baseUpgradeCost: upgradeCost,
+            myUnits: this.playerUnits.map(function (u) { return ({ name: u.name, health: Math.round(u.health), distanceToMyBase: _this.getDistanceFromOurBase(u.position) }); }),
+            enemyUnits: this.enemyUnits.map(function (u) { return ({ name: u.name, health: Math.round(u.health), distanceToMyBase: _this.getDistanceFromOurBase(u.position) }); }),
+            summary: ''
+        };
+    };
+    LocalRLBot.prototype.getHistoricalSnapshot = function (secondsAgo) {
+        var targetTick = this.game.time - (secondsAgo * 60);
+        return this.historyBuffer.get(Math.floor(targetTick / 30) * 30) || "none";
+    };
+    LocalRLBot.prototype.doesBaseHaveHealth = function () {
+        var alive = _super.prototype.doesBaseHaveHealth.call(this);
+        if (!alive && !this.game.atomicDoomPending) {
+            setTimeout(function () { return location.reload(); }, 1000);
+        }
+        return alive;
+    };
+    LocalRLBot.prototype.afterMoveArmy = function () {
+        var _this = this;
+        if (this.DOMAccess) {
+            var trsEl = document.getElementById("trs" + this.side);
+            if (trsEl)
+                trsEl.innerText = this.playerUnits.length + "/" + this.maxUnits + " Troops";
+        }
+        for (var i = 0; i <= 2; i++) {
+            if (this.financialAid[i] && this.playerBase.health < (this.playerBase.maxHealth || baseStats.health) / 4 * (i + 1)) {
+                this.addFunds(100);
+                this.financialAid[i] = false;
+            }
+        }
+        if (this.game.time % 30 === 0) {
+            this.historyBuffer.set(this.game.time, this.takeSnapshot());
+            var oldestAllowed = this.game.time - (25 * 60);
+            // @ts-ignore
+            for (var _i = 0, _a = this.historyBuffer.keys(); _i < _a.length; _i++) {
+                var key = _a[_i];
+                // @ts-ignore
+                if (key < oldestAllowed)
+                    this.historyBuffer.delete(key);
+            }
+        }
+        var enc = this.encouragement();
+        var pullEl = document.getElementById("pull" + this.side);
+        if (pullEl)
+            pullEl.innerText = "Enc: " + enc.toFixed(2) + " | Local AI";
+        var upgCost = 350 * (this.playerBase.level || 1);
+        var availableNames = [];
+        var allowedIndices = [];
+        if (this.playerUnits.length < this.maxUnits) {
+            troopArr.forEach(function (t, i) {
+                if (_this.unlockedUnits[i] && _this.money >= t.price) {
+                    availableNames.push(t.name);
+                    allowedIndices.push(_this.ACTIONS.indexOf(t.name));
+                }
+            });
+        }
+        if (this.money >= upgCost) {
+            availableNames.push("Upgrade Base");
+            allowedIndices.push(12);
+        }
+        if (availableNames.length === 0 || this.playerUnits.length > 0) {
+            availableNames.push("wait");
+            allowedIndices.push(13);
+        }
+        // --- LOCAL INFERENCE ---
+        if (this.modelLoaded && this.cooldown <= 0 && availableNames.length > 0) {
+            var p = performance.now();
+            var features = this.extractFeatures(this.takeSnapshot());
+            var qValues = this.forwardPass(features);
+            // Safety Check: If qValues are corrupted (NaN), fallback to "wait"
+            if (isNaN(qValues[0])) {
+                console.error("[LocalRLBot] CRITICAL: Network output NaN. Freezing to prevent crash.");
+                this.cooldown = 100;
+                return;
+            }
+            var bestQ = -Infinity;
+            var chosenIdx = 13;
+            for (var _b = 0, allowedIndices_1 = allowedIndices; _b < allowedIndices_1.length; _b++) {
+                var idx = allowedIndices_1[_b];
+                if (qValues[idx] > bestQ) {
+                    bestQ = qValues[idx];
+                    chosenIdx = idx;
+                }
+            }
+            var choice_1 = this.ACTIONS[chosenIdx];
+            // Debug Print (You can remove this once it's working)
+            if (this.game.time % 120 === 0) {
+                console.log("[LocalRLBot] AI decided to: " + choice_1 + ". Q-Value: " + bestQ.toFixed(2));
+            }
+            if (choice_1 === "Upgrade Base") {
+                if (this.money >= 1500 && Math.random() > 0.5) {
+                    this.multiplier *= 1.2;
+                    this.addFunds(-1500);
+                }
+                // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
+                // this.playerBase.health += 400;
+                this.playerBase.level = (this.playerBase.level || 1) + 1;
+                // this.stats.spending += upgCost;
+                // this.addFunds(-upgCost);
+            }
+            else if (choice_1 !== "wait") {
+                var troopIndex = troopArr.findIndex(function (t) { return t.name === choice_1; });
+                if (troopIndex === -1 && this.playerUnits.length === 0)
+                    troopIndex = 0;
+                if (troopIndex !== -1 && this.unlockedUnits[troopIndex])
+                    this.addTroop(troopIndex);
+            }
+            var perEl = document.getElementById("per" + this.side);
+            if (perEl)
+                perEl.innerText = "Local Inference: " + Math.round((performance.now() - p) * 100) / 100 + "ms";
+            this.cooldown = enc > 2.0 ? 15 : enc >= 0.8 ? 25 : 40;
+        }
+        if (this.cooldown <= 0) {
+            if (this.playerUnits.length && this.money > 1000 && (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300))
+                this.shouldSpawnBaseDestroyer(enc);
+            this.tryToUnlock();
+        }
+        this.cooldown--;
+    };
+    return LocalRLBot;
+}(SimulatingBot));
 var InternetPlayer = /** @class */ (function (_super) {
     __extends(InternetPlayer, _super);
     function InternetPlayer(money, side, checkForAvailMoney, address) {
@@ -1663,6 +2303,32 @@ try {
         new InternetPlayer(0, 'left', false, 'https://multiplayer1-dot-testerislus.ew.r.appspot.com');
         initializeUI();
     }
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-reinforcementai') {
+        game_1 = new Game(new Player(700, 'left', !shiftDown_1), new HttpBot(700, 'right', !shiftDown_1), // <-- Using HttpBot here
+        true, true, [], []);
+        initializeUI();
+    }
+    // Or pit SimulatingBot against your new HttpBot to test it!
+    if (new URLSearchParams(window.location.search).get('mode') === 'bot-vs-bot') {
+        game_1 = new Game(new SimulatingBot(55, 'left', !shiftDown_1), new HttpBot(55, 'right', !shiftDown_1), true, true, [], []);
+        initializeUI();
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'reinforcementai-vs-reinforcementai') {
+        game_1 = new Game(new HttpBot(700, 'left', !shiftDown_1), new HttpBot(700, 'right', !shiftDown_1), true, true, [0], [], 10);
+        initializeUI();
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-local-reinforcementai') {
+        game_1 = new Game(new Player(700, 'left', !shiftDown_1), new LocalRLBot(700, 'right', !shiftDown_1), true, true, [], []);
+        initializeUI();
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-reinforcementai') {
+        game_1 = new Game(new LocalRLBot(700, 'left', !shiftDown_1), new LocalRLBot(700, 'right', !shiftDown_1), true, true, [0], [], 10);
+        initializeUI();
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'local-old-vs-reinforcementai') {
+        game_1 = new Game(new SimulatingBot(700, 'left', !shiftDown_1), new LocalRLBot(700, 'right', !shiftDown_1), true, true, [0], [], 1);
+        initializeUI();
+    }
     console.log(new URLSearchParams(window.location.search).get('mode'));
     document.getElementById('pl').addEventListener('click', function () {
         window.open('/?mode=player-vs-player', '_self');
@@ -1672,6 +2338,24 @@ try {
     });
     document.getElementById('mul1').addEventListener('click', function () {
         window.open('/?mode=multiplayer', '_self');
+    });
+    document.getElementById('bot2').addEventListener('click', function () {
+        window.open('/?mode=player-vs-genai', '_self');
+    });
+    document.getElementById('bot3').addEventListener('click', function () {
+        window.open('/?mode=player-vs-reinforcementai', '_self');
+    });
+    document.getElementById('bot4').addEventListener('click', function () {
+        window.open('/?mode=reinforcementai-vs-reinforcementai', '_self');
+    });
+    document.getElementById('bot5').addEventListener('click', function () {
+        window.open('/?mode=player-vs-local-reinforcementai', '_self');
+    });
+    document.getElementById('bot6').addEventListener('click', function () {
+        window.open('/?mode=local-reinforcementai-vs-reinforcementai', '_self');
+    });
+    document.getElementById('bot7').addEventListener('click', function () {
+        window.open('/?mode=local-old-vs-reinforcementai', '_self');
     });
     fetch("http://" + hostIP + ":" + hostPort, {
         headers: new Headers(),
@@ -1744,13 +2428,13 @@ catch (e) {
             // let p = performance.now()
             if (!e[5]) {
                 for (var i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
-                    if (i === 8)
+                    if (i >= 8)
                         continue;
                     for (var j = 0; j < numberOfUnlockedUnits; j++) {
-                        if (j === 8 || (i === 6 && j === 6))
+                        if (j >= 8 || (i === 6 && j === 6))
                             continue;
                         for (var k = 0; k < numberOfUnlockedUnits; k++) {
-                            if (((i === 6 && k === 6) || (j === 6 && k === 6)))
+                            if (k >= 8 || ((i === 6 && k === 6) || (j === 6 && k === 6)))
                                 continue;
                             var plTroops = e.data[0].slice();
                             plTroops.push(i);

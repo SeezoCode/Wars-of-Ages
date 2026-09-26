@@ -140,12 +140,12 @@ const troopArr = [
     {
         name: 'Trebuchet',
         health: 5,
-        damage: 0,
+        damage: 1,
         baseDamage: 100,
         attackSpeed: 300,
         price: 45,
         color: 'brown',
-        speed: .5,
+        speed: .65,
         span: 50,
         range: 210,
         researchPrice: 250
@@ -282,14 +282,12 @@ class Trooper implements trooperStatsInterface {
         }
     }
 
-    attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface): void {
-        // console.log('attacked enemy: ', enemyTroopers)
+    attack(enemyTroopers, stats) {
         if (enemyTroopers.length) {
-            stats.damageDealt += this.damage
-            // (enemyTroopers[0].health < 0 ? 0 :
-            // enemyTroopers[0].health < this.damage ?
-            // enemyTroopers[0].health : this.damage)
-            enemyTroopers[0].health -= this.damage
+            let enemy = enemyTroopers[0];
+            let actualDamage = Math.min(this.damage, Math.max(0, enemy.health));
+            stats.damageDealt += actualDamage;
+            enemy.health -= this.damage;
         }
     }
 
@@ -340,9 +338,10 @@ class Trooper implements trooperStatsInterface {
     // else this.attackBase(base) // This is a shortcut, may not be as precise!
 
 
-    attackBase(base: baseInterface, stats: statsInterface): void {
-        base.health -= this.baseDamage
-        stats.damageDealt += this.baseDamage
+    attackBase(base, stats) {
+        let actualDamage = Math.min(this.baseDamage, Math.max(0, base.health));
+        stats.damageDealt += actualDamage;
+        base.health -= this.baseDamage;
     }
 
     draw() {
@@ -418,7 +417,7 @@ class ShieldTroop extends Trooper {
 
     attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface, specialParameters: object = {}) {
         if (enemyTroopers[0].name === troopArr[4].name) {
-            this.damage = troopArr[4].damage * 20 * this.multiplier;
+            // this.damage = troopArr[4].damage * 20 * this.multiplier;
         } else {
             this.damage = troopArr[4].damage * this.multiplier;
         }
@@ -456,14 +455,24 @@ class CatapultTroop extends Trooper {
         }
     }
 
-    attack(enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface) {
-        for (let troop of enemyTroopers) {
-            if (this.side === 'left' && this.position + this.range > troop.position && this.position + this.range - this.blast < troop.position) {
-                troop.health -= this.damage
-                stats.damageDealt += this.damage
-            } else if (this.side === 'right' && this.position - this.range < troop.position && this.position - this.range + this.blast > troop.position) {
-                troop.health -= this.damage
-                stats.damageDealt += this.damage
+    attack(enemyTroopers, stats) {
+        for (const troop of enemyTroopers) {
+            if (
+                this.side === "left" &&
+                this.position + this.range > troop.position &&
+                this.position + this.range - this.blast < troop.position
+            ) {
+                let actualDamage = Math.min(this.damage, Math.max(0, troop.health));
+                stats.damageDealt += actualDamage;
+                troop.health -= this.damage;
+            } else if (
+                this.side === "right" &&
+                this.position - this.range < troop.position &&
+                this.position - this.range + this.blast > troop.position
+            ) {
+                let actualDamage = Math.min(this.damage, Math.max(0, troop.health));
+                stats.damageDealt += actualDamage;
+                troop.health -= this.damage;
             }
         }
     }
@@ -486,10 +495,14 @@ class ExplodingTroop extends Trooper {
 
     }
 
-    attack(enemyTroopers: Array<trooperStatsInterface>) {
-        // console.log('attacked enemy BOOM: ', enemyTroopers)
-        enemyTroopers[0].health -= this.damage
-        this.health = 0
+    attack(enemyTroopers, stats) {
+        if (enemyTroopers[0]) {
+            let enemy = enemyTroopers[0];
+            let actualDamage = Math.min(this.damage, Math.max(0, enemy.health));
+            stats.damageDealt += actualDamage;
+            enemy.health -= this.damage;
+        }
+        this.health = 0;
     }
 
     timeAttack(time: number, enemyTroopers: Array<trooperStatsInterface>, stats: statsInterface) {
@@ -700,6 +713,8 @@ let troopers = [BasicTroop, FastTroop, RangeTroop, AdvancedTroop, ShieldTroop, C
 
 interface baseInterface {
     health: number
+    maxHealth?: number       // <-- Added
+    level?: number           // <-- Added
     position: number
     color: string
     span: number
@@ -778,6 +793,7 @@ interface gameInterface {
     visualize: boolean
     DOMAccess: boolean
     atomicDoomPending: boolean
+    moveCount: number
 
     boomerDoomer(position: number): void;
 }
@@ -793,11 +809,12 @@ class Game implements gameInterface {
     msTime: number
     visualize: boolean
     DOMAccess: boolean
+    moveCount: number = 1
     // money: number
     // score: number
 
     constructor(player1: playerInterface, player2: playerInterface, visualize: boolean, DOMAccess: boolean,
-                playerUnits1: Array<number> = [], playerUnits2: Array<number> = []) {
+                playerUnits1: Array<number> = [], playerUnits2: Array<number> = [], moveCount: number = 1) {
         // this.msTime = performance.now()
         this.DOMAccess = DOMAccess
 
@@ -814,6 +831,8 @@ class Game implements gameInterface {
 
         this.players[0].map(this.players[1], visualize, DOMAccess, this.playerOneUnits, playerUnits1, this.playerTwoUnits, this.playerTwoBase, this.playerOneBase, this)
         this.players[1].map(this.players[0], visualize, DOMAccess, this.playerTwoUnits, playerUnits2, this.playerOneUnits, this.playerOneBase, this.playerTwoBase, this)
+
+        this.moveCount = moveCount
 
         this.animation()
     }
@@ -875,6 +894,7 @@ class Game implements gameInterface {
     }
 
     animation(): void {
+        const mc = this.moveCount
         let move = () => {
             this.move()
         }
@@ -899,7 +919,7 @@ class Game implements gameInterface {
         }
 
         function hold(): void {
-            move()
+            for (let i = 0; i < mc; i++) move()
             if (aliveBases()) requestAnimationFrame(hold)
         }
     }
@@ -1497,6 +1517,620 @@ class SimulatingBot extends Player {
 }
 
 
+
+
+interface FieldSnapshot {
+    time: number
+    money: number
+    troopDamageDealt: number
+    playerBaseHealth: number
+    enemyBaseHealth: number
+    myBaseLevel: number
+    enemyBaseLevel: number
+    canUpgradeBase: boolean
+    baseUpgradeCost: number
+    myUnits: Array<{ name: string, health: number, distanceToMyBase: number }>
+    enemyUnits: Array<{ name: string, health: number, distanceToMyBase: number }>
+    summary: string
+}
+
+class HttpBot extends SimulatingBot {
+    private historyBuffer: Map<number, FieldSnapshot> = new Map()
+    private endpoint: string = 'http://localhost:6767'
+
+    constructor(money = 0, side: string, checkForAvailMoney: boolean, endpoint: string = 'http://localhost:6767') {
+        super(money, side, checkForAvailMoney)
+        this.endpoint = endpoint
+        this.cooldown = 5
+        if (this.botWorker) {
+            this.botWorker.terminate()
+        }
+    }
+
+    private getDistanceFromOurBase(position: number): number {
+        return this.side === 'right'
+            ? Math.round((canvasWidth - 10) - position)
+            : Math.round(position - 10)
+    }
+
+    private getUnitPower(unit: trooperStatsInterface): number {
+        if (unit.name === 'Boomer Troop') return unit.damage * 1.5
+        if (unit.name === 'Trebuchet') return 15
+
+        const dps = unit.damage / Math.max(1, unit.attackSpeed)
+        const rangeMultiplier = unit.range > 50 ? 1.35 : 1.0
+        return (unit.health + (dps * 60 * rangeMultiplier))
+    }
+
+    encouragement(): number {
+        const myPower = this.playerUnits.reduce((sum, u) => sum + this.getUnitPower(u), 0)
+        const enemyPower = this.enemyUnits.reduce((sum, u) => sum + this.getUnitPower(u), 0)
+
+        if (myPower === 0 && enemyPower === 0) return 1.0
+
+        if (myPower === 0 && enemyPower > 0) {
+            const closestEnemyDist = this.getDistanceFromOurBase(this.enemyUnits[0].position)
+            const proximityPanic = 1 + ((canvasWidth - closestEnemyDist) / canvasWidth) * 2
+            return Math.min(10, 2.0 * proximityPanic)
+        }
+
+        if (enemyPower === 0) {
+            return this.money > 40 ? 0.85 : 0.5
+        }
+
+        const powerRatio = enemyPower / myPower
+        const enemyFrontDist = this.getDistanceFromOurBase(this.enemyUnits[0].position)
+        const proximityFactor = 0.7 + 0.9 * (1 - Math.max(0, Math.min(canvasWidth, enemyFrontDist)) / canvasWidth)
+
+        return Math.round((powerRatio * proximityFactor) * 100) / 100
+    }
+
+    private takeSnapshot(): FieldSnapshot {
+        const myUnits = this.playerUnits.map(u => ({
+            name: u.name,
+            health: Math.round(u.health),
+            distanceToMyBase: this.getDistanceFromOurBase(u.position)
+        }))
+
+        const enemyUnits = this.enemyUnits.map(u => ({
+            name: u.name,
+            health: Math.round(u.health),
+            distanceToMyBase: this.getDistanceFromOurBase(u.position)
+        }))
+
+        const mySummary = myUnits.length ? myUnits.map(u => `${u.name} (HP:${u.health})`).join(', ') : 'none'
+        const enemySummary = enemyUnits.length ? enemyUnits.map(u => `${u.name} (HP:${u.health})`).join(', ') : 'none'
+
+        const baseDamageDealt = this.enemyBase.maxHealth - this.enemyBase.health
+        const troopDamageDealt = Math.max(0, Math.round((this.stats.damageDealt - baseDamageDealt) * 10) / 10)
+        const upgradeCost = 350 * (this.playerBase.level || 1)
+
+        return {
+            time: this.game.time,
+            money: Math.round(this.money),
+            troopDamageDealt: troopDamageDealt,
+            playerBaseHealth: Math.round(this.playerBase.health),
+            enemyBaseHealth: Math.round(this.enemyBase.health),
+            myBaseLevel: this.playerBase.level || 1,
+            enemyBaseLevel: this.enemyBase.level || 1,
+            canUpgradeBase: this.money >= upgradeCost,
+            baseUpgradeCost: upgradeCost,
+            myUnits,
+            enemyUnits,
+            summary: `Our units: [${mySummary}] | Enemy units: [${enemySummary}]`
+        }
+    }
+
+    private getHistoricalSnapshot(secondsAgo: number): FieldSnapshot | string {
+        const targetTick = this.game.time - (secondsAgo * 60)
+        const roundedTick = Math.floor(targetTick / 30) * 30
+        return this.historyBuffer.get(roundedTick) || "Game had not reached this point yet."
+    }
+
+    private resolveTroopIndex(unitChoice: any): number {
+        if (typeof unitChoice === 'number' && unitChoice >= 0 && unitChoice < troopArr.length) {
+            return unitChoice
+        }
+        if (typeof unitChoice === 'string') {
+            if (unitChoice.toLowerCase() === 'wait' || unitChoice.toLowerCase() === 'none') return -1
+            return troopArr.findIndex(t => t.name.toLowerCase() === unitChoice.toLowerCase())
+        }
+        return -1
+    }
+
+    doesBaseHaveHealth(): boolean {
+        const alive = super.doesBaseHaveHealth()
+        if (!alive && !this.game.atomicDoomPending) {
+            setTimeout(() => location.reload(), 1000)
+        }
+        return alive
+    }
+
+    afterMoveArmy() {
+        if (this.DOMAccess) {
+            const trsEl = document.getElementById(`trs${this.side}`)
+            if (trsEl) trsEl.innerText = `${this.playerUnits.length}/${this.maxUnits} Troops`
+        }
+
+        for (let i = 0; i <= 2; i++) {
+            if (this.financialAid[i] && this.playerBase.health < (this.playerBase.maxHealth || baseStats.health) / 4 * (i + 1)) {
+                this.addFunds(100)
+                this.financialAid[i] = false
+            }
+        }
+
+        if (this.game.time % 30 === 0) {
+            this.historyBuffer.set(this.game.time, this.takeSnapshot())
+            const oldestAllowed = this.game.time - (25 * 60)
+            // @ts-ignore
+            for (let key of this.historyBuffer.keys()) {
+                if (key < oldestAllowed) this.historyBuffer.delete(key)
+            }
+        }
+
+        let enc = this.encouragement()
+        const pullEl = document.getElementById(`pull${this.side}`)
+        if (pullEl) {
+            pullEl.innerText = `Enc: ${enc.toFixed(2)} | ` + (enc > 2.2 ? 'Panic' : enc < 0.7 ? 'Winning' : 'Normal')
+        }
+
+        const upgCost = 350 * (this.playerBase.level || 1);
+        let availableUnits = [];
+
+        if (this.playerUnits.length < this.maxUnits) {
+            availableUnits = troopArr
+                .map((t, index) => ({ index, name: t.name, price: t.price }))
+                .filter((t, index) => this.unlockedUnits[index] && this.money >= t.price);
+        }
+
+        if (this.money >= upgCost) {
+            availableUnits.push({ index: 12, name: "Upgrade Base", price: upgCost });
+        }
+
+        // Only ask the server if there are valid choices available
+        if (this.cooldown <= 0 && !this.working && availableUnits.length > 0) {
+            this.working = true
+            let p = performance.now()
+            let side = this.side
+
+            const payload = {
+                side: this.side,
+                money: Math.round(this.money),
+                encouragement: enc,
+                unlockedUnits: this.unlockedUnits,
+                availableUnits: availableUnits,
+                currentField: this.takeSnapshot(),
+                fieldHistory: {
+                    "20s_ago": this.getHistoricalSnapshot(20),
+                    "10s_ago": this.getHistoricalSnapshot(10),
+                    "5s_ago": this.getHistoricalSnapshot(5),
+                    "2s_ago": this.getHistoricalSnapshot(2),
+                    "1s_ago": this.getHistoricalSnapshot(1),
+                }
+            }
+
+            fetch(this.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(res => res.json())
+                .then(data => {
+                    const choice = data?.unit ?? data?.unit_to_send ?? (Array.isArray(data) ? data[0] : data)
+
+                    if (choice === "Upgrade Base") {
+                        if (this.money >= 1500) {
+                            this.multiplier *= 1.2
+                            this.addFunds(-1500)
+                        }
+                        // this.stats.spending += upgCost
+                        // this.addFunds(-upgCost)
+                        // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400
+                        // this.playerBase.health += 400
+                        this.playerBase.level = (this.playerBase.level || 1) + 1
+                    } else if (choice !== "wait") {
+                        let troopIndex = this.resolveTroopIndex(choice)
+                        if (troopIndex === -1 && this.playerUnits.length === 0) troopIndex = 0 // Anti stalemate
+                        if (troopIndex !== -1 && this.unlockedUnits[troopIndex]) {
+                            this.addTroop(troopIndex)
+                        }
+                    }
+
+                    this.working = false
+                    const perEl = document.getElementById(`per${side}`)
+                    if (perEl) perEl.innerText = `Computed in: ${Math.round((performance.now() - p) * 1000) / 1000}ms`
+                })
+                .catch(err => {
+                    console.error(`[HttpBot ${this.side}] Server unreachable at ${this.endpoint}:`, err)
+                    if (this.playerUnits.length === 0) this.addTroop(0)
+                    this.working = false
+                    this.cooldown = 60
+                })
+
+            this.cooldown = enc > 2.0 ? 15 : enc >= 0.8 ? 25 : 40
+        }
+
+        if (this.cooldown <= 0) {
+            if (this.playerUnits.length && this.money > 1000 &&
+                (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300)) {
+                this.shouldSpawnBaseDestroyer(enc)
+            }
+            this.tryToUnlock()
+
+            let numberOfUnlockedUnits = 0
+            this.unlockedUnits.forEach(e => { if (e) numberOfUnlockedUnits++ })
+            const unlEl = document.getElementById(`unl${this.side}`)
+            if (unlEl) unlEl.innerText = `Unlocked Units: ${numberOfUnlockedUnits}`
+        }
+
+        this.cooldown--
+    }
+}
+
+
+class LocalRLBot extends SimulatingBot {
+    private historyBuffer: Map<number, FieldSnapshot> = new Map();
+    private net: any = null;
+    private modelLoaded: boolean = false;
+
+    private INPUT_SIZE = 147;
+    private HIDDEN_1 = 512;
+    private HIDDEN_2 = 256;
+    private OUTPUT_SIZE = 14;
+    private ACTIONS = [
+        "Basic Troop", "Fast Troop", "Range Troop", "Advanced Troop",
+        "Shield Troop", "Catapult", "Boomer Troop", "Doggo",
+        "Trebuchet", "Atomic Troop", "Atomic Bomb", "Boss",
+        "Upgrade Base", "wait"
+    ];
+
+    private UNIT_META: any = {
+        "Basic Troop":    { id: 0,  price: 5,    hp: 20,   dps: 4.4 / 40, range: 0   },
+        "Fast Troop":     { id: 1,  price: 5,    hp: 12,   dps: 2.3 / 13, range: 10  },
+        "Range Troop":    { id: 2,  price: 8,    hp: 20,   dps: 4.3 / 50, range: 79  },
+        "Advanced Troop": { id: 3,  price: 10,   hp: 36,   dps: 15 / 70,  range: 0   },
+        "Shield Troop":   { id: 4,  price: 12,   hp: 115,  dps: 3 / 200,  range: 0   },
+        "Catapult":       { id: 5,  price: 20,   hp: 15,   dps: 3.2 / 100,range: 140 },
+        "Boomer Troop":   { id: 6,  price: 20,   hp: 1,    dps: 50 / 17,  range: 40  },
+        "Doggo":          { id: 7,  price: 20,   hp: 30,   dps: 30 / 60,  range: 0   },
+        "Trebuchet":      { id: 8,  price: 45,   hp: 5,    dps: 100 / 300,range: 210 },
+        "Atomic Troop":   { id: 9,  price: 40,   hp: 280,  dps: 0.6 / 1,  range: 0   },
+        "Atomic Bomb":    { id: 10, price: 250,  hp: 5000, dps: 99,       range: 100 },
+        "Boss":           { id: 11, price: 5000, hp: 1000, dps: 40 / 180, range: 0   },
+        "Upgrade Base":   { id: 12, price: 0,    hp: 0,    dps: 0,        range: 0   },
+        "wait":           { id: 13, price: 0,    hp: 0,    dps: 0,        range: 0   },
+    };
+
+    constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_dqn_model.json') {
+        super(money, side, checkForAvailMoney);
+        this.cooldown = 5;
+        if (this.botWorker) this.botWorker.terminate();
+        this.loadModel(modelUrl);
+    }
+
+    private async loadModel(url: string) {
+        try {
+            console.log(`[LocalRLBot] Fetching model from ${url}...`);
+            const res = await fetch(url);
+            const weights = await res.json();
+
+            this.net = {
+                W1: new Float32Array(weights.W1),
+                b1: new Float32Array(weights.b1),
+                W2: new Float32Array(weights.W2),
+                b2: new Float32Array(weights.b2),
+                Wv: new Float32Array(weights.Wv),
+                bv: new Float32Array(weights.bv),
+                Wa: new Float32Array(weights.Wa),
+                ba: new Float32Array(weights.ba),
+            };
+            this.modelLoaded = true;
+            console.log(`[LocalRLBot] Model loaded! Ready to destroy.`);
+        } catch (err) {
+            console.error(`[LocalRLBot] Failed to load model:`, err);
+        }
+    }
+
+    private forwardPass(x: Float32Array): Float32Array {
+        const h1 = new Float32Array(this.HIDDEN_1);
+        for (let i = 0; i < this.HIDDEN_1; i++) {
+            let sum = this.net.b1[i];
+            const off = i * this.INPUT_SIZE;
+            for (let j = 0; j < this.INPUT_SIZE; j++) sum += this.net.W1[off + j] * x[j];
+            h1[i] = sum > 0 ? sum : 0.01 * sum;
+        }
+
+        const h2 = new Float32Array(this.HIDDEN_2);
+        for (let i = 0; i < this.HIDDEN_2; i++) {
+            let sum = this.net.b2[i];
+            const off = i * this.HIDDEN_1;
+            for (let j = 0; j < this.HIDDEN_1; j++) sum += this.net.W2[off + j] * h1[j];
+            h2[i] = sum > 0 ? sum : 0.01 * sum;
+        }
+
+        let value = this.net.bv[0];
+        for (let i = 0; i < this.HIDDEN_2; i++) value += this.net.Wv[i] * h2[i];
+
+        const adv = new Float32Array(this.OUTPUT_SIZE);
+        let meanAdv = 0;
+        for (let a = 0; a < this.OUTPUT_SIZE; a++) {
+            let sum = this.net.ba[a];
+            const off = a * this.HIDDEN_2;
+            for (let i = 0; i < this.HIDDEN_2; i++) sum += this.net.Wa[off + i] * h2[i];
+            adv[a] = sum;
+            meanAdv += sum;
+        }
+        meanAdv /= this.OUTPUT_SIZE;
+
+        const out = new Float32Array(this.OUTPUT_SIZE);
+        for (let a = 0; a < this.OUTPUT_SIZE; a++) out[a] = value + (adv[a] - meanAdv);
+
+        return out;
+    }
+
+    private extractFeatures(field: FieldSnapshot): Float32Array {
+        const myUnits = field.myUnits || [];
+        const enemyUnits = field.enemyUnits || [];
+        const unlocked = this.unlockedUnits || [];
+        const features = [];
+
+        const myCounts = new Array(12).fill(0);
+        const enemyCounts = new Array(12).fill(0);
+        for (const u of myUnits) {
+            const m = this.UNIT_META[u.name];
+            if (m && m.id < 12) myCounts[m.id] += 1 / 7;
+        }
+        for (const u of enemyUnits) {
+            const m = this.UNIT_META[u.name];
+            if (m && m.id < 12) enemyCounts[m.id] += 1 / 7;
+        }
+        const unlockedFlags = Array.from({ length: 12 }, (_, i) => (unlocked[i] ? 1.0 : 0.0));
+        features.push(...myCounts, ...enemyCounts, ...unlockedFlags);
+
+        const zones = Array.from({ length: 7 }, () => ({ myHP: 0, myDPS: 0, enHP: 0, enDPS: 0, enCount: 0 }));
+        for (const u of myUnits) {
+            const z = Math.max(0, Math.min(6, Math.floor((u.distanceToMyBase || 0) / 100)));
+            const m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+            zones[z].myHP += (u.health || 0) / 200;
+            zones[z].myDPS += (m.dps || 0);
+        }
+        for (const u of enemyUnits) {
+            const z = Math.max(0, Math.min(6, Math.floor((u.distanceToMyBase || 700) / 100)));
+            const m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+            zones[z].enHP += (u.health || 0) / 200;
+            zones[z].enDPS += (m.dps || 0);
+            zones[z].enCount += 1 / 5;
+        }
+        for (const z of zones) {
+            features.push(
+                Math.min(2.5, z.myHP || 0), Math.min(2.5, z.myDPS || 0),
+                Math.min(2.5, z.enHP || 0), Math.min(2.5, z.enDPS || 0), Math.min(2.5, z.enCount || 0)
+            );
+        }
+
+        for (let i = 0; i < 6; i++) {
+            const u = myUnits[i];
+            if (u) {
+                const m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+                features.push(1.0, (u.distanceToMyBase || 0) / 700, Math.min(2, (u.health || m.hp) / m.hp), (m.range || 0) / 210);
+            } else features.push(0, 0, 0, 0);
+        }
+
+        for (let i = 0; i < 6; i++) {
+            const u = enemyUnits[i];
+            if (u) {
+                const m = this.UNIT_META[u.name] || this.UNIT_META["Basic Troop"];
+                features.push(1.0, (u.distanceToMyBase || 700) / 700, Math.min(2, (u.health || m.hp) / m.hp), (m.range || 0) / 210, u.name === "Shield Troop" ? 1.0 : 0.0);
+            } else features.push(0, 1.0, 0, 0, 0);
+        }
+
+        const getFrontDist = (snap: any, isEnemy: boolean) => {
+            if (!snap || typeof snap !== "object") return isEnemy ? 1.0 : 0.0;
+            const arr = isEnemy ? snap.enemyUnits : snap.myUnits;
+            return arr?.[0] ? (arr[0].distanceToMyBase || 0) / 700 : (isEnemy ? 1.0 : 0.0);
+        };
+
+        const myFrontNow = getFrontDist(field, false);
+        const myFront1s = getFrontDist(this.getHistoricalSnapshot(1), false);
+        const myFront2s = getFrontDist(this.getHistoricalSnapshot(2), false);
+        const myFront5s = getFrontDist(this.getHistoricalSnapshot(5), false);
+        const myFront10s = getFrontDist(this.getHistoricalSnapshot(10), false);
+        const myFront20s = getFrontDist(this.getHistoricalSnapshot(20), false);
+
+        const enFrontNow = getFrontDist(field, true);
+        const enFront1s = getFrontDist(this.getHistoricalSnapshot(1), true);
+        const enFront2s = getFrontDist(this.getHistoricalSnapshot(2), true);
+        const enFront5s = getFrontDist(this.getHistoricalSnapshot(5), true);
+        const enFront10s = getFrontDist(this.getHistoricalSnapshot(10), true);
+        const enFront20s = getFrontDist(this.getHistoricalSnapshot(20), true);
+
+        const frontlineGap = Math.max(-1, Math.min(1, enFrontNow - myFrontNow));
+        const moneyNorm = Math.min(2.5, (this.money || 0) / 50);
+        const encNorm = Math.min(2.5, (this.encouragement() || 1) / 3);
+        const myBaseNorm = Math.min(2.5, (field.playerBaseHealth || 800) / 2000);
+        const enemyBaseNorm = Math.min(2.5, (field.enemyBaseHealth || 800) / 2000);
+        const myCapRatio = myUnits.length / 7;
+        const myBaseLevelNorm = Math.min(2.0, (field.myBaseLevel || 1) / 5);
+        const enBaseLevelNorm = Math.min(2.0, (field.enemyBaseLevel || 1) / 5);
+        const canUpg = field.canUpgradeBase ? 1.0 : 0.0;
+
+        const len = myUnits.length;
+        const doggoComboReady = len >= 2 && myUnits[len - 1]?.name === "Doggo" && myUnits[len - 2]?.name === "Doggo" ? 1.0 : 0.0;
+
+        features.push(
+            myFrontNow, myFront1s, myFront2s, myFront5s, myFront10s, myFront20s,
+            enFrontNow, enFront1s, enFront2s, enFront5s, enFront10s, enFront20s,
+            frontlineGap, moneyNorm, encNorm, myBaseNorm, enemyBaseNorm, myCapRatio, doggoComboReady,
+            myBaseLevelNorm, enBaseLevelNorm, canUpg
+        );
+
+        // SAFEGUARD: Replace any NaNs with 0
+        const safeArray = features.map(f => isNaN(f) ? 0 : f);
+        return Float32Array.from(safeArray);
+    }
+
+    private getDistanceFromOurBase(position: number): number {
+        return this.side === 'right' ? Math.round((canvasWidth - 10) - position) : Math.round(position - 10);
+    }
+
+    private getUnitPower(unit: trooperStatsInterface): number {
+        if (unit.name === 'Boomer Troop') return unit.damage * 1.5;
+        if (unit.name === 'Trebuchet') return 15;
+        const dps = unit.damage / Math.max(1, unit.attackSpeed);
+        const rangeMultiplier = unit.range > 50 ? 1.35 : 1.0;
+        return (unit.health + (dps * 60 * rangeMultiplier));
+    }
+
+    encouragement(): number {
+        const myPower = this.playerUnits.reduce((sum, u) => sum + this.getUnitPower(u), 0);
+        const enemyPower = this.enemyUnits.reduce((sum, u) => sum + this.getUnitPower(u), 0);
+        if (myPower === 0 && enemyPower === 0) return 1.0;
+        if (myPower === 0 && enemyPower > 0) return Math.min(10, 2.0 * (1 + ((canvasWidth - this.getDistanceFromOurBase(this.enemyUnits[0].position)) / canvasWidth) * 2));
+        if (enemyPower === 0) return this.money > 40 ? 0.85 : 0.5;
+        return Math.round(((enemyPower / myPower) * (0.7 + 0.9 * (1 - Math.max(0, Math.min(canvasWidth, this.getDistanceFromOurBase(this.enemyUnits[0].position))) / canvasWidth))) * 100) / 100;
+    }
+
+    private takeSnapshot(): FieldSnapshot {
+        const baseDamageDealt = (this.enemyBase.maxHealth || 800) - this.enemyBase.health;
+        const upgradeCost = 350 * (this.playerBase.level || 1);
+        return {
+            time: this.game.time,
+            money: Math.round(this.money),
+            troopDamageDealt: Math.max(0, Math.round((this.stats.damageDealt - baseDamageDealt) * 10) / 10),
+            playerBaseHealth: Math.round(this.playerBase.health),
+            enemyBaseHealth: Math.round(this.enemyBase.health),
+            myBaseLevel: this.playerBase.level || 1,
+            enemyBaseLevel: this.enemyBase.level || 1,
+            canUpgradeBase: this.money >= upgradeCost,
+            baseUpgradeCost: upgradeCost,
+            myUnits: this.playerUnits.map(u => ({ name: u.name, health: Math.round(u.health), distanceToMyBase: this.getDistanceFromOurBase(u.position) })),
+            enemyUnits: this.enemyUnits.map(u => ({ name: u.name, health: Math.round(u.health), distanceToMyBase: this.getDistanceFromOurBase(u.position) })),
+            summary: ''
+        };
+    }
+
+    private getHistoricalSnapshot(secondsAgo: number): FieldSnapshot | string {
+        const targetTick = this.game.time - (secondsAgo * 60);
+        return this.historyBuffer.get(Math.floor(targetTick / 30) * 30) || "none";
+    }
+
+    doesBaseHaveHealth(): boolean {
+        const alive = super.doesBaseHaveHealth();
+        if (!alive && !this.game.atomicDoomPending) {
+            setTimeout(() => location.reload(), 1000);
+        }
+        return alive;
+    }
+
+    afterMoveArmy() {
+        if (this.DOMAccess) {
+            const trsEl = document.getElementById(`trs${this.side}`);
+            if (trsEl) trsEl.innerText = `${this.playerUnits.length}/${this.maxUnits} Troops`;
+        }
+
+        for (let i = 0; i <= 2; i++) {
+            if (this.financialAid[i] && this.playerBase.health < (this.playerBase.maxHealth || baseStats.health) / 4 * (i + 1)) {
+                this.addFunds(100);
+                this.financialAid[i] = false;
+            }
+        }
+
+        if (this.game.time % 30 === 0) {
+            this.historyBuffer.set(this.game.time, this.takeSnapshot());
+            const oldestAllowed = this.game.time - (25 * 60);
+            // @ts-ignore
+            for (let key of this.historyBuffer.keys()) {
+                // @ts-ignore
+                if (key < oldestAllowed) this.historyBuffer.delete(key);
+            }
+        }
+
+        let enc = this.encouragement();
+        const pullEl = document.getElementById(`pull${this.side}`);
+        if (pullEl) pullEl.innerText = `Enc: ${enc.toFixed(2)} | Local AI`;
+
+        const upgCost = 350 * (this.playerBase.level || 1);
+        let availableNames: string[] = [];
+        let allowedIndices: number[] = [];
+
+        if (this.playerUnits.length < this.maxUnits) {
+            troopArr.forEach((t, i) => {
+                if (this.unlockedUnits[i] && this.money >= t.price) {
+                    availableNames.push(t.name);
+                    allowedIndices.push(this.ACTIONS.indexOf(t.name));
+                }
+            });
+        }
+        if (this.money >= upgCost) {
+            availableNames.push("Upgrade Base");
+            allowedIndices.push(12);
+        }
+        if (availableNames.length === 0 || this.playerUnits.length > 0) {
+            availableNames.push("wait");
+            allowedIndices.push(13);
+        }
+
+        // --- LOCAL INFERENCE ---
+        if (this.modelLoaded && this.cooldown <= 0 && availableNames.length > 0) {
+            let p = performance.now();
+
+            const features = this.extractFeatures(this.takeSnapshot());
+            const qValues = this.forwardPass(features);
+
+            // Safety Check: If qValues are corrupted (NaN), fallback to "wait"
+            if (isNaN(qValues[0])) {
+                console.error("[LocalRLBot] CRITICAL: Network output NaN. Freezing to prevent crash.");
+                this.cooldown = 100;
+                return;
+            }
+
+            let bestQ = -Infinity;
+            let chosenIdx = 13;
+            for (const idx of allowedIndices) {
+                if (qValues[idx] > bestQ) {
+                    bestQ = qValues[idx];
+                    chosenIdx = idx;
+                }
+            }
+
+            const choice = this.ACTIONS[chosenIdx];
+
+            // Debug Print (You can remove this once it's working)
+            if (this.game.time % 120 === 0) {
+                console.log(`[LocalRLBot] AI decided to: ${choice}. Q-Value: ${bestQ.toFixed(2)}`);
+            }
+
+            if (choice === "Upgrade Base") {
+                if (this.money >= 1500 && Math.random() > 0.5) {
+                    this.multiplier *= 1.2;
+                    this.addFunds(-1500);
+                }
+                // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
+                // this.playerBase.health += 400;
+                this.playerBase.level = (this.playerBase.level || 1) + 1;
+                // this.stats.spending += upgCost;
+                // this.addFunds(-upgCost);
+            } else if (choice !== "wait") {
+                let troopIndex = troopArr.findIndex(t => t.name === choice);
+                if (troopIndex === -1 && this.playerUnits.length === 0) troopIndex = 0;
+                if (troopIndex !== -1 && this.unlockedUnits[troopIndex]) this.addTroop(troopIndex);
+            }
+
+            const perEl = document.getElementById(`per${this.side}`);
+            if (perEl) perEl.innerText = `Local Inference: ${Math.round((performance.now() - p) * 100) / 100}ms`;
+
+            this.cooldown = enc > 2.0 ? 15 : enc >= 0.8 ? 25 : 40;
+        }
+
+        if (this.cooldown <= 0) {
+            if (this.playerUnits.length && this.money > 1000 && (this.side === 'left' ? this.playerUnits[0].position > canvasWidth - 300 : this.playerUnits[0].position < 300)) this.shouldSpawnBaseDestroyer(enc);
+            this.tryToUnlock();
+        }
+        this.cooldown--;
+    }
+}
+
+
 class InternetPlayer extends Player implements playerInterface {
     private firstTimeAtomicDoom: boolean;
     private message: string = ''
@@ -1816,6 +2450,44 @@ try {
         new InternetPlayer(0, 'left', false, 'https://multiplayer1-dot-testerislus.ew.r.appspot.com')
         initializeUI()
     }
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-reinforcementai') {
+        game = new Game(new Player(700, 'left', !shiftDown),
+            new HttpBot(700, 'right', !shiftDown), // <-- Using HttpBot here
+            true, true, [], [])
+        initializeUI()
+    }
+    // Or pit SimulatingBot against your new HttpBot to test it!
+    if (new URLSearchParams(window.location.search).get('mode') === 'bot-vs-bot') {
+        game = new Game(new SimulatingBot(55, 'left', !shiftDown),
+            new HttpBot(55, 'right', !shiftDown),
+            true, true, [], [])
+        initializeUI()
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'reinforcementai-vs-reinforcementai') {
+        game = new Game(new HttpBot(700, 'left', !shiftDown),
+            new HttpBot(700, 'right', !shiftDown),
+            true, true, [0], [], 10)
+        initializeUI()
+    }
+
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-local-reinforcementai') {
+        game = new Game(new Player(700, 'left', !shiftDown),
+            new LocalRLBot(700, 'right', !shiftDown),
+            true, true, [], [])
+        initializeUI()
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-reinforcementai') {
+        game = new Game(new LocalRLBot(700, 'left', !shiftDown),
+            new LocalRLBot(700, 'right', !shiftDown),
+            true, true, [0], [], 10)
+        initializeUI()
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'local-old-vs-reinforcementai') {
+        game = new Game(new SimulatingBot(700, 'left', !shiftDown),
+            new LocalRLBot(700, 'right', !shiftDown),
+            true, true, [0], [], 1)
+        initializeUI()
+    }
     console.log(new URLSearchParams(window.location.search).get('mode'))
 
     document.getElementById('pl').addEventListener('click', () => {
@@ -1826,6 +2498,24 @@ try {
     })
     document.getElementById('mul1').addEventListener('click', () => {
         window.open('/?mode=multiplayer', '_self')
+    })
+    document.getElementById('bot2').addEventListener('click', () => {
+        window.open('/?mode=player-vs-genai', '_self')
+    })
+    document.getElementById('bot3').addEventListener('click', () => {
+        window.open('/?mode=player-vs-reinforcementai', '_self')
+    })
+    document.getElementById('bot4').addEventListener('click', () => {
+        window.open('/?mode=reinforcementai-vs-reinforcementai', '_self')
+    })
+    document.getElementById('bot5').addEventListener('click', () => {
+        window.open('/?mode=player-vs-local-reinforcementai', '_self')
+    })
+    document.getElementById('bot6').addEventListener('click', () => {
+        window.open('/?mode=local-reinforcementai-vs-reinforcementai', '_self')
+    })
+    document.getElementById('bot7').addEventListener('click', () => {
+        window.open('/?mode=local-old-vs-reinforcementai', '_self')
     })
 
 
@@ -1900,11 +2590,11 @@ catch (e) {
             // let p = performance.now()
             if (!e[5]) {
                 for (let i = 0; i < numberOfUnlockedUnits; i++) { // - trebuchet
-                    if (i === 8) continue;
+                    if (i >= 8) continue;
                     for (let j = 0; j < numberOfUnlockedUnits; j++) {
-                        if (j === 8 || (i === 6 && j === 6)) continue;
+                        if (j >= 8 || (i === 6 && j === 6)) continue;
                         for (let k = 0; k < numberOfUnlockedUnits; k++) {
-                            if (((i === 6 && k === 6) || (j === 6 && k === 6))) continue;
+                            if (k >= 8 || ((i === 6 && k === 6) || (j === 6 && k === 6))) continue;
                             let plTroops = e.data[0].slice();
                             plTroops.push(i);
                             plTroops.push(j);
