@@ -569,7 +569,7 @@ var DoggoTroop = /** @class */ (function (_super) {
         // console.log(player)
         if (_this.puppy) {
             _this.health = 22 * multiplier;
-            _this.maxHealth = _this.health * multiplier;
+            _this.maxHealth = 22 * multiplier;
             _this.damage = 3.2 * multiplier;
             _this.attackSpeed = 10;
             _this.speed = 2.2;
@@ -606,6 +606,16 @@ var TrebuchetTroop = /** @class */ (function (_super) {
         } // attacks enemy base even when unit is close but base is far !!!
         else if (this.side === 'right' && this.position - this.range - 55 < 0) {
             _super.prototype.timeAttackBase.call(this, time, this.enemyBase, stats);
+        }
+        else if (enemyTroopers.length > 0 && enemyTroopers[0].name === troopArr[8].name) {
+            // ANTI-STALEMATE FIX:
+            // If an enemy is blocking us, but we are too far to hit the base,
+            // slowly decay health until destroyed (kills it in ~1.5 seconds).
+            var distance = Math.abs(this.position - enemyTroopers[0].position);
+            var collisionDistance = (this.span / 2) + (enemyTroopers[0].span / 2) + 5; // ~55 pixels
+            if (distance <= collisionDistance) {
+                this.health -= 0.01;
+            }
         }
     };
     TrebuchetTroop.prototype.attackBase = function (base, stats) {
@@ -2391,7 +2401,7 @@ try {
         shiftDown_1 = false;
     });
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-player') {
-        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new Player(55, 'right', !shiftDown_1), true, true, [], []);
+        game_1 = new Game(new Player(500, 'left', !shiftDown_1), new Player(500, 'right', !shiftDown_1), true, true, [], []);
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-ai') {

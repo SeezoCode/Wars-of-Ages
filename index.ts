@@ -557,7 +557,7 @@ class DoggoTroop extends Trooper {
         // console.log(player)
         if (this.puppy) {
             this.health = 22 * multiplier
-            this.maxHealth = this.health * multiplier
+            this.maxHealth = 22 * multiplier
             this.damage = 3.2 * multiplier
             this.attackSpeed = 10
             this.speed = 2.2
@@ -595,11 +595,21 @@ class TrebuchetTroop extends Trooper { // trebuchet could also attack other treb
         else if (this.side === 'right' && this.position - this.range - 55 < 0) {
             super.timeAttackBase(time, this.enemyBase, stats)
         }
+        else if (enemyTroopers.length > 0 && enemyTroopers[0].name === troopArr[8].name) {
+            // ANTI-STALEMATE FIX:
+            // If an enemy is blocking us, but we are too far to hit the base,
+            // slowly decay health until destroyed (kills it in ~1.5 seconds).
+            const distance = Math.abs(this.position - enemyTroopers[0].position);
+            const collisionDistance = (this.span / 2) + (enemyTroopers[0].span / 2) + 5; // ~55 pixels
+
+            if (distance <= collisionDistance) {
+                this.health -= 0.01;
+            }
+        }
     }
 
     attackBase(base: baseInterface, stats: statsInterface) {
         super.attackBase(base, stats);
-
     }
 
     drawAttack(time: number) {
@@ -2546,8 +2556,8 @@ try {
     })
 
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-player') {
-        game = new Game(new Player(55, 'left', !shiftDown),
-            new Player(55, 'right', !shiftDown),
+        game = new Game(new Player(500, 'left', !shiftDown),
+            new Player(500, 'right', !shiftDown),
             true, true, [], [])
         initializeUI()
     }
