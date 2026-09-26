@@ -2612,31 +2612,31 @@ try {
     console.log(new URLSearchParams(window.location.search).get('mode'))
 
     document.getElementById('pl').addEventListener('click', () => {
-        window.open('/?mode=player-vs-player', '_self')
+        window.open('?mode=player-vs-player', '_self')
     })
     document.getElementById('bot').addEventListener('click', () => {
-        window.open('/?mode=player-vs-ai', '_self')
+        window.open('?mode=player-vs-ai', '_self')
     })
     document.getElementById('mul1').addEventListener('click', () => {
-        window.open('/?mode=multiplayer', '_self')
+        window.open('?mode=multiplayer', '_self')
     })
     document.getElementById('bot2').addEventListener('click', () => {
-        window.open('/?mode=player-vs-genai', '_self')
+        window.open('?mode=player-vs-genai', '_self')
     })
     document.getElementById('bot3').addEventListener('click', () => {
-        window.open('/?mode=player-vs-reinforcementai', '_self')
+        window.open('?mode=player-vs-reinforcementai', '_self')
     })
     document.getElementById('bot4').addEventListener('click', () => {
-        window.open('/?mode=reinforcementai-vs-reinforcementai', '_self')
+        window.open('?mode=reinforcementai-vs-reinforcementai', '_self')
     })
     document.getElementById('bot5').addEventListener('click', () => {
-        window.open('/?mode=player-vs-local-reinforcementai', '_self')
+        window.open('?mode=player-vs-local-reinforcementai', '_self')
     })
     document.getElementById('bot6').addEventListener('click', () => {
-        window.open('/?mode=local-reinforcementai-vs-reinforcementai', '_self')
+        window.open('?mode=local-reinforcementai-vs-reinforcementai', '_self')
     })
     document.getElementById('bot7').addEventListener('click', () => {
-        window.open('/?mode=local-old-vs-reinforcementai', '_self')
+        window.open('?mode=local-old-vs-reinforcementai', '_self')
     })
 
 
