@@ -1491,6 +1491,7 @@ var HttpBot = /** @class */ (function (_super) {
         return {
             time: this.game.time,
             money: Math.round(this.money),
+            isFallout: this.game.atomicDoomPending ? 1.0 : 0.0,
             troopDamageDealt: troopDamageDealt,
             playerBaseHealth: Math.round(this.playerBase.health),
             enemyBaseHealth: Math.round(this.enemyBase.health),
@@ -1654,7 +1655,7 @@ var LocalRLBot = /** @class */ (function (_super) {
         _this.historyBuffer = new Map();
         _this.net = null;
         _this.modelLoaded = false;
-        _this.INPUT_SIZE = 147;
+        _this.INPUT_SIZE = 148;
         _this.HIDDEN_1 = 256;
         _this.HIDDEN_2 = 128;
         _this.OUTPUT_SIZE = 14;
@@ -1848,7 +1849,7 @@ var LocalRLBot = /** @class */ (function (_super) {
         var canUpg = field.canUpgradeBase ? 1.0 : 0.0;
         var len = myUnits.length;
         var doggoComboReady = len >= 2 && ((_a = myUnits[len - 1]) === null || _a === void 0 ? void 0 : _a.name) === "Doggo" && ((_b = myUnits[len - 2]) === null || _b === void 0 ? void 0 : _b.name) === "Doggo" ? 1.0 : 0.0;
-        features.push(myFrontNow, myFront1s, myFront2s, myFront5s, myFront10s, myFront20s, enFrontNow, enFront1s, enFront2s, enFront5s, enFront10s, enFront20s, frontlineGap, moneyNorm, encNorm, myBaseNorm, enemyBaseNorm, myCapRatio, doggoComboReady, myBaseLevelNorm, enBaseLevelNorm, canUpg);
+        features.push(myFrontNow, myFront1s, myFront2s, myFront5s, myFront10s, myFront20s, enFrontNow, enFront1s, enFront2s, enFront5s, enFront10s, enFront20s, frontlineGap, moneyNorm, encNorm, myBaseNorm, enemyBaseNorm, myCapRatio, doggoComboReady, myBaseLevelNorm, enBaseLevelNorm, canUpg, field.isFallout || 0.0);
         // SAFEGUARD: Replace any NaNs with 0
         var safeArray = features.map(function (f) { return isNaN(f) ? 0 : f; });
         return Float32Array.from(safeArray);
@@ -1884,6 +1885,7 @@ var LocalRLBot = /** @class */ (function (_super) {
         return {
             time: this.game.time,
             money: Math.round(this.money),
+            isFallout: this.game.atomicDoomPending ? 1.0 : 0.0,
             troopDamageDealt: Math.max(0, Math.round((this.stats.damageDealt - baseDamageDealt) * 10) / 10),
             playerBaseHealth: Math.round(this.playerBase.health),
             enemyBaseHealth: Math.round(this.enemyBase.health),
@@ -1944,7 +1946,7 @@ var LocalRLBot = /** @class */ (function (_super) {
         var pullEl = document.getElementById("pull" + this.side);
         if (pullEl)
             pullEl.innerText = "Enc: " + enc.toFixed(2) + " | Local AI";
-        var upgCost = 350 * (this.playerBase.level || 1);
+        var upgCost = 1500;
         var availableNames = [];
         var allowedIndices = [];
         if (this.playerUnits.length < this.maxUnits) {
@@ -1991,7 +1993,7 @@ var LocalRLBot = /** @class */ (function (_super) {
             // 0.1 = Very Strict (95% chance to pick #1)
             // 0.2 = Dynamic (70-80% chance for #1, 20% for #2, small chance for others)
             // 0.5 = Chaotic (Very spread out)
-            var TEMPERATURE = 0.2;
+            var TEMPERATURE = 0.1;
             // 2. Normalize and convert to probabilities
             var sumExp = 0;
             var exps = [];

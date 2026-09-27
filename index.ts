@@ -1530,6 +1530,7 @@ class SimulatingBot extends Player {
 interface FieldSnapshot {
     time: number
     money: number
+    isFallout: number,
     troopDamageDealt: number
     playerBaseHealth: number
     enemyBaseHealth: number
@@ -1616,6 +1617,7 @@ class HttpBot extends SimulatingBot {
         return {
             time: this.game.time,
             money: Math.round(this.money),
+            isFallout: this.game.atomicDoomPending ? 1.0 : 0.0,
             troopDamageDealt: troopDamageDealt,
             playerBaseHealth: Math.round(this.playerBase.health),
             enemyBaseHealth: Math.round(this.enemyBase.health),
@@ -1783,7 +1785,7 @@ class LocalRLBot extends SimulatingBot {
     private net: any = null;
     private modelLoaded: boolean = false;
 
-    private INPUT_SIZE = 147;
+    private INPUT_SIZE = 148;
     private HIDDEN_1 = 256;
     private HIDDEN_2 = 128;
     private OUTPUT_SIZE = 14;
@@ -1973,7 +1975,7 @@ class LocalRLBot extends SimulatingBot {
             myFrontNow, myFront1s, myFront2s, myFront5s, myFront10s, myFront20s,
             enFrontNow, enFront1s, enFront2s, enFront5s, enFront10s, enFront20s,
             frontlineGap, moneyNorm, encNorm, myBaseNorm, enemyBaseNorm, myCapRatio, doggoComboReady,
-            myBaseLevelNorm, enBaseLevelNorm, canUpg
+            myBaseLevelNorm, enBaseLevelNorm, canUpg, field.isFallout || 0.0
         );
 
         // SAFEGUARD: Replace any NaNs with 0
@@ -2008,6 +2010,7 @@ class LocalRLBot extends SimulatingBot {
         return {
             time: this.game.time,
             money: Math.round(this.money),
+            isFallout: this.game.atomicDoomPending ? 1.0 : 0.0,
             troopDamageDealt: Math.max(0, Math.round((this.stats.damageDealt - baseDamageDealt) * 10) / 10),
             playerBaseHealth: Math.round(this.playerBase.health),
             enemyBaseHealth: Math.round(this.enemyBase.health),
@@ -2069,7 +2072,7 @@ class LocalRLBot extends SimulatingBot {
         const pullEl = document.getElementById(`pull${this.side}`);
         if (pullEl) pullEl.innerText = `Enc: ${enc.toFixed(2)} | Local AI`;
 
-        const upgCost = 350 * (this.playerBase.level || 1);
+        const upgCost = 1500;
         let availableNames: string[] = [];
         let allowedIndices: number[] = [];
 
@@ -2120,7 +2123,7 @@ class LocalRLBot extends SimulatingBot {
 // 0.1 = Very Strict (95% chance to pick #1)
 // 0.2 = Dynamic (70-80% chance for #1, 20% for #2, small chance for others)
 // 0.5 = Chaotic (Very spread out)
-            const TEMPERATURE = 0.2;
+            const TEMPERATURE = 0.1;
 
 // 2. Normalize and convert to probabilities
             let sumExp = 0;
