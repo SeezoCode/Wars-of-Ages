@@ -1598,12 +1598,14 @@ var HttpBot = /** @class */ (function (_super) {
                     if (_this.money >= 1500) {
                         _this.multiplier *= 1.2;
                         _this.addFunds(-1500);
+                        _this.playerBase.level = (_this.playerBase.level || 1) + 1;
+                        _this.stats.spending += upgCost;
                     }
                     // this.stats.spending += upgCost
                     // this.addFunds(-upgCost)
                     // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400
                     // this.playerBase.health += 400
-                    _this.playerBase.level = (_this.playerBase.level || 1) + 1;
+                    // this.playerBase.level = (this.playerBase.level || 1) + 1
                 }
                 else if (choice !== "wait") {
                     var troopIndex = _this.resolveTroopIndex(choice);
@@ -1648,9 +1650,10 @@ var HttpBot = /** @class */ (function (_super) {
 }(SimulatingBot));
 var LocalRLBot = /** @class */ (function (_super) {
     __extends(LocalRLBot, _super);
-    function LocalRLBot(money, side, checkForAvailMoney, modelUrl) {
+    function LocalRLBot(money, side, checkForAvailMoney, modelUrl, maxUnits) {
         if (money === void 0) { money = 0; }
         if (modelUrl === void 0) { modelUrl = 'ultimate_dqn_model.json'; }
+        if (maxUnits === void 0) { maxUnits = 7; }
         var _this = _super.call(this, money, side, checkForAvailMoney) || this;
         _this.historyBuffer = new Map();
         _this.net = null;
@@ -1686,6 +1689,7 @@ var LocalRLBot = /** @class */ (function (_super) {
         if (_this.botWorker)
             _this.botWorker.terminate();
         _this.loadModel(modelUrl);
+        _this.maxUnits = maxUnits;
         return _this;
     }
     LocalRLBot.prototype.loadModel = function (url) {
@@ -2030,7 +2034,7 @@ var LocalRLBot = /** @class */ (function (_super) {
             }
             // Store in history window (keep last 10 decisions)
             this.probHistory.push(currentProbs);
-            if (this.probHistory.length > 10) {
+            if (this.probHistory.length > 8) {
                 this.probHistory.shift();
             }
             var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " AI Brain:</strong><br/>";
@@ -2080,8 +2084,8 @@ var LocalRLBot = /** @class */ (function (_super) {
                 if (this.money >= 1500 && Math.random() > 0.5) {
                     this.multiplier *= 1.2;
                     this.addFunds(-1500);
-                    this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
-                    this.playerBase.health += 400;
+                    // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
+                    // this.playerBase.health += 400;
                     this.playerBase.level = (this.playerBase.level || 1) + 1;
                     this.stats.spending += upgCost;
                 }
@@ -2429,11 +2433,11 @@ try {
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-local-reinforcementai') {
-        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new LocalRLBot(55, 'right', !shiftDown_1), true, true, [], []);
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new LocalRLBot(55, 'right', !shiftDown_1, 'ultimate_dqn_model.json', 10), true, true, [], []);
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-reinforcementai') {
-        game_1 = new Game(new LocalRLBot(55, 'left', !shiftDown_1), new LocalRLBot(55, 'right', !shiftDown_1), true, true, [0], [], 5);
+        game_1 = new Game(new LocalRLBot(55, 'left', !shiftDown_1, 'ultimate_dqn_model.json', 10), new LocalRLBot(55, 'right', !shiftDown_1, 'ultimate_dqn_model.json', 10), true, true, [0], [], 5);
         initializeUI();
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'local-old-vs-reinforcementai') {

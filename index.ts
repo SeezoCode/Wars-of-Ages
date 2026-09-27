@@ -1732,12 +1732,14 @@ class HttpBot extends SimulatingBot {
                         if (this.money >= 1500) {
                             this.multiplier *= 1.2
                             this.addFunds(-1500)
+                            this.playerBase.level = (this.playerBase.level || 1) + 1
+                            this.stats.spending += upgCost
                         }
                         // this.stats.spending += upgCost
                         // this.addFunds(-upgCost)
                         // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400
                         // this.playerBase.health += 400
-                        this.playerBase.level = (this.playerBase.level || 1) + 1
+                        // this.playerBase.level = (this.playerBase.level || 1) + 1
                     } else if (choice !== "wait") {
                         let troopIndex = this.resolveTroopIndex(choice)
                         if (troopIndex === -1 && this.playerUnits.length === 0) troopIndex = 0 // Anti stalemate
@@ -1815,11 +1817,12 @@ class LocalRLBot extends SimulatingBot {
 
     private probHistory: { [idx: number]: number }[] = [];
 
-    constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_dqn_model.json') {
+    constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_dqn_model.json', maxUnits: number = 7) {
         super(money, side, checkForAvailMoney);
         this.cooldown = 5;
         if (this.botWorker) this.botWorker.terminate();
         this.loadModel(modelUrl);
+        this.maxUnits = maxUnits;
     }
 
     private async loadModel(url: string) {
@@ -2163,7 +2166,7 @@ class LocalRLBot extends SimulatingBot {
 
 // Store in history window (keep last 10 decisions)
             this.probHistory.push(currentProbs);
-            if (this.probHistory.length > 10) {
+            if (this.probHistory.length > 8) {
                 this.probHistory.shift();
             }
 
@@ -2225,8 +2228,8 @@ class LocalRLBot extends SimulatingBot {
                 if (this.money >= 1500 && Math.random() > 0.5) {
                     this.multiplier *= 1.2;
                     this.addFunds(-1500);
-                    this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
-                    this.playerBase.health += 400;
+                    // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
+                    // this.playerBase.health += 400;
                     this.playerBase.level = (this.playerBase.level || 1) + 1;
                     this.stats.spending += upgCost;
                 }
@@ -2596,13 +2599,13 @@ try {
 
     if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-local-reinforcementai') {
         game = new Game(new Player(55, 'left', !shiftDown),
-            new LocalRLBot(55, 'right', !shiftDown),
+            new LocalRLBot(55, 'right', !shiftDown, 'ultimate_dqn_model.json',10),
             true, true, [], [])
         initializeUI()
     }
     if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-reinforcementai') {
-        game = new Game(new LocalRLBot(55, 'left', !shiftDown),
-            new LocalRLBot(55, 'right', !shiftDown),
+        game = new Game(new LocalRLBot(55, 'left', !shiftDown, 'ultimate_dqn_model.json',10),
+            new LocalRLBot(55, 'right', !shiftDown,'ultimate_dqn_model.json',10),
             true, true, [0], [], 5)
         initializeUI()
     }
