@@ -1744,7 +1744,8 @@ class HttpBot extends SimulatingBot {
                         let troopIndex = this.resolveTroopIndex(choice)
                         if (troopIndex === -1 && this.playerUnits.length === 0) troopIndex = 0 // Anti stalemate
                         if (troopIndex !== -1 && this.unlockedUnits[troopIndex]) {
-                            this.addTroop(troopIndex)
+                            if (troopIndex === 10 && this.game.atomicDoomPending) {}
+                            else this.addTroop(troopIndex)
                         }
                     }
 
@@ -2238,7 +2239,10 @@ class LocalRLBot extends SimulatingBot {
             } else if (choice !== "wait") {
                 let troopIndex = troopArr.findIndex(t => t.name === choice);
                 if (troopIndex === -1 && this.playerUnits.length === 0) troopIndex = 0;
-                if (troopIndex !== -1 && this.unlockedUnits[troopIndex]) this.addTroop(troopIndex);
+                if (troopIndex !== -1 && this.unlockedUnits[troopIndex]) {
+                    if (troopIndex === 10 && this.game.atomicDoomPending) {}
+                    else this.addTroop(troopIndex);
+                }
             }
 
             const perEl = document.getElementById(`per${this.side}`);

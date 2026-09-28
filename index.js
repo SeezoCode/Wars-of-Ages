@@ -1612,7 +1612,9 @@ var HttpBot = /** @class */ (function (_super) {
                     if (troopIndex === -1 && _this.playerUnits.length === 0)
                         troopIndex = 0; // Anti stalemate
                     if (troopIndex !== -1 && _this.unlockedUnits[troopIndex]) {
-                        _this.addTroop(troopIndex);
+                        if (troopIndex === 10 && _this.game.atomicDoomPending) { }
+                        else
+                            _this.addTroop(troopIndex);
                     }
                 }
                 _this.working = false;
@@ -2095,8 +2097,11 @@ var LocalRLBot = /** @class */ (function (_super) {
                 var troopIndex = troopArr.findIndex(function (t) { return t.name === choice_1; });
                 if (troopIndex === -1 && this.playerUnits.length === 0)
                     troopIndex = 0;
-                if (troopIndex !== -1 && this.unlockedUnits[troopIndex])
-                    this.addTroop(troopIndex);
+                if (troopIndex !== -1 && this.unlockedUnits[troopIndex]) {
+                    if (troopIndex === 10 && this.game.atomicDoomPending) { }
+                    else
+                        this.addTroop(troopIndex);
+                }
             }
             var perEl = document.getElementById("per" + this.side);
             if (perEl)
