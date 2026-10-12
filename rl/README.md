@@ -89,6 +89,34 @@ python -m wars_rl.evaluate runs/a/latest.pt --opponents runs/b/latest.pt
 
 Games are split evenly between left and right. The output includes a 95% confidence interval.
 
+## Results of the included model
+
+`ultimate_model.json` (repo root) / `rl/checkpoints/ultimate_v1.pt`: 620 PPO updates, 10.2M
+decisions (~2,900 games), about 3.5 hours on 4 CPU cores, default config. Evaluated with
+`python -m wars_rl.evaluate`, 100 games per opponent, both sides, sampled actions:
+
+| opponent | wins | draws | losses |
+|----------|------|-------|--------|
+| `LocalRLBot` (your DQN, `ultimate_dqn_model.json`) | **100** | 0 | 0 |
+| random spam (acts every decision) | **100** | 0 | 0 |
+| `SimulatingBot` ("Player vs AI") | 0 | **100** | 0 |
+
+It never loses, but it cannot break the classic bot yet. That bot defends right at its base and
+answers every army with a brute-force-searched counter, so the only way through is Trebuchets.
+The agent pushes all the way to the classic bot's base, but still fills the unit cap with Range
+Troops instead of keeping a short line with Trebuchets close behind it in range. To get there:
+
+* **More compute.** This run is small by RL standards. Resume from the included weights with
+  `python -m wars_rl.train --init-from checkpoints/ultimate_v1.pt --run-dir runs/v2`, and raise
+  `--p-classic` (classic games are the expensive ones), `--explore-eps`, or `--ent-coef`.
+* **Demonstrations:** a scripted "short line + Trebuchets" bot already hurts the classic bot.
+  Behaviour-cloning the actor on its games before PPO is the classic fix for hard exploration.
+* **Bigger/longer:** `--actor-hidden 1024,1024,512`, more envs, a longer `--total-env-steps`.
+
+Shaping terms are annealed (`shaping_anneal_frac`) and potential-based, so they can't change the
+optimal policy in theory. The siege term is still game-specific knowledge: turn it off with
+`--shaping-siege 0` if you prefer a purer learner.
+
 ## Use it in the game
 
 ```bash

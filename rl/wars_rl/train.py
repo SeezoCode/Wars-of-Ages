@@ -117,6 +117,7 @@ class TrainConfig:
     save_every: int = 10
     export_every: int = 20
     resume: bool = True
+    init_from: str = ""                 # warm-start weights from a checkpoint (e.g. checkpoints/ultimate_v1.pt)
 
 
 def parse_config() -> TrainConfig:
@@ -190,6 +191,12 @@ class Trainer:
     def _maybe_resume(self):
         path = os.path.join(self.cfg.run_dir, "latest.pt")
         if not (self.cfg.resume and os.path.exists(path)):
+            if self.cfg.init_from:
+                ckpt = torch.load(self.cfg.init_from, map_location="cpu", weights_only=False)
+                if ckpt["model_config"] != self.model.cfg.to_dict():
+                    raise SystemExit(f"{self.cfg.init_from} has a different architecture than this config")
+                self.model.load_state_dict(ckpt["state_dict"])
+                print(f"initialized weights from {self.cfg.init_from} (update {ckpt.get('update')})")
             return
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
         if ckpt["model_config"] != self.model.cfg.to_dict():
