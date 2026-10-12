@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
-from .model import ActorCritic, ModelConfig
+from .model import ActorCritic, FrozenActor, ModelConfig
 
 
 @dataclass
@@ -29,7 +29,7 @@ class Snapshot:
 
 
 class League:
-    def __init__(self, directory: str, model_config: ModelConfig, max_snapshots: int = 40, cache_models: int = 12,
+    def __init__(self, directory: str, model_config: ModelConfig, max_snapshots: int = 40, cache_models: int = 64,
                  pfsp_power: float = 2.0):
         self.dir = directory
         os.makedirs(directory, exist_ok=True)
@@ -39,7 +39,7 @@ class League:
         self.pfsp_power = pfsp_power
         self.snapshots: dict[int, Snapshot] = {}
         self.next_id = 1
-        self._cache: OrderedDict[int, ActorCritic] = OrderedDict()
+        self._cache: OrderedDict[int, FrozenActor] = OrderedDict()
         self._load_index()
 
     # ---- persistence -------------------------------------------------------
@@ -93,15 +93,13 @@ class League:
         w = np.array([(1.0 - s.win_rate()) ** self.pfsp_power + 0.02 for s in snaps])
         return snaps[rng.choice(len(snaps), p=w / w.sum())].id
 
-    def model(self, sid: int) -> ActorCritic:
+    def model(self, sid: int) -> FrozenActor:
         if sid in self._cache:
             self._cache.move_to_end(sid)
             return self._cache[sid]
         snap = self.snapshots[sid]
         data = torch.load(snap.path, map_location="cpu", weights_only=False)
-        m = ActorCritic(ModelConfig(**data["model_config"]))
-        m.actor.load_state_dict(data["actor"])
-        m.eval()
+        m = FrozenActor(ModelConfig(**data["model_config"]), data["actor"])
         self._cache[sid] = m
         while len(self._cache) > self.cache_models:
             self._cache.popitem(last=False)

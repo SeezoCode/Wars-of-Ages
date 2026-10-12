@@ -79,6 +79,23 @@ class ActorCritic(nn.Module):
         return dist.log_prob(actions), dist.entropy(), self.value(obs)
 
 
+class FrozenActor(nn.Module):
+    """Inference-only policy for league opponents (no critic, no init cost)."""
+
+    def __init__(self, cfg: ModelConfig, actor_state: dict):
+        super().__init__()
+        self.actor = mlp(cfg.obs_size, cfg.actor_hidden, cfg.num_actions, cfg.activation, cfg.layernorm)
+        self.actor.load_state_dict(actor_state)
+        self.eval()
+
+    @torch.no_grad()
+    def act(self, obs: torch.Tensor, mask: torch.Tensor, deterministic: bool = False, with_value: bool = False):
+        logits = self.actor(obs).masked_fill(~mask, MASK_VALUE)
+        dist = Categorical(logits=logits)
+        action = logits.argmax(-1) if deterministic else dist.sample()
+        return action, dist.log_prob(action), None
+
+
 def save_checkpoint(path: str, model: ActorCritic, **extra):
     torch.save({"model_config": model.cfg.to_dict(), "state_dict": model.state_dict(), **extra}, path)
 

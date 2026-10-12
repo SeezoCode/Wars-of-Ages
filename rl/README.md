@@ -67,6 +67,17 @@ is not a "safe" result), plus shaping that fades to zero over the first `shaping
 of training: base damage dealt minus taken, and kill bounty earned minus given. The Rust env
 returns the raw components, so changing the reward is a few lines in `Trainer._rewards`.
 
+### Why games stalemate (and what the agent has to learn)
+
+Both sides are capped at 10 units and respawn instantly, so the middle of the map turns into a
+wall. Crucially, `Player.attackBase` only runs when the defender has **no units at all**, so
+ordinary troops almost never touch a base while the opponent is alive and spending. Ways
+through: **Trebuchets** (hit the base for 100 every 300 ticks from 210 px, whatever is in front;
+eight hits kill a base), wiping the whole enemy army at once (e.g. an Atomic Bomb), and
+out-scaling the enemy with upgrades. A scripted "push, then park trebuchets" bot already beats
+the DQN bot about half the time, while pure troop spam draws forever. That is why the trainer
+uses base-damage shaping, front-line shaping, a 15-minute game limit, and a penalty for draws.
+
 ## Evaluate
 
 ```bash
