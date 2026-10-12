@@ -82,7 +82,7 @@ class TrainConfig:
     clip: float = 0.2
     epochs: int = 3
     minibatch_size: int = 4096
-    ent_coef: float = 0.01
+    ent_coef: float = 0.02
     ent_coef_final: float = 0.002
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
@@ -94,6 +94,7 @@ class TrainConfig:
     shaping_base_damage: float = 2.0   # x (enemy base damage - own base damage) / 800
     shaping_bounty: float = 0.03       # x (bounty earned - bounty given) / 100
     shaping_front: float = 1.0         # potential-based: gamma*phi(s') - phi(s), phi = own front - enemy front
+    shaping_siege: float = 1.0         # potential-based: own Trebuchets advancing into base-hitting range
     shaping_anneal_frac: float = 0.8   # shaping fades to 0 over this fraction of training
 
     # opponent mix (normalized)
@@ -245,15 +246,23 @@ class Trainer:
             r[:, s] += np.where(done, out, 0.0)
         return r.astype(np.float32)
 
-    @staticmethod
-    def _front_potential(obs: np.ndarray) -> np.ndarray:
-        """phi = how far my frontmost unit has pushed - how far the enemy's has (ego x in [0, 1])."""
+    def _potential(self, obs: np.ndarray) -> np.ndarray:
+        """Potential for shaping (gamma*phi(s') - phi(s) keeps the optimal policy unchanged).
+
+        front: how far my frontmost unit has pushed minus how far the enemy's has.
+        siege: my Trebuchets moving up to the position where they can hit the enemy base
+               (they are the only units that damage a base while it still has defenders).
+        """
         G, S, U = 72, 10, 20  # GLOBAL_FEATURES, MAX_SLOTS, UNIT_FEATURES (rl/engine/src/obs.rs)
         own = obs[..., G:G + S * U].reshape(*obs.shape[:-1], S, U)
         en = obs[..., G + S * U:G + 2 * S * U].reshape(*obs.shape[:-1], S, U)
         own_front = (own[..., 14] * own[..., 0]).max(-1)
         en_depth = ((1.0 - en[..., 14]) * en[..., 0]).max(-1)
-        return own_front - en_depth
+        treb = own[..., 1 + 8] > 0.5
+        in_range_x = (700 - 55 - 210) / 700  # Trebuchet reaches the base from here
+        ramp = np.clip((own[..., 14] - 0.3) / (in_range_x - 0.3), 0.0, 1.0)
+        siege = np.minimum((ramp * treb).sum(-1) / 2.0, 1.5)
+        return self.cfg.shaping_front * (own_front - en_depth) + self.cfg.shaping_siege * siege
 
     # --------------------------------------------------------------- rollout
     def _opponent_actions(self, obs: np.ndarray, mask: np.ndarray, actions: np.ndarray):
@@ -280,7 +289,7 @@ class Trainer:
         b_done = np.zeros((T, N), dtype=np.float32)
         b_learn = np.zeros((T, N, 2), dtype=bool)
         obs, mask = self.venv.observe()
-        phi = self._front_potential(obs)
+        phi = self._potential(obs)
         for t in range(T):
             learn = self.ctrl == CTRL_LEARNER
             li = np.nonzero(learn)
@@ -296,15 +305,15 @@ class Trainer:
 
             obs, mask, comp, done, winner, ticks = self.venv.step(actions)
             b_rew[t] = self._rewards(comp, done, winner, shaping)
-            phi_next = np.where(done[:, None], 0.0, self._front_potential(obs))
-            b_rew[t] += shaping * c.shaping_front * (c.gamma * phi_next - phi)
+            phi_next = np.where(done[:, None], 0.0, self._potential(obs))
+            b_rew[t] += shaping * (c.gamma * phi_next - phi)
             b_done[t] = done
             if done.any():
                 for i in np.flatnonzero(done):
                     self._record_episode(int(i), int(winner[i]), int(ticks[i]))
                     self._reset_env(int(i))
                 obs, mask = self.venv.observe()
-            phi = self._front_potential(obs)
+            phi = self._potential(obs)
         self.env_steps += N * T
         with torch.no_grad():
             last_v = self.model.value(torch.from_numpy(obs)).numpy() * (self.ctrl == CTRL_LEARNER)
