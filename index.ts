@@ -848,6 +848,13 @@ class Game implements gameInterface {
     }
 
     move() {
+        // Between-tick decisions for policy bots (UltimateBot): both decide from the same
+        // state, then act left player first. Mirrors Env::step in rl/engine/src/env.rs.
+        const decisions = this.players.map(p => (p as any).decide ? (p as any).decide(this.time) : undefined)
+        this.players.forEach((p, i) => {
+            if (decisions[i] !== undefined) (p as any).applyAction(decisions[i])
+        })
+
         if (this.visualize && !deathAnimPending) cx.clearRect(0, 0, canvasWidth, canvasHeight)
         if (this.visualize && radioactivityPending) {
             cx.fillStyle = 'rgba(98,134,85, .15)'
@@ -2262,6 +2269,257 @@ class LocalRLBot extends SimulatingBot {
 }
 
 
+// ============================================================================
+// UltimateBot — policy trained with the Rust engine + PyTorch PPO in rl/
+// (see rl/README.md). observe(), actionMask() and applyAction() MUST stay identical
+// to rl/engine/src/obs.rs; rl/parity checks this.
+// ============================================================================
+const ULT_NUM_ACTIONS = 26     // 0-11 spawn troop i, 12-23 research troop i, 24 upgrade, 25 wait
+const ULT_RESEARCH0 = 12
+const ULT_UPGRADE = 24
+const ULT_WAIT = 25
+const ULT_MAX_SLOTS = 10
+const ULT_GLOBAL = 72
+const ULT_UNIT = 20
+const ULT_OBS_SIZE = ULT_GLOBAL + 2 * ULT_MAX_SLOTS * ULT_UNIT
+const ULT_TIME_SCALE = 36000
+
+interface UltimateLayer {
+    type: string
+    in?: number
+    out?: number
+    size?: number
+    eps?: number
+    weight?: Float32Array
+    bias?: Float32Array
+}
+
+class UltimateBot extends Player {
+    decisionInterval: number = 10
+    greedy: boolean
+    layers: Array<UltimateLayer> = null
+    lastProbs: Array<number> = null
+
+    constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_model.json', greedy: boolean = false) {
+        super(money, side, checkForAvailMoney)
+        this.greedy = greedy
+        if (modelUrl) this.loadModel(modelUrl)
+    }
+
+    private async loadModel(url: string) {
+        try {
+            const res = await fetch(url)
+            this.setModel(await res.json())
+            console.log(`[UltimateBot] Model loaded from ${url}`)
+        } catch (err) {
+            console.error(`[UltimateBot] Failed to load model:`, err)
+        }
+    }
+
+    private static decodeFloats(b64: string): Float32Array {
+        const bin = atob(b64)
+        const view = new DataView(new ArrayBuffer(bin.length))
+        for (let i = 0; i < bin.length; i++) view.setUint8(i, bin.charCodeAt(i))
+        const out = new Float32Array(bin.length / 4)
+        for (let i = 0; i < out.length; i++) out[i] = view.getFloat32(i * 4, true)
+        return out
+    }
+
+    setModel(json: any) {
+        if (json.obs_size !== ULT_OBS_SIZE || json.num_actions !== ULT_NUM_ACTIONS) {
+            throw new Error(`model expects obs ${json.obs_size}/actions ${json.num_actions}, game has ${ULT_OBS_SIZE}/${ULT_NUM_ACTIONS}`)
+        }
+        this.decisionInterval = json.decision_interval || 10
+        this.layers = json.layers.map(l => ({
+            type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
+            weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
+            bias: l.bias ? UltimateBot.decodeFloats(l.bias) : undefined,
+        }))
+    }
+
+    protected unlockUnits(bindEventListeners: boolean = true): void {
+        // no buttons for bots
+    }
+
+    private enemyPlayer(): any {
+        return this.enemy
+    }
+
+    actionMask(): Array<boolean> {
+        const mask = new Array(ULT_NUM_ACTIONS).fill(false)
+        const room = this.playerUnits.length < this.maxUnits
+        for (let i = 0; i < troopArr.length; i++) {
+            mask[i] = this.unlockedUnits[i] && this.money >= troopArr[i].price && room && !(i === 10 && this.game.atomicDoomPending)
+            mask[ULT_RESEARCH0 + i] = !this.unlockedUnits[i] && this.money >= troopArr[i].researchPrice
+        }
+        mask[ULT_UPGRADE] = this.money >= 1500
+        mask[ULT_WAIT] = true
+        return mask
+    }
+
+    applyAction(action: number) {
+        const mask = this.actionMask()
+        if (!(action >= 0 && action < ULT_NUM_ACTIONS) || !mask[action]) return
+        if (action < troopArr.length) {
+            this.addTroop(action)
+        } else if (action < ULT_UPGRADE) {
+            const i = action - ULT_RESEARCH0
+            this.addFunds(-troopArr[i].researchPrice)
+            this.unlockedUnits[i] = true
+        } else if (action === ULT_UPGRADE) {
+            this.multiplier *= 1.2
+            this.addFunds(-1500)
+        }
+    }
+
+    observe(): Float32Array {
+        const me: Player = this
+        const en: any = this.enemyPlayer()
+        const time = this.game.time
+        const g: Array<number> = []
+        const moneyFeatures = (m: number) => [Math.min(m, 200) / 200, Math.log(1 + Math.max(m, 0)) / 8]
+        const b = (x: boolean) => x ? 1 : 0
+        const doggoCombo = (units: Array<trooperStatsInterface>) => units.length >= 2 &&
+            units[units.length - 1].name === troopArr[7].name && units[units.length - 2].name === troopArr[7].name
+        const hpSum = (units: Array<trooperStatsInterface>) => units.reduce((s, u) => s + Math.max(u.health, 0), 0)
+
+        g.push(...moneyFeatures(me.money), ...moneyFeatures(en.money))
+        g.push(Math.max(me.playerBase.health, 0) / 800, Math.max(en.playerBase.health, 0) / 800)
+        g.push(Math.log(me.multiplier) / Math.log(1.2) / 10, Math.log(en.multiplier) / Math.log(1.2) / 10)
+        g.push(me.playerUnits.length / ULT_MAX_SLOTS, en.playerUnits.length / ULT_MAX_SLOTS)
+        g.push(b(this.game.atomicDoomPending))
+        for (let i = 0; i < 3; i++) g.push(b(me.financialAid[i]))
+        for (let i = 0; i < 3; i++) g.push(b(en.financialAid[i]))
+        for (let i = 0; i < troopArr.length; i++) g.push(b(me.unlockedUnits[i]))
+        for (let i = 0; i < troopArr.length; i++) g.push(b(en.unlockedUnits[i]))
+        for (const m of this.actionMask()) g.push(b(m))
+        g.push(Math.min(time / ULT_TIME_SCALE, 1))
+        g.push(b(doggoCombo(me.playerUnits)), b(doggoCombo(en.playerUnits)))
+        g.push(Math.min(hpSum(me.playerUnits) / 1000, 3), Math.min(hpSum(en.playerUnits) / 1000, 3))
+
+        const out = new Float32Array(ULT_OBS_SIZE)
+        for (let i = 0; i < g.length; i++) out[i] = g[i]
+        const egoX = (pos: number) => this.side === 'left' ? pos / canvasWidth : (canvasWidth - pos) / canvasWidth
+        const writeUnits = (units: Array<trooperStatsInterface>, base: number) => {
+            for (let s = 0; s < Math.min(units.length, ULT_MAX_SLOTS); s++) {
+                const u = units[s]
+                const off = base + s * ULT_UNIT
+                const kind = troopArr.findIndex(t => t.name === u.name)
+                out[off] = 1
+                out[off + 1 + kind] = 1
+                out[off + 13] = b((u as any).puppy === true)
+                out[off + 14] = egoX(u.position)
+                out[off + 15] = Math.min(Math.max(u.health / u.maxHealth, 0), 1)
+                out[off + 16] = Math.min(Math.max(u.health, 0) / 200, 5)
+                if (u.targetTime !== null && u.targetTime !== undefined) {
+                    out[off + 17] = 1
+                    out[off + 18] = Math.min(Math.max((u.targetTime - time) / u.attackSpeed, 0), 1)
+                }
+                out[off + 19] = Math.log(1 + Math.max(u.damage, 0)) / 5
+            }
+        }
+        writeUnits(me.playerUnits, ULT_GLOBAL)
+        writeUnits(en.playerUnits, ULT_GLOBAL + ULT_MAX_SLOTS * ULT_UNIT)
+        return out
+    }
+
+    forward(obs: Float32Array): Float32Array {
+        let x = obs
+        for (const l of this.layers) {
+            if (l.type === 'linear') {
+                const y = new Float32Array(l.out)
+                for (let o = 0; o < l.out; o++) {
+                    let sum = l.bias[o]
+                    const off = o * l.in
+                    for (let i = 0; i < l.in; i++) sum += l.weight[off + i] * x[i]
+                    y[o] = sum
+                }
+                x = y
+            } else if (l.type === 'layernorm') {
+                let mean = 0, varSum = 0
+                for (let i = 0; i < x.length; i++) mean += x[i]
+                mean /= x.length
+                for (let i = 0; i < x.length; i++) varSum += (x[i] - mean) ** 2
+                const inv = 1 / Math.sqrt(varSum / x.length + l.eps)
+                const y = new Float32Array(x.length)
+                for (let i = 0; i < x.length; i++) y[i] = (x[i] - mean) * inv * l.weight[i] + l.bias[i]
+                x = y
+            } else {
+                const y = new Float32Array(x.length)
+                for (let i = 0; i < x.length; i++) {
+                    const v = x[i]
+                    if (l.type === 'relu') y[i] = v > 0 ? v : 0
+                    else if (l.type === 'tanh') y[i] = Math.tanh(v)
+                    else if (l.type === 'silu') y[i] = v / (1 + Math.exp(-v))
+                    else if (l.type === 'gelu') y[i] = 0.5 * v * (1 + Math.tanh(0.7978845608028654 * (v + 0.044715 * v * v * v)))
+                    else throw new Error(`unknown layer type ${l.type}`)
+                }
+                x = y
+            }
+        }
+        return x
+    }
+
+    /** Called by Game.move() before each tick; returns an action on decision ticks. */
+    decide(time: number): number | undefined {
+        if (!this.layers || time % this.decisionInterval !== 0) return undefined
+        const mask = this.actionMask()
+        const logits = this.forward(this.observe())
+        let maxL = -Infinity
+        for (let a = 0; a < ULT_NUM_ACTIONS; a++) if (mask[a] && logits[a] > maxL) maxL = logits[a]
+        const probs = new Array(ULT_NUM_ACTIONS).fill(0)
+        let sum = 0
+        for (let a = 0; a < ULT_NUM_ACTIONS; a++) if (mask[a]) {
+            probs[a] = Math.exp(logits[a] - maxL)
+            sum += probs[a]
+        }
+        for (let a = 0; a < ULT_NUM_ACTIONS; a++) probs[a] /= sum
+        this.lastProbs = probs
+        let action = ULT_WAIT
+        if (this.greedy) {
+            let best = -1
+            for (let a = 0; a < ULT_NUM_ACTIONS; a++) if (mask[a] && probs[a] > best) {
+                best = probs[a]
+                action = a
+            }
+        } else {
+            let r = Math.random()
+            for (let a = 0; a < ULT_NUM_ACTIONS; a++) if (mask[a]) {
+                action = a
+                r -= probs[a]
+                if (r <= 0) break
+            }
+        }
+        if (this.DOMAccess) this.showBrain(probs)
+        return action
+    }
+
+    private static actionName(a: number): string {
+        if (a < troopArr.length) return troopArr[a].name
+        if (a < ULT_UPGRADE) return `Research ${troopArr[a - ULT_RESEARCH0].name}`
+        return a === ULT_UPGRADE ? 'Upgrade +20%' : 'wait'
+    }
+
+    private showBrain(probs: Array<number>) {
+        const el = typeof document !== 'undefined' ? document.getElementById(`ai-stats-${this.side}`) : null
+        if (!el) return
+        const top = probs.map((p, a) => ({p, a})).filter(x => x.p > 0.005).sort((x, y) => y.p - x.p).slice(0, 6)
+        let html = `<div style="font-family: monospace;"><strong>${this.side.toUpperCase()} Ultimate AI:</strong><br/>`
+        for (const {p, a} of top) {
+            const color = a < troopArr.length ? troopArr[a].color : (a === ULT_UPGRADE ? 'gold' : 'gray')
+            html += `<div style="margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;">
+                <div style="width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${UltimateBot.actionName(a)}</div>
+                <div style="flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;">
+                    <div style="width: ${p * 100}%; background: ${color}; height: 100%; border-radius: 4px;"></div>
+                </div>
+                <div style="width: 35px; text-align: right;">${(p * 100).toFixed(0)}%</div>
+            </div>`
+        }
+        el.innerHTML = html + `</div>`
+    }
+}
+
+
 class InternetPlayer extends Player implements playerInterface {
     private firstTimeAtomicDoom: boolean;
     private message: string = ''
@@ -2500,6 +2758,9 @@ try {
         Game: Game,
         Player: Player,
         troopArr: troopArr,
+        SimulatingBot: SimulatingBot,
+        LocalRLBot: LocalRLBot,
+        UltimateBot: UltimateBot,
     }
 } catch (e) {
 }
@@ -2619,6 +2880,24 @@ try {
             true, true, [0], [], 1)
         initializeUI()
     }
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-ultimate-ai') {
+        game = new Game(new Player(55, 'left', !shiftDown),
+            new UltimateBot(55, 'right', !shiftDown, 'ultimate_model.json'),
+            true, true, [], [])
+        initializeUI()
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'old-bot-vs-ultimate-ai') {
+        game = new Game(new SimulatingBot(55, 'left', !shiftDown),
+            new UltimateBot(55, 'right', !shiftDown, 'ultimate_model.json'),
+            true, true, [], [])
+        initializeUI()
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-ultimate-ai') {
+        game = new Game(new LocalRLBot(55, 'left', !shiftDown, 'ultimate_dqn_model.json', 10),
+            new UltimateBot(55, 'right', !shiftDown, 'ultimate_model.json'),
+            true, true, [], [])
+        initializeUI()
+    }
     console.log(new URLSearchParams(window.location.search).get('mode'))
 
     document.getElementById('pl').addEventListener('click', () => {
@@ -2647,6 +2926,15 @@ try {
     })
     document.getElementById('bot7').addEventListener('click', () => {
         window.open('?mode=local-old-vs-reinforcementai', '_self')
+    })
+    document.getElementById('bot8').addEventListener('click', () => {
+        window.open('?mode=player-vs-ultimate-ai', '_self')
+    })
+    document.getElementById('bot9').addEventListener('click', () => {
+        window.open('?mode=old-bot-vs-ultimate-ai', '_self')
+    })
+    document.getElementById('bot10').addEventListener('click', () => {
+        window.open('?mode=local-reinforcementai-vs-ultimate-ai', '_self')
     })
 
 

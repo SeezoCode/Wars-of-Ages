@@ -810,6 +810,14 @@ var Game = /** @class */ (function () {
         this.animation();
     }
     Game.prototype.move = function () {
+        var _this = this;
+        // Between-tick decisions for policy bots (UltimateBot): both decide from the same
+        // state, then act left player first. Mirrors Env::step in rl/engine/src/env.rs.
+        var decisions = this.players.map(function (p) { return p.decide ? p.decide(_this.time) : undefined; });
+        this.players.forEach(function (p, i) {
+            if (decisions[i] !== undefined)
+                p.applyAction(decisions[i]);
+        });
         if (this.visualize && !deathAnimPending)
             cx.clearRect(0, 0, canvasWidth, canvasHeight);
         if (this.visualize && radioactivityPending) {
@@ -2118,6 +2126,289 @@ var LocalRLBot = /** @class */ (function (_super) {
     };
     return LocalRLBot;
 }(SimulatingBot));
+// ============================================================================
+// UltimateBot — policy trained with the Rust engine + PyTorch PPO in rl/
+// (see rl/README.md). observe(), actionMask() and applyAction() MUST stay identical
+// to rl/engine/src/obs.rs; rl/parity checks this.
+// ============================================================================
+var ULT_NUM_ACTIONS = 26; // 0-11 spawn troop i, 12-23 research troop i, 24 upgrade, 25 wait
+var ULT_RESEARCH0 = 12;
+var ULT_UPGRADE = 24;
+var ULT_WAIT = 25;
+var ULT_MAX_SLOTS = 10;
+var ULT_GLOBAL = 72;
+var ULT_UNIT = 20;
+var ULT_OBS_SIZE = ULT_GLOBAL + 2 * ULT_MAX_SLOTS * ULT_UNIT;
+var ULT_TIME_SCALE = 36000;
+var UltimateBot = /** @class */ (function (_super) {
+    __extends(UltimateBot, _super);
+    function UltimateBot(money, side, checkForAvailMoney, modelUrl, greedy) {
+        if (money === void 0) { money = 0; }
+        if (modelUrl === void 0) { modelUrl = 'ultimate_model.json'; }
+        if (greedy === void 0) { greedy = false; }
+        var _this = _super.call(this, money, side, checkForAvailMoney) || this;
+        _this.decisionInterval = 10;
+        _this.layers = null;
+        _this.lastProbs = null;
+        _this.greedy = greedy;
+        if (modelUrl)
+            _this.loadModel(modelUrl);
+        return _this;
+    }
+    UltimateBot.prototype.loadModel = function (url) {
+        return __awaiter(this, void 0, void 0, function () {
+            var res, _a, err_2;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        _b.trys.push([0, 3, , 4]);
+                        return [4 /*yield*/, fetch(url)];
+                    case 1:
+                        res = _b.sent();
+                        _a = this.setModel;
+                        return [4 /*yield*/, res.json()];
+                    case 2:
+                        _a.apply(this, [_b.sent()]);
+                        console.log("[UltimateBot] Model loaded from " + url);
+                        return [3 /*break*/, 4];
+                    case 3:
+                        err_2 = _b.sent();
+                        console.error("[UltimateBot] Failed to load model:", err_2);
+                        return [3 /*break*/, 4];
+                    case 4: return [2 /*return*/];
+                }
+            });
+        });
+    };
+    UltimateBot.decodeFloats = function (b64) {
+        var bin = atob(b64);
+        var view = new DataView(new ArrayBuffer(bin.length));
+        for (var i = 0; i < bin.length; i++)
+            view.setUint8(i, bin.charCodeAt(i));
+        var out = new Float32Array(bin.length / 4);
+        for (var i = 0; i < out.length; i++)
+            out[i] = view.getFloat32(i * 4, true);
+        return out;
+    };
+    UltimateBot.prototype.setModel = function (json) {
+        if (json.obs_size !== ULT_OBS_SIZE || json.num_actions !== ULT_NUM_ACTIONS) {
+            throw new Error("model expects obs " + json.obs_size + "/actions " + json.num_actions + ", game has " + ULT_OBS_SIZE + "/" + ULT_NUM_ACTIONS);
+        }
+        this.decisionInterval = json.decision_interval || 10;
+        this.layers = json.layers.map(function (l) { return ({
+            type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
+            weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
+            bias: l.bias ? UltimateBot.decodeFloats(l.bias) : undefined,
+        }); });
+    };
+    UltimateBot.prototype.unlockUnits = function (bindEventListeners) {
+        if (bindEventListeners === void 0) { bindEventListeners = true; }
+        // no buttons for bots
+    };
+    UltimateBot.prototype.enemyPlayer = function () {
+        return this.enemy;
+    };
+    UltimateBot.prototype.actionMask = function () {
+        var mask = new Array(ULT_NUM_ACTIONS).fill(false);
+        var room = this.playerUnits.length < this.maxUnits;
+        for (var i = 0; i < troopArr.length; i++) {
+            mask[i] = this.unlockedUnits[i] && this.money >= troopArr[i].price && room && !(i === 10 && this.game.atomicDoomPending);
+            mask[ULT_RESEARCH0 + i] = !this.unlockedUnits[i] && this.money >= troopArr[i].researchPrice;
+        }
+        mask[ULT_UPGRADE] = this.money >= 1500;
+        mask[ULT_WAIT] = true;
+        return mask;
+    };
+    UltimateBot.prototype.applyAction = function (action) {
+        var mask = this.actionMask();
+        if (!(action >= 0 && action < ULT_NUM_ACTIONS) || !mask[action])
+            return;
+        if (action < troopArr.length) {
+            this.addTroop(action);
+        }
+        else if (action < ULT_UPGRADE) {
+            var i = action - ULT_RESEARCH0;
+            this.addFunds(-troopArr[i].researchPrice);
+            this.unlockedUnits[i] = true;
+        }
+        else if (action === ULT_UPGRADE) {
+            this.multiplier *= 1.2;
+            this.addFunds(-1500);
+        }
+    };
+    UltimateBot.prototype.observe = function () {
+        var _this = this;
+        var me = this;
+        var en = this.enemyPlayer();
+        var time = this.game.time;
+        var g = [];
+        var moneyFeatures = function (m) { return [Math.min(m, 200) / 200, Math.log(1 + Math.max(m, 0)) / 8]; };
+        var b = function (x) { return x ? 1 : 0; };
+        var doggoCombo = function (units) { return units.length >= 2 &&
+            units[units.length - 1].name === troopArr[7].name && units[units.length - 2].name === troopArr[7].name; };
+        var hpSum = function (units) { return units.reduce(function (s, u) { return s + Math.max(u.health, 0); }, 0); };
+        g.push.apply(g, __spreadArray(__spreadArray([], moneyFeatures(me.money)), moneyFeatures(en.money)));
+        g.push(Math.max(me.playerBase.health, 0) / 800, Math.max(en.playerBase.health, 0) / 800);
+        g.push(Math.log(me.multiplier) / Math.log(1.2) / 10, Math.log(en.multiplier) / Math.log(1.2) / 10);
+        g.push(me.playerUnits.length / ULT_MAX_SLOTS, en.playerUnits.length / ULT_MAX_SLOTS);
+        g.push(b(this.game.atomicDoomPending));
+        for (var i = 0; i < 3; i++)
+            g.push(b(me.financialAid[i]));
+        for (var i = 0; i < 3; i++)
+            g.push(b(en.financialAid[i]));
+        for (var i = 0; i < troopArr.length; i++)
+            g.push(b(me.unlockedUnits[i]));
+        for (var i = 0; i < troopArr.length; i++)
+            g.push(b(en.unlockedUnits[i]));
+        for (var _i = 0, _a = this.actionMask(); _i < _a.length; _i++) {
+            var m = _a[_i];
+            g.push(b(m));
+        }
+        g.push(Math.min(time / ULT_TIME_SCALE, 1));
+        g.push(b(doggoCombo(me.playerUnits)), b(doggoCombo(en.playerUnits)));
+        g.push(Math.min(hpSum(me.playerUnits) / 1000, 3), Math.min(hpSum(en.playerUnits) / 1000, 3));
+        var out = new Float32Array(ULT_OBS_SIZE);
+        for (var i = 0; i < g.length; i++)
+            out[i] = g[i];
+        var egoX = function (pos) { return _this.side === 'left' ? pos / canvasWidth : (canvasWidth - pos) / canvasWidth; };
+        var writeUnits = function (units, base) {
+            var _loop_2 = function (s) {
+                var u = units[s];
+                var off = base + s * ULT_UNIT;
+                var kind = troopArr.findIndex(function (t) { return t.name === u.name; });
+                out[off] = 1;
+                out[off + 1 + kind] = 1;
+                out[off + 13] = b(u.puppy === true);
+                out[off + 14] = egoX(u.position);
+                out[off + 15] = Math.min(Math.max(u.health / u.maxHealth, 0), 1);
+                out[off + 16] = Math.min(Math.max(u.health, 0) / 200, 5);
+                if (u.targetTime !== null && u.targetTime !== undefined) {
+                    out[off + 17] = 1;
+                    out[off + 18] = Math.min(Math.max((u.targetTime - time) / u.attackSpeed, 0), 1);
+                }
+                out[off + 19] = Math.log(1 + Math.max(u.damage, 0)) / 5;
+            };
+            for (var s = 0; s < Math.min(units.length, ULT_MAX_SLOTS); s++) {
+                _loop_2(s);
+            }
+        };
+        writeUnits(me.playerUnits, ULT_GLOBAL);
+        writeUnits(en.playerUnits, ULT_GLOBAL + ULT_MAX_SLOTS * ULT_UNIT);
+        return out;
+    };
+    UltimateBot.prototype.forward = function (obs) {
+        var x = obs;
+        for (var _i = 0, _a = this.layers; _i < _a.length; _i++) {
+            var l = _a[_i];
+            if (l.type === 'linear') {
+                var y = new Float32Array(l.out);
+                for (var o = 0; o < l.out; o++) {
+                    var sum = l.bias[o];
+                    var off = o * l.in;
+                    for (var i = 0; i < l.in; i++)
+                        sum += l.weight[off + i] * x[i];
+                    y[o] = sum;
+                }
+                x = y;
+            }
+            else if (l.type === 'layernorm') {
+                var mean = 0, varSum = 0;
+                for (var i = 0; i < x.length; i++)
+                    mean += x[i];
+                mean /= x.length;
+                for (var i = 0; i < x.length; i++)
+                    varSum += Math.pow((x[i] - mean), 2);
+                var inv = 1 / Math.sqrt(varSum / x.length + l.eps);
+                var y = new Float32Array(x.length);
+                for (var i = 0; i < x.length; i++)
+                    y[i] = (x[i] - mean) * inv * l.weight[i] + l.bias[i];
+                x = y;
+            }
+            else {
+                var y = new Float32Array(x.length);
+                for (var i = 0; i < x.length; i++) {
+                    var v = x[i];
+                    if (l.type === 'relu')
+                        y[i] = v > 0 ? v : 0;
+                    else if (l.type === 'tanh')
+                        y[i] = Math.tanh(v);
+                    else if (l.type === 'silu')
+                        y[i] = v / (1 + Math.exp(-v));
+                    else if (l.type === 'gelu')
+                        y[i] = 0.5 * v * (1 + Math.tanh(0.7978845608028654 * (v + 0.044715 * v * v * v)));
+                    else
+                        throw new Error("unknown layer type " + l.type);
+                }
+                x = y;
+            }
+        }
+        return x;
+    };
+    /** Called by Game.move() before each tick; returns an action on decision ticks. */
+    UltimateBot.prototype.decide = function (time) {
+        if (!this.layers || time % this.decisionInterval !== 0)
+            return undefined;
+        var mask = this.actionMask();
+        var logits = this.forward(this.observe());
+        var maxL = -Infinity;
+        for (var a = 0; a < ULT_NUM_ACTIONS; a++)
+            if (mask[a] && logits[a] > maxL)
+                maxL = logits[a];
+        var probs = new Array(ULT_NUM_ACTIONS).fill(0);
+        var sum = 0;
+        for (var a = 0; a < ULT_NUM_ACTIONS; a++)
+            if (mask[a]) {
+                probs[a] = Math.exp(logits[a] - maxL);
+                sum += probs[a];
+            }
+        for (var a = 0; a < ULT_NUM_ACTIONS; a++)
+            probs[a] /= sum;
+        this.lastProbs = probs;
+        var action = ULT_WAIT;
+        if (this.greedy) {
+            var best = -1;
+            for (var a = 0; a < ULT_NUM_ACTIONS; a++)
+                if (mask[a] && probs[a] > best) {
+                    best = probs[a];
+                    action = a;
+                }
+        }
+        else {
+            var r = Math.random();
+            for (var a = 0; a < ULT_NUM_ACTIONS; a++)
+                if (mask[a]) {
+                    action = a;
+                    r -= probs[a];
+                    if (r <= 0)
+                        break;
+                }
+        }
+        if (this.DOMAccess)
+            this.showBrain(probs);
+        return action;
+    };
+    UltimateBot.actionName = function (a) {
+        if (a < troopArr.length)
+            return troopArr[a].name;
+        if (a < ULT_UPGRADE)
+            return "Research " + troopArr[a - ULT_RESEARCH0].name;
+        return a === ULT_UPGRADE ? 'Upgrade +20%' : 'wait';
+    };
+    UltimateBot.prototype.showBrain = function (probs) {
+        var el = typeof document !== 'undefined' ? document.getElementById("ai-stats-" + this.side) : null;
+        if (!el)
+            return;
+        var top = probs.map(function (p, a) { return ({ p: p, a: a }); }).filter(function (x) { return x.p > 0.005; }).sort(function (x, y) { return y.p - x.p; }).slice(0, 6);
+        var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " Ultimate AI:</strong><br/>";
+        for (var _i = 0, top_1 = top; _i < top_1.length; _i++) {
+            var _a = top_1[_i], p = _a.p, a = _a.a;
+            var color = a < troopArr.length ? troopArr[a].color : (a === ULT_UPGRADE ? 'gold' : 'gray');
+            html += "<div style=\"margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;\">\n                <div style=\"width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;\">" + UltimateBot.actionName(a) + "</div>\n                <div style=\"flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;\">\n                    <div style=\"width: " + p * 100 + "%; background: " + color + "; height: 100%; border-radius: 4px;\"></div>\n                </div>\n                <div style=\"width: 35px; text-align: right;\">" + (p * 100).toFixed(0) + "%</div>\n            </div>";
+        }
+        el.innerHTML = html + "</div>";
+    };
+    return UltimateBot;
+}(Player));
 var InternetPlayer = /** @class */ (function (_super) {
     __extends(InternetPlayer, _super);
     function InternetPlayer(money, side, checkForAvailMoney, address) {
@@ -2348,6 +2639,9 @@ try {
         Game: Game,
         Player: Player,
         troopArr: troopArr,
+        SimulatingBot: SimulatingBot,
+        LocalRLBot: LocalRLBot,
+        UltimateBot: UltimateBot,
     };
 }
 catch (e) {
@@ -2449,6 +2743,18 @@ try {
         game_1 = new Game(new SimulatingBot(55, 'left', !shiftDown_1), new LocalRLBot(55, 'right', !shiftDown_1), true, true, [0], [], 1);
         initializeUI();
     }
+    if (new URLSearchParams(window.location.search).get('mode') === 'player-vs-ultimate-ai') {
+        game_1 = new Game(new Player(55, 'left', !shiftDown_1), new UltimateBot(55, 'right', !shiftDown_1, 'ultimate_model.json'), true, true, [], []);
+        initializeUI();
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'old-bot-vs-ultimate-ai') {
+        game_1 = new Game(new SimulatingBot(55, 'left', !shiftDown_1), new UltimateBot(55, 'right', !shiftDown_1, 'ultimate_model.json'), true, true, [], []);
+        initializeUI();
+    }
+    if (new URLSearchParams(window.location.search).get('mode') === 'local-reinforcementai-vs-ultimate-ai') {
+        game_1 = new Game(new LocalRLBot(55, 'left', !shiftDown_1, 'ultimate_dqn_model.json', 10), new UltimateBot(55, 'right', !shiftDown_1, 'ultimate_model.json'), true, true, [], []);
+        initializeUI();
+    }
     console.log(new URLSearchParams(window.location.search).get('mode'));
     document.getElementById('pl').addEventListener('click', function () {
         window.open('?mode=player-vs-player', '_self');
@@ -2476,6 +2782,15 @@ try {
     });
     document.getElementById('bot7').addEventListener('click', function () {
         window.open('?mode=local-old-vs-reinforcementai', '_self');
+    });
+    document.getElementById('bot8').addEventListener('click', function () {
+        window.open('?mode=player-vs-ultimate-ai', '_self');
+    });
+    document.getElementById('bot9').addEventListener('click', function () {
+        window.open('?mode=old-bot-vs-ultimate-ai', '_self');
+    });
+    document.getElementById('bot10').addEventListener('click', function () {
+        window.open('?mode=local-reinforcementai-vs-ultimate-ai', '_self');
     });
     fetch("http://" + hostIP + ":" + hostPort, {
         headers: new Headers(),
