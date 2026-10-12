@@ -130,6 +130,10 @@ agent observation. The port keeps the original quirks on purpose: units skipped 
 inside `forEach`, Atomic Troop losing HP on every `isInFront` call, double `timeAttack` calls for
 front ranged units, the always-true "quick mode" check in the worker, and so on.
 
+`python3 rl/parity/check_model.py ultimate_model.json [checkpoint.pt]` checks the last link:
+it plays the exported model with the real `UltimateBot` in Node and compares its logits with
+NumPy/PyTorch.
+
 Two browser-only effects are modelled approximately (both are off in the parity runs):
 
 * **Nuke animation freeze** (`deathAnimPending`): movement pauses ~45 ticks after an Atomic Bomb (`nuke_freeze_ticks`).
