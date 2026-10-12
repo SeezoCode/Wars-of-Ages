@@ -87,6 +87,10 @@ class TrainConfig:
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     target_kl: float = 0.03
+    # exploration: with prob explore_eps a learner decision becomes a random valid non-wait
+    # action (logged with its log-prob under the policy), annealed to 0 by explore_anneal_frac
+    explore_eps: float = 0.03
+    explore_anneal_frac: float = 0.6
 
     # rewards: outcome + annealed shaping
     win_reward: float = 1.0
@@ -276,10 +280,25 @@ class Trainer:
             if self.rng.random() < self.activity[e]:
                 actions[e, s] = self.rng.choice(np.flatnonzero(mask[e, s]))
 
+    @torch.no_grad()
+    def _explore(self, obs: torch.Tensor, mask: torch.Tensor, a: torch.Tensor, lp: torch.Tensor, eps: float):
+        """Replace a random eps-fraction of actions by uniform valid non-wait actions (in place)."""
+        m = mask.clone()
+        m[:, WAIT] = False
+        pick = (torch.rand(len(a)) < eps) & m.any(1)
+        if not pick.any():
+            return
+        idx = pick.nonzero().squeeze(1)
+        new = torch.multinomial(m[idx].float(), 1).squeeze(1)
+        logp = torch.log_softmax(self.model.logits(obs[idx], mask[idx]), -1)
+        a[idx] = new
+        lp[idx] = logp.gather(1, new[:, None]).squeeze(1)
+
     def rollout(self, progress: float):
         c, N, T = self.cfg, self.N, self.cfg.rollout_steps
         O, A = wars_engine.OBS_SIZE, wars_engine.NUM_ACTIONS
         shaping = max(0.0, 1.0 - progress / max(c.shaping_anneal_frac, 1e-9))
+        eps = c.explore_eps * max(0.0, 1.0 - progress / max(c.explore_anneal_frac, 1e-9))
         b_obs = torch.zeros(T, N, 2, O)
         b_mask = torch.zeros(T, N, 2, A, dtype=torch.bool)
         b_act = torch.zeros(T, N, 2, dtype=torch.long)
@@ -297,6 +316,8 @@ class Trainer:
             actions = np.full((N, 2), WAIT, dtype=np.int64)
             o_t, m_t = torch.from_numpy(obs), torch.from_numpy(mask)
             a, lp, v = self.model.act(o_t[lt], m_t[lt])
+            if eps > 0:
+                self._explore(o_t[lt], m_t[lt], a, lp, eps)
             actions[li] = a.numpy()
             self._opponent_actions(obs, mask, actions)
             b_obs[t], b_mask[t] = o_t, m_t
