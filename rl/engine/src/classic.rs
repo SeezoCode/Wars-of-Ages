@@ -1,6 +1,8 @@
 //! Port of `SimulatingBot` (the "Player vs AI" bot) including its Web Worker,
 //! which brute-forces 3-unit combinations by simulating whole battles.
 
+use rayon::prelude::*;
+
 use crate::game::{Controller, Game, Player, Side};
 use crate::rng::Rng;
 use crate::troops::*;
@@ -192,10 +194,7 @@ pub fn worker_compute(own: &[usize], enemy: &[usize], unlocked: &[bool; NUM_TROO
     if n >= NUM_TROOPS - 2 {
         n = NUM_TROOPS - 2;
     }
-    let mut best = -9999.0f64;
-    let mut best_troops: Vec<usize> = Vec::new();
-    let mut work = 0.0;
-    let mut pl: Vec<usize> = Vec::with_capacity(own.len() + 3);
+    let mut combos: Vec<[usize; 3]> = Vec::with_capacity(512);
     for i in 0..n {
         if i >= 8 {
             continue;
@@ -208,22 +207,55 @@ pub fn worker_compute(own: &[usize], enemy: &[usize], unlocked: &[bool; NUM_TROO
                 if k >= 8 || (i == 6 && k == 6) || (j == 6 && k == 6) {
                     continue;
                 }
-                pl.clear();
-                pl.extend_from_slice(own);
-                pl.push(i);
-                pl.push(j);
-                pl.push(k);
-                let r = simulate(&pl, enemy, rng);
-                work += r.js_unit_ticks;
-                let score = r.damage / r.spending;
-                if score > best && rng.next_f64() > 0.2 {
-                    best = score;
-                    best_troops = vec![i, j, k];
-                }
+                combos.push([i, j, k]);
             }
         }
     }
+    let army = |c: &[usize; 3]| -> Vec<usize> {
+        let mut pl = Vec::with_capacity(own.len() + 3);
+        pl.extend_from_slice(own);
+        pl.extend_from_slice(c);
+        pl
+    };
+    // Battles in which no puppy can appear use no randomness, so they are pure and can
+    // run in parallel. Everything that touches the random stream (puppy battles and the
+    // `Math.random() > .2` draws) stays in the original sequential order below.
+    let enemy_pure = puppy_free(enemy);
+    let pure: Vec<Option<SimResult>> = combos
+        .par_iter()
+        .map(|c| {
+            let pl = army(c);
+            if enemy_pure && puppy_free(&pl) {
+                let mut unused = Rng::new(0);
+                Some(simulate(&pl, enemy, &mut unused))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut best = -9999.0f64;
+    let mut best_troops: Vec<usize> = Vec::new();
+    let mut work = 0.0;
+    for (c, pre) in combos.iter().zip(pure) {
+        let r = match pre {
+            Some(r) => r,
+            None => simulate(&army(c), enemy, rng),
+        };
+        work += r.js_unit_ticks;
+        let score = r.damage / r.spending;
+        if score > best && rng.next_f64() > 0.2 {
+            best = score;
+            best_troops = c.to_vec();
+        }
+    }
     (best_troops, work)
+}
+
+/// Puppies (the only random element of a battle) appear when a Doggo is added right
+/// after two Doggos.
+fn puppy_free(units: &[usize]) -> bool {
+    let units = &units[..units.len().min(10)]; // add_troop drops units beyond maxUnits (10)
+    !units.windows(3).any(|w| w.iter().all(|&k| k == DOGGO))
 }
 
 pub struct SimResult {

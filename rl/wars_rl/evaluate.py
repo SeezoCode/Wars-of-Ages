@@ -31,7 +31,8 @@ WAIT = wars_engine.NUM_ACTIONS - 1
 
 class TorchPolicy:
     def __init__(self, path: str):
-        self.model, _ = load_model(path)
+        self.model, ckpt = load_model(path)
+        self.decision_interval = ckpt.get("train_config", {}).get("decision_interval", 10)
 
     def logits(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
         with torch.no_grad():
@@ -44,6 +45,7 @@ class JsonPolicy:
     def __init__(self, path: str):
         with open(path) as f:
             data = json.load(f)
+        self.decision_interval = data.get("decision_interval", 10)
         dec = lambda s: np.frombuffer(base64.b64decode(s), dtype="<f4")
         self.layers = []
         for l in data["layers"]:
@@ -76,6 +78,8 @@ class JsonPolicy:
 
 
 class RandomPolicy:
+    decision_interval = None
+
     def logits(self, obs, mask):
         return np.where(mask, 0.0, -1e9)
 
@@ -112,6 +116,11 @@ def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: i
              threads: int = 4, **env_kwargs):
     builtin = opponent in ("classic", "dqn")
     opp_policy = None if builtin else load_policy(opponent)
+    di = env_kwargs.pop("decision_interval", None) or getattr(policy, "decision_interval", None) or 10
+    opp_di = getattr(opp_policy, "decision_interval", None)
+    if opp_di and opp_di != di:
+        print(f"  warning: opponent was trained with decision_interval {opp_di}, playing at {di}")
+    env_kwargs["decision_interval"] = di
     n_envs = min(envs, games)
     venv = wars_engine.VecEnv(n_envs, dqn_model=dqn_model, threads=threads, **env_kwargs)
     rng = np.random.default_rng(seed)
@@ -167,8 +176,10 @@ def main():
     ap.add_argument("--envs", type=int, default=50)
     ap.add_argument("--greedy", action="store_true")
     ap.add_argument("--seed", type=int, default=12345)
+    ap.add_argument("--decision-interval", type=int, default=None,
+                    help="defaults to the checkpoint's training value (exported models: 'decision_interval')")
     ap.add_argument("--threads", type=int, default=4)
-    ap.add_argument("--max-ticks", type=int, default=36000)
+    ap.add_argument("--max-ticks", type=int, default=54000)
     ap.add_argument("--dqn-model", default=os.path.join(REPO, "ultimate_dqn_model.json"))
     args = ap.parse_args()
     policy = load_policy(args.policy)
@@ -176,7 +187,7 @@ def main():
     for opp in args.opponents.split(","):
         t0 = time.time()
         r = evaluate(policy, opp, args.games, args.envs, args.greedy, args.seed, args.dqn_model, args.threads,
-                     max_ticks=args.max_ticks)
+                     max_ticks=args.max_ticks, decision_interval=args.decision_interval)
         lo, hi = wilson(r["wins"], r["games"])
         print(f"  vs {opp:<10} W {r['wins']:4d}  D {r['draws']:4d}  L {r['losses']:4d}  "
               f"win {100 * r['wins'] / max(1, r['games']):5.1f}% (95% CI {100 * lo:.1f}-{100 * hi:.1f})  "

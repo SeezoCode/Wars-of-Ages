@@ -1,6 +1,7 @@
 {
   "run_dir": "runs/ultimate",
   "total_env_steps": 60000000,
+  "decision_interval": 15,
   "num_envs": 128,
   "rollout_steps": 128,
   "actor_hidden": [512, 512, 256],
@@ -9,9 +10,9 @@
   "layernorm": true,
   "lr": 0.0003,
   "gamma": 0.999,
-  "p_self": 0.3,
-  "p_past": 0.44,
-  "p_classic": 0.06,
+  "p_self": 0.25,
+  "p_past": 0.4,
+  "p_classic": 0.05,
   "p_dqn": 0.15,
-  "p_random": 0.05
+  "p_random": 0.15
 }

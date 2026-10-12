@@ -13,7 +13,7 @@ Each episode the learner plays one side against an opponent drawn from:
   past     — a frozen snapshot from the league (PFSP-weighted, see league.py)
   classic  — the original SimulatingBot ("Player vs AI")
   dqn      — the existing LocalRLBot (ultimate_dqn_model.json)
-  random   — uniformly random valid actions (a spammy rusher)
+  random   — random valid actions on a random fraction of decisions (curriculum: idle .. spam)
 """
 from __future__ import annotations
 
@@ -27,8 +27,12 @@ from dataclasses import dataclass, field
 from typing import List
 
 import numpy as np
-import torch
-import torch.nn as nn
+
+# Torch's OpenMP threads spin after each op and fight the Rust env threads for cores.
+os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+
+import torch  # noqa: E402
+import torch.nn as nn  # noqa: E402
 
 import wars_engine
 
@@ -54,11 +58,12 @@ class TrainConfig:
     num_envs: int = 128
     rollout_steps: int = 128
     env_threads: int = 4
-    torch_threads: int = 4
+    torch_threads: int = 4          # for the PPO update
+    rollout_torch_threads: int = 1  # small inference batches are faster single-threaded
 
     # environment (see EnvConfig in rl/engine/src/env.rs)
-    decision_interval: int = 10
-    max_ticks: int = 36_000
+    decision_interval: int = 15
+    max_ticks: int = 54_000             # 15 minutes; then a draw
     nuke_freeze_ticks: int = 45
     worker_unit_ticks_per_frame: float = 60_000.0
     dqn_model: str = os.path.join(REPO, "ultimate_dqn_model.json")
@@ -86,16 +91,20 @@ class TrainConfig:
     # rewards: outcome + annealed shaping
     win_reward: float = 1.0
     draw_reward: float = -0.5
-    shaping_base_damage: float = 0.5   # x (enemy base damage - own base damage) / 800
+    shaping_base_damage: float = 2.0   # x (enemy base damage - own base damage) / 800
     shaping_bounty: float = 0.03       # x (bounty earned - bounty given) / 100
-    shaping_anneal_frac: float = 0.5   # shaping fades to 0 over this fraction of training
+    shaping_front: float = 1.0         # potential-based: gamma*phi(s') - phi(s), phi = own front - enemy front
+    shaping_anneal_frac: float = 0.8   # shaping fades to 0 over this fraction of training
 
     # opponent mix (normalized)
-    p_self: float = 0.3
-    p_past: float = 0.44
-    p_classic: float = 0.06   # expensive (brute-force worker search), envs step in lockstep
+    p_self: float = 0.25
+    p_past: float = 0.4
+    p_classic: float = 0.05   # expensive (brute-force worker search)
     p_dqn: float = 0.15
-    p_random: float = 0.05
+    p_random: float = 0.15
+    # random opponents act on only a fraction of their decisions, drawn per episode as
+    # U(0,1)**random_activity_power: a curriculum from near-idle to full spam
+    random_activity_power: float = 2.0
 
     # league / bookkeeping
     snapshot_every: int = 20
@@ -158,6 +167,7 @@ class Trainer:
         self.ep_ticks = deque(maxlen=300)
         self.seed_counter = cfg.seed * 1_000_003
         self.ctrl = np.zeros((self.N, 2), dtype=np.int64)
+        self.activity = np.ones(self.N)
         self.kind = [""] * self.N
         self._maybe_resume()
         p = np.array([cfg.p_self, cfg.p_past, cfg.p_classic, cfg.p_dqn if self.has_dqn else 0.0, cfg.p_random])
@@ -207,6 +217,7 @@ class Trainer:
             ctrl[1 - side] = CTRL_BUILTIN
         elif kind == "random":
             ctrl[1 - side] = CTRL_RANDOM
+            self.activity[i] = self.rng.random() ** self.cfg.random_activity_power
         self.venv.reset(i, kinds[0], kinds[1], self._next_seed())
         self.ctrl[i] = ctrl
         self.kind[i] = kind
@@ -234,6 +245,16 @@ class Trainer:
             r[:, s] += np.where(done, out, 0.0)
         return r.astype(np.float32)
 
+    @staticmethod
+    def _front_potential(obs: np.ndarray) -> np.ndarray:
+        """phi = how far my frontmost unit has pushed - how far the enemy's has (ego x in [0, 1])."""
+        G, S, U = 72, 10, 20  # GLOBAL_FEATURES, MAX_SLOTS, UNIT_FEATURES (rl/engine/src/obs.rs)
+        own = obs[..., G:G + S * U].reshape(*obs.shape[:-1], S, U)
+        en = obs[..., G + S * U:G + 2 * S * U].reshape(*obs.shape[:-1], S, U)
+        own_front = (own[..., 14] * own[..., 0]).max(-1)
+        en_depth = ((1.0 - en[..., 14]) * en[..., 0]).max(-1)
+        return own_front - en_depth
+
     # --------------------------------------------------------------- rollout
     def _opponent_actions(self, obs: np.ndarray, mask: np.ndarray, actions: np.ndarray):
         for sid in np.unique(self.ctrl[self.ctrl > 0]):
@@ -243,8 +264,8 @@ class Trainer:
             actions[idx] = a.numpy()
         ridx = np.nonzero(self.ctrl == CTRL_RANDOM)
         for e, s in zip(*ridx):
-            valid = np.flatnonzero(mask[e, s])
-            actions[e, s] = self.rng.choice(valid)
+            if self.rng.random() < self.activity[e]:
+                actions[e, s] = self.rng.choice(np.flatnonzero(mask[e, s]))
 
     def rollout(self, progress: float):
         c, N, T = self.cfg, self.N, self.cfg.rollout_steps
@@ -259,6 +280,7 @@ class Trainer:
         b_done = np.zeros((T, N), dtype=np.float32)
         b_learn = np.zeros((T, N, 2), dtype=bool)
         obs, mask = self.venv.observe()
+        phi = self._front_potential(obs)
         for t in range(T):
             learn = self.ctrl == CTRL_LEARNER
             li = np.nonzero(learn)
@@ -274,12 +296,15 @@ class Trainer:
 
             obs, mask, comp, done, winner, ticks = self.venv.step(actions)
             b_rew[t] = self._rewards(comp, done, winner, shaping)
+            phi_next = np.where(done[:, None], 0.0, self._front_potential(obs))
+            b_rew[t] += shaping * c.shaping_front * (c.gamma * phi_next - phi)
             b_done[t] = done
             if done.any():
                 for i in np.flatnonzero(done):
                     self._record_episode(int(i), int(winner[i]), int(ticks[i]))
                     self._reset_env(int(i))
                 obs, mask = self.venv.observe()
+            phi = self._front_potential(obs)
         self.env_steps += N * T
         with torch.no_grad():
             last_v = self.model.value(torch.from_numpy(obs)).numpy() * (self.ctrl == CTRL_LEARNER)
@@ -310,10 +335,11 @@ class Trainer:
         n = batch["obs"].shape[0]
         stats = defaultdict(list)
         stop = False
+        n_mb = max(1, round(n / c.minibatch_size))
+        skipped = 0
         for _ in range(c.epochs):
-            perm = torch.randperm(n)
-            for start in range(0, n, c.minibatch_size):
-                mb = perm[start:start + c.minibatch_size]
+            # near-equal minibatches: a 1-sample remainder would make adv.std() NaN
+            for mb in torch.randperm(n).tensor_split(n_mb):
                 logp, ent, v = self.model.evaluate(batch["obs"][mb], batch["mask"][mb], batch["act"][mb])
                 ratio = (logp - batch["logp"][mb]).exp()
                 adv = batch["adv"][mb]
@@ -323,7 +349,10 @@ class Trainer:
                 loss = pg + c.vf_coef * vf - ent_coef * ent.mean()
                 self.opt.zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(self.model.parameters(), c.max_grad_norm)
+                grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), c.max_grad_norm)
+                if not (torch.isfinite(loss) and torch.isfinite(grad_norm)):
+                    skipped += 1  # never let one bad minibatch poison the weights
+                    continue
                 self.opt.step()
                 with torch.no_grad():
                     kl = ((ratio - 1) - (logp - batch["logp"][mb])).mean().item()
@@ -340,7 +369,7 @@ class Trainer:
         out = {k: float(np.mean(v)) for k, v in stats.items()}
         y, p = batch["ret"].numpy(), batch["val"].numpy()
         out["explained_var"] = float(1 - np.var(y - p) / (np.var(y) + 1e-8))
-        out.update(lr=lr, ent_coef=ent_coef, samples=n, early_stop=stop)
+        out.update(lr=lr, ent_coef=ent_coef, samples=n, early_stop=stop, skipped_minibatches=skipped)
         return out
 
     # ------------------------------------------------------------------ main
@@ -355,8 +384,10 @@ class Trainer:
         while self.env_steps < c.total_env_steps:
             t0 = time.time()
             progress = self.env_steps / c.total_env_steps
+            torch.set_num_threads(c.rollout_torch_threads)
             batch = self.rollout(progress)
             t1 = time.time()
+            torch.set_num_threads(c.torch_threads)
             stats = self.ppo_update(batch, progress)
             t2 = time.time()
             self.update += 1
