@@ -455,7 +455,12 @@ class Trainer:
 
 
 def main():
-    Trainer(parse_config()).train()
+    trainer = Trainer(parse_config())
+    try:
+        trainer.train()
+    except KeyboardInterrupt:
+        print("\ninterrupted: saving latest.pt (resume by running the same command again)")
+        trainer.save()
 
 
 if __name__ == "__main__":

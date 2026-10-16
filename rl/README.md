@@ -24,6 +24,8 @@ rl/
   configs/           example training config
 ```
 
+**Step-by-step guide (train from scratch, change model size, continue training, publish to GitHub): [TRAINING.md](TRAINING.md)**
+
 ## Setup
 
 ```bash

@@ -1,6 +1,7 @@
 """Export a trained actor to the JSON format `UltimateBot` loads in the browser.
 
     python -m wars_rl.export runs/ultimate/latest.pt ../ultimate_model.json
+    python -m wars_rl.export runs/v2/latest.pt ../ultimate_model.json --checkpoint-out checkpoints/ultimate_v2.pt
 
 Weights are stored as base64 little-endian float32. A NumPy re-implementation of
 the browser forward pass is checked against PyTorch before writing.
@@ -98,8 +99,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("checkpoint")
     ap.add_argument("out", nargs="?", default=os.path.join(os.path.dirname(__file__), "..", "..", "ultimate_model.json"))
+    ap.add_argument("--checkpoint-out", help="also write a slim weights-only checkpoint (no optimizer state), "
+                                             "small enough to commit and usable with train --init-from")
     args = ap.parse_args()
     model, ckpt = load_model(args.checkpoint)
+    if args.checkpoint_out:
+        keys = ["model_config", "state_dict", "update", "env_steps", "episodes", "train_config"]
+        torch.save({k: ckpt[k] for k in keys if k in ckpt}, args.checkpoint_out)
+        print(f"wrote {args.checkpoint_out} ({os.path.getsize(args.checkpoint_out) / 1e6:.1f} MB)")
     di = ckpt.get("train_config", {}).get("decision_interval", 10)
     meta = {"updates": ckpt.get("update"), "env_steps": ckpt.get("env_steps")}
     path = export(model, args.out, di, meta)
