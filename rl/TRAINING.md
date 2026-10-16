@@ -128,7 +128,7 @@ Rules and tips:
 * Cost grows with width²: doubling all widths makes each step ~3–4× slower. Deeper/wider nets
   usually need **more training**, not less, before they beat a smaller one.
 * Browser model size ≈ 5.4 bytes × actor parameters. 512-512-256 → 3.4 MB; 1024-1024-512-256 →
-  ~12 MB. The browser runs it in plain JavaScript once per decision, so up to ~10 MB is fine.
+  ~12 MB. The browser runs it in plain JavaScript once per decision; models up to ~15 MB load and run fine.
 * `--layernorm` stabilises training with these unnormalised game features. Keep it on unless
   you're experimenting.
 * Anything fancier (attention over units, residual blocks) goes in `wars_rl/model.py`. Only the
