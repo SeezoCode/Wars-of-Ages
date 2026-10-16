@@ -1,6 +1,9 @@
 // But be careful not to write it wrong since it has a powerful resolution going for the people that test my forms
 let canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, buttonColor, deathAnimPending,
     radioactivityPending, bgColor, buttonBg, darkTheme, playingHostedGame
+// ticks simulated per animation frame in the visualized game; real-time effects (nuke animation,
+// fallout timer) divide by it so they last the same number of game ticks at any speed
+let gameSpeed = 1
 
 try {
     let canvas = document.querySelector('canvas')
@@ -697,7 +700,7 @@ function holdDeathAnim(position: number, span: number, visualize: boolean) {
 
     function hold() {
         deathAnimPending = true
-        i++
+        i += gameSpeed
         cx.globalAlpha = i / 100
         cx.drawImage(explosionAtomicIMG, position - 171 / 2 + span / 4, 20);
         cx.globalAlpha = 1
@@ -713,7 +716,7 @@ function holdDeathAnim(position: number, span: number, visualize: boolean) {
                     e.style.backgroundColor = buttonBg
                     e.style.color = buttonColor
                 })
-            }, 22000)
+            }, 22000 / gameSpeed)
         }
     }
 }
@@ -820,6 +823,7 @@ class Game implements gameInterface {
     visualize: boolean
     DOMAccess: boolean
     moveCount: number = 1
+    stopped: boolean = false  // set to end a visualized game early (custom match time limit / rematch)
     // money: number
     // score: number
 
@@ -843,6 +847,7 @@ class Game implements gameInterface {
         this.players[1].map(this.players[0], visualize, DOMAccess, this.playerTwoUnits, playerUnits2, this.playerOneUnits, this.playerOneBase, this.playerTwoBase, this)
 
         this.moveCount = moveCount
+        if (visualize) gameSpeed = Math.max(1, moveCount)
 
         this.animation()
     }
@@ -918,6 +923,7 @@ class Game implements gameInterface {
         let aliveBases = () => {
             return this.players[0].doesBaseHaveHealth() && this.players[1].doesBaseHaveHealth()
         }
+        let isStopped = () => this.stopped
         if (this.visualize) requestAnimationFrame(hold)
             // if (this.DOMAccess) {
             //     setInterval(() => {
@@ -925,8 +931,22 @@ class Game implements gameInterface {
             //     }, .001)
         // }
         else {
+            // Headless battle (the classic bot's worker simulations).
+            // Exact early exit for stalemates such as Catapult vs Catapult, which otherwise run all 120 000
+            // ticks: positions only move forward and health only goes down, so if nothing changed between
+            // two checkpoints further apart than any attack cycle (Trebuchet: 300 ticks), nothing ever will.
+            // The result and the Math.random() calls are the same as running to the end.
+            let checkpoint = ''
+            const fingerprint = () => [this.playerOneBase.health, this.playerTwoBase.health,
+                ...this.playerOneUnits.map(u => `${u.position},${u.health}`),
+                '|', ...this.playerTwoUnits.map(u => `${u.position},${u.health}`)].join(';')
             while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 120000) { //
                 move()
+                if (this.time % 610 === 0) {
+                    const fp = fingerprint()
+                    if (!this.atomicDoomPending && fp === checkpoint) break
+                    checkpoint = fp
+                }
             }
             // console.log('Game ended,',
             //     (!this.playerOneUnits.length && !this.playerTwoUnits.length ? 'nobody' : (this.playerOneUnits.length ? 'left' : 'right')), 'won',
@@ -936,6 +956,7 @@ class Game implements gameInterface {
         }
 
         function hold(): void {
+            if (isStopped()) return
             for (let i = 0; i < mc; i++) move()
             if (aliveBases()) requestAnimationFrame(hold)
         }
@@ -1155,7 +1176,7 @@ class Player implements playerInterface {
                         this.game.atomicDoomPending = true
                         setTimeout(() => {
                             this.game.atomicDoomPending = false
-                        }, 22000)
+                        }, 22000 / (this.visualize ? gameSpeed : 1))  // 22 s = 1320 ticks at any speed
                     } else if (playerUnit.name === troopArr[6].name) {
                         this.game.boomerDoomer(playerUnit.position)
                         enemy.addFunds(playerUnit.price * 2.5)
@@ -2494,27 +2515,42 @@ class UltimateBot extends Player {
         return action
     }
 
-    private static actionName(a: number): string {
-        if (a < troopArr.length) return troopArr[a].name
-        if (a < ULT_UPGRADE) return `Research ${troopArr[a - ULT_RESEARCH0].name}`
-        return a === ULT_UPGRADE ? 'Upgrade +20%' : 'wait'
-    }
+    private brainHistory: Array<{ rows: Array<number>, research: string }> = []
 
+    /** Probability bars in a fixed order (like LocalRLBot): every unlocked troop, research, upgrade, wait.
+     *  Each bar shows the highest probability over the last 8 decisions so it doesn't flicker. */
     private showBrain(probs: Array<number>) {
         const el = typeof document !== 'undefined' ? document.getElementById(`ai-stats-${this.side}`) : null
         if (!el) return
-        const top = probs.map((p, a) => ({p, a})).filter(x => x.p > 0.005).sort((x, y) => y.p - x.p).slice(0, 6)
-        let html = `<div style="font-family: monospace;"><strong>${this.side.toUpperCase()} Ultimate AI:</strong><br/>`
-        for (const {p, a} of top) {
-            const color = a < troopArr.length ? troopArr[a].color : (a === ULT_UPGRADE ? 'gold' : 'gray')
-            html += `<div style="margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;">
-                <div style="width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${UltimateBot.actionName(a)}</div>
-                <div style="flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;">
-                    <div style="width: ${p * 100}%; background: ${color}; height: 100%; border-radius: 4px;"></div>
-                </div>
-                <div style="width: 35px; text-align: right;">${(p * 100).toFixed(0)}%</div>
-            </div>`
+        let researchSum = 0, researchBest = -1
+        for (let i = 0; i < troopArr.length; i++) {
+            const p = probs[ULT_RESEARCH0 + i]
+            researchSum += p
+            if (p > 0 && (researchBest < 0 || p > probs[ULT_RESEARCH0 + researchBest])) researchBest = i
         }
+        // rows 0-11 troops, 12 research (all targets), 13 upgrade, 14 wait
+        const rows = probs.slice(0, troopArr.length).concat([researchSum, probs[ULT_UPGRADE], probs[ULT_WAIT]])
+        this.brainHistory.push({rows, research: researchBest >= 0 ? troopArr[researchBest].name : ''})
+        if (this.brainHistory.length > 8) this.brainHistory.shift()
+        const peak = (r: number) => Math.max(...this.brainHistory.map(h => h.rows[r])) * 100
+        const lastResearch = [...this.brainHistory].reverse().find(h => h.research)
+        const bar = (label: string, title: string, color: string, pct: number) => `
+            <div style="margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;" title="${title}">
+                <div style="width: 85px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${label}</div>
+                <div style="flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;">
+                    <div style="width: ${pct}%; background: ${color}; height: 100%; border-radius: 4px; transition: width 0.2s ease-out;"></div>
+                </div>
+                <div style="width: 35px; text-align: right;">${pct.toFixed(0)}%</div>
+            </div>`
+        let html = `<div style="font-family: monospace;"><strong>${this.side.toUpperCase()} Ultimate AI:</strong><br/>`
+        for (let i = 0; i < troopArr.length; i++) {
+            if (this.unlockedUnits[i]) html += bar(troopArr[i].name, troopArr[i].name, troopArr[i].color, peak(i))
+        }
+        const resName = lastResearch ? lastResearch.research : ''
+        html += bar(resName ? `Res: ${resName}` : 'Research', resName ? `Research ${resName}` : 'Research a new unit',
+            'mediumpurple', peak(troopArr.length))
+        html += bar('Upgrade +20%', 'Increase all troop stats by 20% (1500)', 'gold', peak(troopArr.length + 1))
+        html += bar('wait', 'wait', 'gray', peak(troopArr.length + 2))
         el.innerHTML = html + `</div>`
     }
 }
@@ -2780,6 +2816,7 @@ function initializeUI() {
 
 function resize() {
     document.querySelectorAll('button').forEach(e => {
+        if (e.classList.contains('keep-size')) return
         if (document.body.scrollWidth > 440) {
             e.style.width = 200 + 'px'
             if (darkTheme) e.style.boxShadow = '0 0 15px 4px rgb(14, 14, 14)'
@@ -2898,6 +2935,174 @@ try {
             true, true, [], [])
         initializeUI()
     }
+    // ---------------- Custom match picker: any player/model vs any other ----------------
+    const PLAYER_KINDS = [
+        {key: 'human', label: 'Human', model: false},
+        {key: 'classic', label: 'Classic AI (Player vs AI bot)', model: false},
+        {key: 'dqn', label: 'Local reinforcement AI (DQN)', model: true, defaultModel: 'ultimate_dqn_model.json'},
+        {key: 'ultimate', label: 'Ultimate AI', model: true, defaultModel: 'ultimate_model.json'},
+        {key: 'http', label: 'HTTP bot (server on localhost:6767)', model: false},
+    ]
+    const kindInfo = (key: string) => PLAYER_KINDS.find(k => k.key === key) || PLAYER_KINDS[0]
+    const el = (id: string): any => document.getElementById(id)
+    const custom: any = {cfg: null, tally: {left: 0, right: 0, draw: 0}, recorded: false, timer: null}
+
+    function readSide(side: string) {
+        const kind = el(`${side}Kind`).value
+        const file = el(`${side}File`).files && el(`${side}File`).files[0]
+        return {
+            kind,
+            model: el(`${side}Model`).value.trim() || kindInfo(kind).defaultModel || '',
+            file: kindInfo(kind).model && file ? file : null,
+            greedy: el(`${side}Greedy`).checked,
+        }
+    }
+
+    function refreshPicker() {
+        for (const side of ['left', 'right']) {
+            const info = kindInfo(el(`${side}Kind`).value)
+            el(`${side}ModelBox`).style.display = info.model ? '' : 'none'
+            el(`${side}GreedyBox`).style.display = info.key === 'ultimate' ? '' : 'none'
+            el(`${side}Model`).placeholder = info.defaultModel || ''
+        }
+    }
+
+    function sideName(c: any) {
+        const info = kindInfo(c.kind)
+        if (!info.model) return info.label
+        const src = c.file ? c.file.name : c.model
+        return `${info.key === 'ultimate' ? 'Ultimate AI' : 'DQN AI'} (${src.split('/').pop()}${c.greedy && info.key === 'ultimate' ? ', greedy' : ''})`
+    }
+
+    function makeCustomPlayer(c: any, side: string, money: number): any {
+        const modelUrl = c.file ? (c.fileUrl = c.fileUrl || URL.createObjectURL(c.file)) : c.model
+        const noReload = (b: any) => {
+            // these bots reload the page when they lose; keep the custom match (and its tally) instead
+            b.doesBaseHaveHealth = () => Player.prototype.doesBaseHaveHealth.call(b)
+            return b
+        }
+        switch (c.kind) {
+            case 'classic':
+                return new SimulatingBot(money, side, true)
+            case 'dqn':
+                return noReload(new LocalRLBot(money, side, true, modelUrl, 10))
+            case 'ultimate':
+                return new UltimateBot(money, side, true, modelUrl, c.greedy)
+            case 'http':
+                return noReload(new HttpBot(money, side, true))
+            default:
+                return new Player(money, side, true)
+        }
+    }
+
+    function showMatchInfo(status: string = '') {
+        const c = custom.cfg, t = custom.tally
+        el('matchInfo').style.display = 'block'
+        el('matchText').innerHTML = `<b style="color: royalblue">${sideName(c.left)}</b> ${t.left} : ${t.right} ` +
+            `<b style="color: crimson">${sideName(c.right)}</b> &nbsp;·&nbsp; draws ${t.draw}` + (status ? ` &nbsp;·&nbsp; ${status}` : '')
+    }
+
+    function startCustomMatch() {
+        const c = custom.cfg
+        if (game) game.stopped = true
+        // remove the previous match's troop buttons before human players create new ones
+        for (const side of ['left', 'right']) el(side).querySelectorAll('button, br, hr').forEach(e => e.remove())
+        el('ai-stats-left').innerHTML = el('ai-stats-right').innerHTML = ''
+        el('leftMoney').innerHTML = el('rightMoney').innerHTML = `Money: ${c.money}`
+        const left = makeCustomPlayer(c.left, 'left', c.money)
+        const right = makeCustomPlayer(c.right, 'right', c.money)
+        custom.recorded = false
+        game = new Game(left, right, true, true, [], [], c.speed)
+        initializeUI()
+        showMatchInfo('playing…')
+        if (!custom.timer) custom.timer = setInterval(watchCustomMatch, 250)
+    }
+
+    function watchCustomMatch() {
+        if (!game || custom.recorded || !custom.cfg) return
+        const c = custom.cfg
+        const leftDead = game.playerOneBase.health <= 0, rightDead = game.playerTwoBase.health <= 0
+        const timeUp = c.limit > 0 && game.time >= c.limit * 60 * 60
+        if (!leftDead && !rightDead && !timeUp) return
+        custom.recorded = true
+        let status
+        if (leftDead && !rightDead) { custom.tally.right++; status = 'right won' }
+        else if (rightDead && !leftDead) { custom.tally.left++; status = 'left won' }
+        else { custom.tally.draw++; status = timeUp ? `draw (${c.limit} min limit)` : 'draw'; game.stopped = true }
+        const botsOnly = c.left.kind !== 'human' && c.right.kind !== 'human'
+        showMatchInfo(status + (c.repeat && botsOnly ? ' — next game in 3 s' : ''))
+        if (c.repeat && botsOnly) setTimeout(() => { if (custom.recorded) startCustomMatch() }, 3000)
+    }
+
+    function launchCustom(cfg: any) {
+        custom.cfg = cfg
+        custom.tally = {left: 0, right: 0, draw: 0}
+        // shareable / reloadable link (uploaded files can't go into a URL)
+        const q = new URLSearchParams({
+            mode: 'custom', left: cfg.left.kind, right: cfg.right.kind, speed: String(cfg.speed),
+            money: String(cfg.money), limit: String(cfg.limit), repeat: cfg.repeat ? '1' : '0',
+        })
+        for (const [side, c] of [['l', cfg.left], ['r', cfg.right]] as Array<[string, any]>) {
+            if (kindInfo(c.kind).model && !c.file) q.set(`${side}model`, c.model)
+            if (c.greedy) q.set(`${side}greedy`, '1')
+        }
+        history.replaceState(null, '', '?' + q.toString())
+        startCustomMatch()
+    }
+
+    function pickerConfig() {
+        return {
+            left: readSide('left'), right: readSide('right'),
+            speed: Math.max(1, parseInt(el('pickSpeed').value) || 1),
+            money: Math.max(0, parseFloat(el('pickMoney').value) || 0),
+            limit: Math.max(0, parseFloat(el('pickLimit').value) || 0),
+            repeat: el('pickRepeat').checked,
+        }
+    }
+
+    for (const side of ['left', 'right']) {
+        el(`${side}Kind`).innerHTML = PLAYER_KINDS.map(k => `<option value="${k.key}">${k.label}</option>`).join('')
+        el(`${side}Kind`).addEventListener('change', refreshPicker)
+    }
+    el('leftKind').value = 'human'
+    el('rightKind').value = 'ultimate'
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('mode') === 'custom') {
+        // prefill from the URL
+        for (const [side, s] of [['left', 'l'], ['right', 'r']]) {
+            if (params.get(side) && PLAYER_KINDS.some(k => k.key === params.get(side))) el(`${side}Kind`).value = params.get(side)
+            el(`${side}Model`).value = params.get(`${s}model`) || ''
+            el(`${side}Greedy`).checked = params.get(`${s}greedy`) === '1'
+        }
+        if (params.get('speed')) el('pickSpeed').value = params.get('speed')
+        if (params.get('money')) el('pickMoney').value = params.get('money')
+        if (params.get('limit')) el('pickLimit').value = params.get('limit')
+        el('pickRepeat').checked = params.get('repeat') === '1'
+    }
+    refreshPicker()
+    el('customBtn').addEventListener('click', () => {
+        el('menuButtons').style.display = 'none'
+        el('customPanel').style.display = 'block'
+    })
+    el('pickBack').addEventListener('click', () => {
+        el('customPanel').style.display = 'none'
+        el('menuButtons').style.display = ''
+    })
+    el('pickSwap').addEventListener('click', () => {
+        for (const f of ['Kind', 'Model', 'Greedy']) {
+            const prop = f === 'Greedy' ? 'checked' : 'value'
+            const tmp = el(`left${f}`)[prop]
+            el(`left${f}`)[prop] = el(`right${f}`)[prop]
+            el(`right${f}`)[prop] = tmp
+        }
+        el('leftFile').value = el('rightFile').value = ''  // file inputs can't be swapped
+        refreshPicker()
+    })
+    el('pickStart').addEventListener('click', () => launchCustom(pickerConfig()))
+    el('matchRematch').addEventListener('click', () => { if (custom.cfg) startCustomMatch() })
+    el('matchMenu').addEventListener('click', () => window.open('?', '_self'))
+    if (params.get('mode') === 'custom') launchCustom(pickerConfig())
+
     console.log(new URLSearchParams(window.location.search).get('mode'))
 
     document.getElementById('pl').addEventListener('click', () => {
