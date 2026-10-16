@@ -227,6 +227,7 @@
                 <div class="col picker-side">
                     <div class="picker-title" style="color: royalblue">Left</div>
                     <select id="leftKind" class="picker"></select>
+                    <label class="picker-small">Max troops <input id="leftMax" class="picker picker-inline" type="number" min="1" max="50" style="width: 60px"></label>
                     <div id="leftModelBox" class="picker-model">
                         <input id="leftModel" class="picker" type="text" placeholder="model URL">
                         <label class="picker-small">or file: <input id="leftFile" type="file" accept=".json,application/json"></label>
@@ -236,6 +237,7 @@
                 <div class="col picker-side">
                     <div class="picker-title" style="color: crimson">Right</div>
                     <select id="rightKind" class="picker"></select>
+                    <label class="picker-small">Max troops <input id="rightMax" class="picker picker-inline" type="number" min="1" max="50" style="width: 60px"></label>
                     <div id="rightModelBox" class="picker-model">
                         <input id="rightModel" class="picker" type="text" placeholder="model URL">
                         <label class="picker-small">or file: <input id="rightFile" type="file" accept=".json,application/json"></label>
@@ -251,7 +253,8 @@
                 <label>Draw after <input id="pickLimit" class="picker picker-inline" type="number" min="0" value="15" style="width: 55px"> min</label>
                 <label><input id="pickRepeat" type="checkbox"> auto-repeat (bots only)</label>
             </div>
-            <p class="picker-small" style="margin: 2px 0 6px">Speed 1× = normal game speed. "Draw after" uses game time (0 = no limit).</p>
+            <p class="picker-small" style="margin: 2px 0 6px">Speed 1× = normal game speed. "Draw after" uses game time (0 = no limit). Empty max troops = default
+                (the AIs were trained with Ultimate/DQN 10, Classic 7; the Ultimate AI only sees its first 10 units).</p>
             <button id="pickSwap" class="keep-size" style="width: 120px">⇄ Swap</button>
             <button id="pickStart" class="keep-size" style="width: 160px; font-weight: 600">Start</button>
             <button id="pickBack" class="keep-size" style="width: 120px">Back</button>

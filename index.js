@@ -1162,7 +1162,7 @@ var Player = /** @class */ (function () {
                         else if (_this.unlockedUnits[i] && !_this.isEnoughMoney(stat.price)) {
                             _this.redden(button, 280);
                         }
-                        else if (_this.playerUnits.length >= 10) {
+                        else if (_this.playerUnits.length >= _this.maxUnits) {
                             _this.redden(button, 180);
                         }
                         else if (_this.unlockedUnits[i])
@@ -2172,6 +2172,7 @@ var UltimateBot = /** @class */ (function (_super) {
         _this.decisionInterval = 10;
         _this.layers = null;
         _this.lastProbs = null;
+        _this.computeMs = [];
         _this.brainHistory = [];
         _this.greedy = greedy;
         if (modelUrl)
@@ -2371,6 +2372,7 @@ var UltimateBot = /** @class */ (function (_super) {
     UltimateBot.prototype.decide = function (time) {
         if (!this.layers || time % this.decisionInterval !== 0)
             return undefined;
+        var t0 = typeof performance !== 'undefined' ? performance.now() : 0;
         var mask = this.actionMask();
         var logits = this.forward(this.observe());
         var maxL = -Infinity;
@@ -2406,9 +2408,21 @@ var UltimateBot = /** @class */ (function (_super) {
                         break;
                 }
         }
-        if (this.DOMAccess)
+        if (this.DOMAccess) {
+            this.showComputeTime(performance.now() - t0);
             this.showBrain(probs);
+        }
         return action;
+    };
+    /** "Computed in" line, like the other bots: last decision and the average of the last 60. */
+    UltimateBot.prototype.showComputeTime = function (ms) {
+        this.computeMs.push(ms);
+        if (this.computeMs.length > 60)
+            this.computeMs.shift();
+        var avg = this.computeMs.reduce(function (a, b) { return a + b; }, 0) / this.computeMs.length;
+        var perEl = typeof document !== 'undefined' ? document.getElementById("per" + this.side) : null;
+        if (perEl)
+            perEl.innerText = "Computed in: " + ms.toFixed(2) + "ms (avg " + avg.toFixed(2) + "ms)";
     };
     /** Probability bars in a fixed order (like LocalRLBot): every unlocked troop, research, upgrade, wait.
      *  Each bar shows the highest probability over the last 8 decisions so it doesn't flicker. */
@@ -2795,11 +2809,11 @@ try {
     }
     // ---------------- Custom match picker: any player/model vs any other ----------------
     var PLAYER_KINDS_1 = [
-        { key: 'human', label: 'Human', model: false },
-        { key: 'classic', label: 'Classic AI (Player vs AI bot)', model: false },
-        { key: 'dqn', label: 'Local reinforcement AI (DQN)', model: true, defaultModel: 'ultimate_dqn_model.json' },
-        { key: 'ultimate', label: 'Ultimate AI', model: true, defaultModel: 'ultimate_model.json' },
-        { key: 'http', label: 'HTTP bot (server on localhost:6767)', model: false },
+        { key: 'human', label: 'Human', model: false, maxUnits: 10 },
+        { key: 'classic', label: 'Classic AI (Player vs AI bot)', model: false, maxUnits: 7 },
+        { key: 'dqn', label: 'Local reinforcement AI (DQN)', model: true, defaultModel: 'ultimate_dqn_model.json', maxUnits: 10 },
+        { key: 'ultimate', label: 'Ultimate AI', model: true, defaultModel: 'ultimate_model.json', maxUnits: 10 },
+        { key: 'http', label: 'HTTP bot (server on localhost:6767)', model: false, maxUnits: 7 },
     ];
     var kindInfo_1 = function (key) { return PLAYER_KINDS_1.find(function (k) { return k.key === key; }) || PLAYER_KINDS_1[0]; };
     var el_1 = function (id) { return document.getElementById(id); };
@@ -2812,6 +2826,7 @@ try {
             model: el_1(side + "Model").value.trim() || kindInfo_1(kind).defaultModel || '',
             file: kindInfo_1(kind).model && file ? file : null,
             greedy: el_1(side + "Greedy").checked,
+            maxUnits: Math.max(1, Math.min(50, parseInt(el_1(side + "Max").value) || kindInfo_1(kind).maxUnits)),
         };
     }
     function refreshPicker() {
@@ -2821,16 +2836,24 @@ try {
             el_1(side + "ModelBox").style.display = info.model ? '' : 'none';
             el_1(side + "GreedyBox").style.display = info.key === 'ultimate' ? '' : 'none';
             el_1(side + "Model").placeholder = info.defaultModel || '';
+            el_1(side + "Max").placeholder = String(info.maxUnits);
         }
     }
     function sideName(c) {
         var info = kindInfo_1(c.kind);
         if (!info.model)
-            return info.label;
+            return info.label + (c.maxUnits !== info.maxUnits ? " (max " + c.maxUnits + ")" : '');
         var src = c.file ? c.file.name : c.model;
-        return (info.key === 'ultimate' ? 'Ultimate AI' : 'DQN AI') + " (" + src.split('/').pop() + (c.greedy && info.key === 'ultimate' ? ', greedy' : '') + ")";
+        var extras = (c.greedy && info.key === 'ultimate' ? ', greedy' : '') +
+            (c.maxUnits !== info.maxUnits ? ", max " + c.maxUnits : '');
+        return (info.key === 'ultimate' ? 'Ultimate AI' : 'DQN AI') + " (" + src.split('/').pop() + extras + ")";
     }
     function makeCustomPlayer(c, side, money) {
+        var p = makeCustomPlayerOfKind(c, side, money);
+        p.maxUnits = c.maxUnits;
+        return p;
+    }
+    function makeCustomPlayerOfKind(c, side, money) {
         var modelUrl = c.file ? (c.fileUrl = c.fileUrl || URL.createObjectURL(c.file)) : c.model;
         var noReload = function (b) {
             // these bots reload the page when they lose; keep the custom match (and its tally) instead
@@ -2920,6 +2943,8 @@ try {
                 q.set(side + "model", c.model);
             if (c.greedy)
                 q.set(side + "greedy", '1');
+            if (c.maxUnits !== kindInfo_1(c.kind).maxUnits)
+                q.set(side + "max", String(c.maxUnits));
         }
         history.replaceState(null, '', '?' + q.toString());
         startCustomMatch();
@@ -2947,6 +2972,7 @@ try {
                 el_1(side + "Kind").value = params_1.get(side);
             el_1(side + "Model").value = params_1.get(s + "model") || '';
             el_1(side + "Greedy").checked = params_1.get(s + "greedy") === '1';
+            el_1(side + "Max").value = params_1.get(s + "max") || '';
         };
         // prefill from the URL
         for (var _b = 0, _c = [['left', 'l'], ['right', 'r']]; _b < _c.length; _b++) {
@@ -2971,7 +2997,7 @@ try {
         el_1('menuButtons').style.display = '';
     });
     el_1('pickSwap').addEventListener('click', function () {
-        for (var _i = 0, _a = ['Kind', 'Model', 'Greedy']; _i < _a.length; _i++) {
+        for (var _i = 0, _a = ['Kind', 'Model', 'Greedy', 'Max']; _i < _a.length; _i++) {
             var f = _a[_i];
             var prop = f === 'Greedy' ? 'checked' : 'value';
             var tmp = el_1("left" + f)[prop];

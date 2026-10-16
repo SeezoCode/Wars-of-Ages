@@ -1272,7 +1272,7 @@ class Player implements playerInterface {
                     if (!this.unlockedUnits[i]) this.purchaseUnit(i, button)
                     else if (this.unlockedUnits[i] && !this.isEnoughMoney(stat.price)) {
                         this.redden(button, 280)
-                    } else if (this.playerUnits.length >= 10) {
+                    } else if (this.playerUnits.length >= this.maxUnits) {
                         this.redden(button, 180)
                     } else if (this.unlockedUnits[i]) this.addTroop(i)
                     if (this.checkForMoneyAvail) document.getElementById(`${this.side}Money`).innerHTML = `Money: ${Math.round(this.money)}`
@@ -2481,9 +2481,12 @@ class UltimateBot extends Player {
         return x
     }
 
+    private computeMs: Array<number> = []
+
     /** Called by Game.move() before each tick; returns an action on decision ticks. */
     decide(time: number): number | undefined {
         if (!this.layers || time % this.decisionInterval !== 0) return undefined
+        const t0 = typeof performance !== 'undefined' ? performance.now() : 0
         const mask = this.actionMask()
         const logits = this.forward(this.observe())
         let maxL = -Infinity
@@ -2511,8 +2514,20 @@ class UltimateBot extends Player {
                 if (r <= 0) break
             }
         }
-        if (this.DOMAccess) this.showBrain(probs)
+        if (this.DOMAccess) {
+            this.showComputeTime(performance.now() - t0)
+            this.showBrain(probs)
+        }
         return action
+    }
+
+    /** "Computed in" line, like the other bots: last decision and the average of the last 60. */
+    private showComputeTime(ms: number) {
+        this.computeMs.push(ms)
+        if (this.computeMs.length > 60) this.computeMs.shift()
+        const avg = this.computeMs.reduce((a, b) => a + b, 0) / this.computeMs.length
+        const perEl = typeof document !== 'undefined' ? document.getElementById(`per${this.side}`) : null
+        if (perEl) perEl.innerText = `Computed in: ${ms.toFixed(2)}ms (avg ${avg.toFixed(2)}ms)`
     }
 
     private brainHistory: Array<{ rows: Array<number>, research: string }> = []
@@ -2937,11 +2952,11 @@ try {
     }
     // ---------------- Custom match picker: any player/model vs any other ----------------
     const PLAYER_KINDS = [
-        {key: 'human', label: 'Human', model: false},
-        {key: 'classic', label: 'Classic AI (Player vs AI bot)', model: false},
-        {key: 'dqn', label: 'Local reinforcement AI (DQN)', model: true, defaultModel: 'ultimate_dqn_model.json'},
-        {key: 'ultimate', label: 'Ultimate AI', model: true, defaultModel: 'ultimate_model.json'},
-        {key: 'http', label: 'HTTP bot (server on localhost:6767)', model: false},
+        {key: 'human', label: 'Human', model: false, maxUnits: 10},
+        {key: 'classic', label: 'Classic AI (Player vs AI bot)', model: false, maxUnits: 7},
+        {key: 'dqn', label: 'Local reinforcement AI (DQN)', model: true, defaultModel: 'ultimate_dqn_model.json', maxUnits: 10},
+        {key: 'ultimate', label: 'Ultimate AI', model: true, defaultModel: 'ultimate_model.json', maxUnits: 10},
+        {key: 'http', label: 'HTTP bot (server on localhost:6767)', model: false, maxUnits: 7},
     ]
     const kindInfo = (key: string) => PLAYER_KINDS.find(k => k.key === key) || PLAYER_KINDS[0]
     const el = (id: string): any => document.getElementById(id)
@@ -2955,6 +2970,7 @@ try {
             model: el(`${side}Model`).value.trim() || kindInfo(kind).defaultModel || '',
             file: kindInfo(kind).model && file ? file : null,
             greedy: el(`${side}Greedy`).checked,
+            maxUnits: Math.max(1, Math.min(50, parseInt(el(`${side}Max`).value) || kindInfo(kind).maxUnits)),
         }
     }
 
@@ -2964,17 +2980,26 @@ try {
             el(`${side}ModelBox`).style.display = info.model ? '' : 'none'
             el(`${side}GreedyBox`).style.display = info.key === 'ultimate' ? '' : 'none'
             el(`${side}Model`).placeholder = info.defaultModel || ''
+            el(`${side}Max`).placeholder = String(info.maxUnits)
         }
     }
 
     function sideName(c: any) {
         const info = kindInfo(c.kind)
-        if (!info.model) return info.label
+        if (!info.model) return info.label + (c.maxUnits !== info.maxUnits ? ` (max ${c.maxUnits})` : '')
         const src = c.file ? c.file.name : c.model
-        return `${info.key === 'ultimate' ? 'Ultimate AI' : 'DQN AI'} (${src.split('/').pop()}${c.greedy && info.key === 'ultimate' ? ', greedy' : ''})`
+        const extras = (c.greedy && info.key === 'ultimate' ? ', greedy' : '') +
+            (c.maxUnits !== info.maxUnits ? `, max ${c.maxUnits}` : '')
+        return `${info.key === 'ultimate' ? 'Ultimate AI' : 'DQN AI'} (${src.split('/').pop()}${extras})`
     }
 
     function makeCustomPlayer(c: any, side: string, money: number): any {
+        const p = makeCustomPlayerOfKind(c, side, money)
+        p.maxUnits = c.maxUnits
+        return p
+    }
+
+    function makeCustomPlayerOfKind(c: any, side: string, money: number): any {
         const modelUrl = c.file ? (c.fileUrl = c.fileUrl || URL.createObjectURL(c.file)) : c.model
         const noReload = (b: any) => {
             // these bots reload the page when they lose; keep the custom match (and its tally) instead
@@ -3045,6 +3070,7 @@ try {
         for (const [side, c] of [['l', cfg.left], ['r', cfg.right]] as Array<[string, any]>) {
             if (kindInfo(c.kind).model && !c.file) q.set(`${side}model`, c.model)
             if (c.greedy) q.set(`${side}greedy`, '1')
+            if (c.maxUnits !== kindInfo(c.kind).maxUnits) q.set(`${side}max`, String(c.maxUnits))
         }
         history.replaceState(null, '', '?' + q.toString())
         startCustomMatch()
@@ -3073,6 +3099,7 @@ try {
             if (params.get(side) && PLAYER_KINDS.some(k => k.key === params.get(side))) el(`${side}Kind`).value = params.get(side)
             el(`${side}Model`).value = params.get(`${s}model`) || ''
             el(`${side}Greedy`).checked = params.get(`${s}greedy`) === '1'
+            el(`${side}Max`).value = params.get(`${s}max`) || ''
         }
         if (params.get('speed')) el('pickSpeed').value = params.get('speed')
         if (params.get('money')) el('pickMoney').value = params.get('money')
@@ -3089,7 +3116,7 @@ try {
         el('menuButtons').style.display = ''
     })
     el('pickSwap').addEventListener('click', () => {
-        for (const f of ['Kind', 'Model', 'Greedy']) {
+        for (const f of ['Kind', 'Model', 'Greedy', 'Max']) {
             const prop = f === 'Greedy' ? 'checked' : 'value'
             const tmp = el(`left${f}`)[prop]
             el(`left${f}`)[prop] = el(`right${f}`)[prop]
