@@ -1,7 +1,7 @@
 // Speed of the original JS engine (index.js) on the same workload as the Rust benchmark
 // (rl/engine/src/bin/bench.rs): agents observe every 10 ticks and act randomly 30% of the
 // time, games end at 36 000 ticks or when a base falls.
-//   node rl/parity/bench_js.js [games]
+//   node rl/parity/bench_js.js [games] [max seconds per matchup]
 const path = require('path')
 global.document = {getElementById: () => ({style: {}}), querySelector: () => null,
     querySelectorAll: () => [], getElementsByClassName: () => []}
@@ -45,17 +45,20 @@ function make(kind, side) {
     return b
 }
 const games = +(process.argv[2] || 6)
+const budget = +(process.argv[3] || 120)
 for (const [l, r] of [['agent', 'agent'], ['agent', 'classic'], ['agent', 'dqn']]) {
     const t0 = performance.now()
     let ticks = 0
     for (let g = 0; g < games; g++) {
         const game = new idx.Game(make(l, 'left'), make(r, 'right'), false, false, [], [])
-        while (game.time < 36000 && game.playerOneBase.health > 0 && game.playerTwoBase.health > 0) {
+        while (game.time < 36000 && game.playerOneBase.health > 0 && game.playerTwoBase.health > 0 &&
+               performance.now() - t0 < budget * 1000) {
             while (replies.length) { const x = replies.shift(); x.worker.onmessage({data: x.data}) }
             game.move()
         }
         ticks += game.time
+        if (performance.now() - t0 >= budget * 1000) break
     }
     const dt = (performance.now() - t0) / 1000
-    out(`JS   ${l} vs ${r}: ${Math.round(ticks / dt)} ticks/s (${games} games, ${dt.toFixed(1)} s)`)
+    out(`JS   ${l} vs ${r}: ${Math.round(ticks / dt)} ticks/s (${ticks} ticks in ${dt.toFixed(1)} s)`)
 }
