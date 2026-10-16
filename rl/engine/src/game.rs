@@ -7,7 +7,7 @@
 //! - `AtomicTroop.isInFront` loses health on *every* call, so call order and
 //!   short-circuiting are reproduced exactly.
 //! - A front ranged unit can get `timeAttack` called twice per tick (melee + range).
-//! - `setTimeout`-based effects (atomic fallout) are converted to ticks at 60 ticks/s.
+//! - Atomic fallout lasts `ATOMIC_DOOM_TICKS` after the latest bomb explodes (tick-based, as in index.ts).
 //!
 //! `rl/parity` checks this file against the real `index.js` tick by tick.
 
@@ -201,8 +201,8 @@ pub struct Game {
     pub players: [Player; 2],
     pub time: i64,
     pub atomic_doom: bool,
-    /// Pending `setTimeout(() => atomicDoomPending = false, 22000)` callbacks, as fire ticks.
-    pub doom_timers: Vec<i64>,
+    /// Fallout ends at the start of the move made at this time (`Game.atomicDoomUntil`).
+    pub doom_until: i64,
     pub rng: Rng,
     /// The classic bot's Web Worker runs in its own JS realm with its own `Math.random`.
     pub worker_rng: Rng,
@@ -214,8 +214,6 @@ pub struct Game {
     /// Extra reply delay: one tick per this many unit-ticks the JS worker simulates
     /// (~60k per 16.7 ms frame measured in V8). 0 disables (parity tests).
     pub worker_unit_ticks_per_frame: f64,
-    /// Worker-simulation games never fire timers (they run synchronously in the worker).
-    pub sim: bool,
 }
 
 pub const ATOMIC_DOOM_TICKS: i64 = 1320; // 22 s at 60 ticks/s
@@ -326,10 +324,7 @@ fn attack_base_hit(u: &mut Unit, base: &mut Base, dmg: &mut f64) {
 
 /// `unit.timeAttackBase(time, base, stats)` (Trooper / ExplodingTroop versions).
 #[inline]
-fn time_attack_base(u: &mut Unit, time: f64, base: &mut Base, dmg: &mut f64, anim: &mut bool) {
-    if u.kind == ATOMIC_BOMB {
-        *anim = true; // deleteAnim -> holdDeathAnim
-    }
+fn time_attack_base(u: &mut Unit, time: f64, base: &mut Base, dmg: &mut f64) {
     match u.target_time {
         None => u.target_time = Some(time + u.attack_speed),
         Some(t) => {
@@ -349,7 +344,6 @@ fn time_attack(
     enemy_base: &mut Base,
     dmg: &mut f64,
     rng: &mut Rng,
-    anim: &mut bool,
 ) {
     if u.kind == TREBUCHET {
         let in_range = match u.side {
@@ -357,7 +351,7 @@ fn time_attack(
             Side::Right => u.position - u.range - 55.0 < 0.0,
         };
         if in_range {
-            time_attack_base(u, time, enemy_base, dmg, anim);
+            time_attack_base(u, time, enemy_base, dmg);
         } else if let Some(e) = enemies.first() {
             // anti-stalemate decay against blocking trebuchets/catapults
             if e.kind == TREBUCHET || e.kind == CATAPULT {
@@ -369,9 +363,6 @@ fn time_attack(
             }
         }
         return;
-    }
-    if u.kind == ATOMIC_BOMB {
-        *anim = true;
     }
     match u.target_time {
         None => u.target_time = Some(time + u.attack_speed),
@@ -390,14 +381,13 @@ impl Game {
             players: [left, right],
             time: 0,
             atomic_doom: false,
-            doom_timers: Vec::new(),
+            doom_until: 0,
             rng,
             worker_rng,
             nuke_freeze_ticks: 0,
             freeze_until: i64::MIN / 2,
             worker_latency: 1,
             worker_unit_ticks_per_frame: 0.0,
-            sim: false,
         }
     }
 
@@ -427,17 +417,17 @@ impl Game {
         self.players[0].base.health <= 0.0 || self.players[1].base.health <= 0.0
     }
 
-    /// Work that happens between animation frames: expired `setTimeout`s and worker
+    #[inline]
+    fn expire_fallout(&mut self) {
+        if self.atomic_doom && self.time >= self.doom_until {
+            self.atomic_doom = false;
+        }
+    }
+
+    /// Work that happens between animation frames: fallout expiry and worker
     /// replies. Call once before each `tick` (the env and the parity harness do).
     pub fn pre_tick(&mut self) {
-        if !self.doom_timers.is_empty() {
-            let now = self.time;
-            let before = self.doom_timers.len();
-            self.doom_timers.retain(|&t| t > now);
-            if self.doom_timers.len() != before {
-                self.atomic_doom = false;
-            }
-        }
+        self.expire_fallout();
         for p in 0..2 {
             if let Controller::Classic(_) = self.players[p].controller {
                 classic::deliver_worker_reply(self, p);
@@ -447,6 +437,7 @@ impl Game {
 
     /// `Game.move()` (minus drawing).
     pub fn tick(&mut self) {
+        self.expire_fallout(); // start of Game.move (also covers worker simulations, which skip pre_tick)
         self.time += 1;
         self.move_army(0);
         self.move_army(1);
@@ -546,21 +537,14 @@ impl Game {
 
     fn attack_enemy_troop(&mut self, p: usize) {
         let time = self.time as f64;
-        let mut anim = false;
-        {
-            let Game { players, rng, .. } = self;
-            let (me, en) = Self::split(players, p);
-            let Player { units, damage_dealt, .. } = me;
-            time_attack(&mut units[0], time, &mut en.units, &mut en.base, damage_dealt, rng, &mut anim);
-        }
-        if anim {
-            self.trigger_nuke_anim();
-        }
+        let Game { players, rng, .. } = self;
+        let (me, en) = Self::split(players, p);
+        let Player { units, damage_dealt, .. } = me;
+        time_attack(&mut units[0], time, &mut en.units, &mut en.base, damage_dealt, rng);
     }
 
     fn handle_range_attack(&mut self, p: usize) {
         let time = self.time as f64;
-        let mut anim = false;
         {
             let Game { players, rng, .. } = self;
             let (me, en) = Self::split(players, p);
@@ -574,19 +558,15 @@ impl Game {
                         Side::Right => u.position - u.range <= front,
                     };
                     if ok {
-                        time_attack(u, time, &mut en.units, &mut en.base, damage_dealt, rng, &mut anim);
+                        time_attack(u, time, &mut en.units, &mut en.base, damage_dealt, rng);
                     }
                 }
             }
-        }
-        if anim {
-            self.trigger_nuke_anim();
         }
     }
 
     fn attack_base(&mut self, p: usize) {
         let time = self.time as f64;
-        let mut anim = false;
         {
             let (me, en) = Self::split(&mut self.players, p);
             let side = me.side;
@@ -597,12 +577,9 @@ impl Game {
                     Side::Right => u.position <= 55.0 + u.range,
                 };
                 if ok {
-                    time_attack_base(u, time, &mut en.base, damage_dealt, &mut anim);
+                    time_attack_base(u, time, &mut en.base, damage_dealt);
                 }
             }
-        }
-        if anim {
-            self.trigger_nuke_anim();
         }
     }
 
@@ -632,13 +609,11 @@ impl Game {
                 i += 1;
             }
         }
-        for _ in 0..bombs_died {
+        if bombs_died > 0 {
+            // explosion animation (movement freeze) + fallout for ATOMIC_DOOM_TICKS after the latest bomb
             self.trigger_nuke_anim();
             self.atomic_doom = true;
-            if !self.sim {
-                // setTimeout registered during the move that started at time-1
-                self.doom_timers.push(self.time - 1 + ATOMIC_DOOM_TICKS);
-            }
+            self.doom_until = self.doom_until.max(self.time + ATOMIC_DOOM_TICKS);
         }
     }
 }

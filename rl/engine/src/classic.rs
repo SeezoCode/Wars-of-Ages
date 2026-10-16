@@ -287,7 +287,6 @@ pub fn simulate(units_left: &[usize], units_right: &[usize], rng: &mut Rng) -> S
         right.add_troop(k);
     }
     let mut g = Game::new(left, right, *rng, Rng::new(0));
-    g.sim = true;
     let mut work = 0.0;
     let mut checkpoint: Vec<f64> = Vec::new();
     let mut scratch: Vec<f64> = Vec::new();

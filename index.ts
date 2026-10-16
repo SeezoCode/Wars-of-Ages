@@ -484,18 +484,6 @@ class CatapultTroop extends Trooper {
 class ExplodingTroop extends Trooper {
     constructor(side: string, player: playerInterface, enemy: playerInterface, multiplier: number, specialParameters: object = {}, troopStats: trooperStatsInterface = troopArr[6]) {
         super(troopStats, side, player.visualize, multiplier, specialParameters);
-        // @ts-ignore
-        if (player.visualize) Array.from(document.getElementsByClassName(`${this.side}Button`)).forEach(btn => {
-            if (btn.id === troopArr[6].name) {
-                // @ts-ignore
-                btn.disabled = true
-                setTimeout(() => {
-                    // @ts-ignore
-                    btn.disabled = false
-                }, 400)
-            }
-        })
-
     }
 
     attack(enemyTroopers, stats) {
@@ -656,16 +644,6 @@ class AtomicBomb extends ExplodingTroop {
     // enemy: playerInterface
     constructor(side: string, player: playerInterface, enemy: playerInterface, multiplier: number, specialParameters: object = {}) {
         super(side, player, enemy, multiplier, specialParameters, troopArr[10]);
-        // this.player = player
-        // this.enemy = enemy
-        if (this.visualize) document.querySelectorAll('button').forEach(e => {
-            if (e.id === troopArr[10].name) {
-                e.disabled = true
-                setTimeout(() => {
-                    e.removeAttribute('disabled')
-                }, 100000)
-            }
-        })
     }
 
     attack(enemyTroopers: Array<trooperStatsInterface>) {
@@ -673,7 +651,8 @@ class AtomicBomb extends ExplodingTroop {
     }
 
     deleteAnim() {
-        if (this.visualize) holdDeathAnim(this.position, this.span, this.visualize)
+        // ExplodingTroop calls deleteAnim on every attack-timer tick; only the actual explosion animates
+        if (this.visualize && this.health <= 0) holdDeathAnim(this.position, this.span, this.visualize)
     }
 
     draw() {
@@ -688,35 +667,51 @@ class BossTroop extends Trooper {
     }
 }
 
+const ATOMIC_DOOM_TICKS = 1320  // 22 s of fallout at 60 ticks/s
+// One nuke animation at a time: a new explosion restarts it instead of stacking another loop
+const deathAnim = {frame: 0, running: false, position: 0, span: 0, restoreTimer: null}
+
+function endRadioactivity() {
+    radioactivityPending = false
+    document.body.style.backgroundColor = bgColor
+    document.querySelectorAll('button').forEach(e => {
+        e.style.backgroundColor = buttonBg
+        e.style.color = buttonColor
+    })
+}
+
 function holdDeathAnim(position: number, span: number, visualize: boolean) {
     if (!visualize) return
-    let i = 0
+    deathAnim.position = position
+    deathAnim.span = span
+    deathAnim.frame = 0
+    if (deathAnim.restoreTimer) {
+        clearTimeout(deathAnim.restoreTimer)
+        deathAnim.restoreTimer = null
+    }
     document.body.style.backgroundColor = 'rgb(26,38,26)'
     document.querySelectorAll('button').forEach(e => {
         e.style.backgroundColor = 'rgb(22,48,6)'
         e.style.color = 'rgb(166,172,154)'
     })
+    if (deathAnim.running) return
+    deathAnim.running = true
     requestAnimationFrame(hold)
 
     function hold() {
         deathAnimPending = true
-        i += gameSpeed
-        cx.globalAlpha = i / 100
-        cx.drawImage(explosionAtomicIMG, position - 171 / 2 + span / 4, 20);
+        deathAnim.frame += gameSpeed
+        cx.globalAlpha = Math.min(1, deathAnim.frame / 100)
+        cx.drawImage(explosionAtomicIMG, deathAnim.position - 171 / 2 + deathAnim.span / 4, 20);
         cx.globalAlpha = 1
 
-        if (i <= 45) requestAnimationFrame(hold)
+        if (deathAnim.frame <= 45) requestAnimationFrame(hold)
         else {
+            deathAnim.running = false
             deathAnimPending = false
             radioactivityPending = true
-            setTimeout(() => {
-                radioactivityPending = false
-                document.body.style.backgroundColor = bgColor
-                document.querySelectorAll('button').forEach(e => {
-                    e.style.backgroundColor = buttonBg
-                    e.style.color = buttonColor
-                })
-            }, 22000 / gameSpeed)
+            // the fallout look lasts as long as the fallout (22 s of game time after the latest bomb)
+            deathAnim.restoreTimer = setTimeout(endRadioactivity, 22000 / gameSpeed)
         }
     }
 }
@@ -806,6 +801,7 @@ interface gameInterface {
     visualize: boolean
     DOMAccess: boolean
     atomicDoomPending: boolean
+    atomicDoomUntil: number
     moveCount: number
 
     boomerDoomer(position: number): void;
@@ -819,6 +815,7 @@ class Game implements gameInterface {
     players: Array<playerInterface>
     time: number = 0
     atomicDoomPending: boolean = false;
+    atomicDoomUntil: number = 0  // game time at which the fallout ends
     msTime: number
     visualize: boolean
     DOMAccess: boolean
@@ -853,6 +850,8 @@ class Game implements gameInterface {
     }
 
     move() {
+        if (this.atomicDoomPending && this.time >= this.atomicDoomUntil) this.atomicDoomPending = false
+
         // Between-tick decisions for policy bots (UltimateBot): both decide from the same
         // state, then act left player first. Mirrors Env::step in rl/engine/src/env.rs.
         const decisions = this.players.map(p => (p as any).decide ? (p as any).decide(this.time) : undefined)
@@ -1173,10 +1172,9 @@ class Player implements playerInterface {
                 if (playerUnit.health <= 0) {
                     playerUnit.deleteAnim()
                     if (playerUnit.name === troopArr[10].name) {
+                        // fallout lasts 22 s (1320 ticks) after the latest bomb, at any game speed
                         this.game.atomicDoomPending = true
-                        setTimeout(() => {
-                            this.game.atomicDoomPending = false
-                        }, 22000 / (this.visualize ? gameSpeed : 1))  // 22 s = 1320 ticks at any speed
+                        this.game.atomicDoomUntil = Math.max(this.game.atomicDoomUntil, this.game.time + ATOMIC_DOOM_TICKS)
                     } else if (playerUnit.name === troopArr[6].name) {
                         this.game.boomerDoomer(playerUnit.position)
                         enemy.addFunds(playerUnit.price * 2.5)
@@ -1272,6 +1270,8 @@ class Player implements playerInterface {
                     if (!this.unlockedUnits[i]) this.purchaseUnit(i, button)
                     else if (this.unlockedUnits[i] && !this.isEnoughMoney(stat.price)) {
                         this.redden(button, 280)
+                    } else if (i === 10 && this.game.atomicDoomPending) {
+                        this.redden(button, 280)  // no new bomb during fallout (same rule as the AIs and the server)
                     } else if (this.playerUnits.length >= this.maxUnits) {
                         this.redden(button, 180)
                     } else if (this.unlockedUnits[i]) this.addTroop(i)

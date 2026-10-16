@@ -498,20 +498,7 @@ var ExplodingTroop = /** @class */ (function (_super) {
     function ExplodingTroop(side, player, enemy, multiplier, specialParameters, troopStats) {
         if (specialParameters === void 0) { specialParameters = {}; }
         if (troopStats === void 0) { troopStats = troopArr[6]; }
-        var _this = _super.call(this, troopStats, side, player.visualize, multiplier, specialParameters) || this;
-        // @ts-ignore
-        if (player.visualize)
-            Array.from(document.getElementsByClassName(_this.side + "Button")).forEach(function (btn) {
-                if (btn.id === troopArr[6].name) {
-                    // @ts-ignore
-                    btn.disabled = true;
-                    setTimeout(function () {
-                        // @ts-ignore
-                        btn.disabled = false;
-                    }, 400);
-                }
-            });
-        return _this;
+        return _super.call(this, troopStats, side, player.visualize, multiplier, specialParameters) || this;
     }
     ExplodingTroop.prototype.attack = function (enemyTroopers, stats) {
         if (enemyTroopers[0]) {
@@ -668,25 +655,14 @@ var AtomicBomb = /** @class */ (function (_super) {
     // enemy: playerInterface
     function AtomicBomb(side, player, enemy, multiplier, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
-        var _this = _super.call(this, side, player, enemy, multiplier, specialParameters, troopArr[10]) || this;
-        // this.player = player
-        // this.enemy = enemy
-        if (_this.visualize)
-            document.querySelectorAll('button').forEach(function (e) {
-                if (e.id === troopArr[10].name) {
-                    e.disabled = true;
-                    setTimeout(function () {
-                        e.removeAttribute('disabled');
-                    }, 100000);
-                }
-            });
-        return _this;
+        return _super.call(this, side, player, enemy, multiplier, specialParameters, troopArr[10]) || this;
     }
     AtomicBomb.prototype.attack = function (enemyTroopers) {
         this.health = 0;
     };
     AtomicBomb.prototype.deleteAnim = function () {
-        if (this.visualize)
+        // ExplodingTroop calls deleteAnim on every attack-timer tick; only the actual explosion animates
+        if (this.visualize && this.health <= 0)
             holdDeathAnim(this.position, this.span, this.visualize);
     };
     AtomicBomb.prototype.draw = function () {
@@ -704,35 +680,50 @@ var BossTroop = /** @class */ (function (_super) {
     }
     return BossTroop;
 }(Trooper));
+var ATOMIC_DOOM_TICKS = 1320; // 22 s of fallout at 60 ticks/s
+// One nuke animation at a time: a new explosion restarts it instead of stacking another loop
+var deathAnim = { frame: 0, running: false, position: 0, span: 0, restoreTimer: null };
+function endRadioactivity() {
+    radioactivityPending = false;
+    document.body.style.backgroundColor = bgColor;
+    document.querySelectorAll('button').forEach(function (e) {
+        e.style.backgroundColor = buttonBg;
+        e.style.color = buttonColor;
+    });
+}
 function holdDeathAnim(position, span, visualize) {
     if (!visualize)
         return;
-    var i = 0;
+    deathAnim.position = position;
+    deathAnim.span = span;
+    deathAnim.frame = 0;
+    if (deathAnim.restoreTimer) {
+        clearTimeout(deathAnim.restoreTimer);
+        deathAnim.restoreTimer = null;
+    }
     document.body.style.backgroundColor = 'rgb(26,38,26)';
     document.querySelectorAll('button').forEach(function (e) {
         e.style.backgroundColor = 'rgb(22,48,6)';
         e.style.color = 'rgb(166,172,154)';
     });
+    if (deathAnim.running)
+        return;
+    deathAnim.running = true;
     requestAnimationFrame(hold);
     function hold() {
         deathAnimPending = true;
-        i += gameSpeed;
-        cx.globalAlpha = i / 100;
-        cx.drawImage(explosionAtomicIMG, position - 171 / 2 + span / 4, 20);
+        deathAnim.frame += gameSpeed;
+        cx.globalAlpha = Math.min(1, deathAnim.frame / 100);
+        cx.drawImage(explosionAtomicIMG, deathAnim.position - 171 / 2 + deathAnim.span / 4, 20);
         cx.globalAlpha = 1;
-        if (i <= 45)
+        if (deathAnim.frame <= 45)
             requestAnimationFrame(hold);
         else {
+            deathAnim.running = false;
             deathAnimPending = false;
             radioactivityPending = true;
-            setTimeout(function () {
-                radioactivityPending = false;
-                document.body.style.backgroundColor = bgColor;
-                document.querySelectorAll('button').forEach(function (e) {
-                    e.style.backgroundColor = buttonBg;
-                    e.style.color = buttonColor;
-                });
-            }, 22000 / gameSpeed);
+            // the fallout look lasts as long as the fallout (22 s of game time after the latest bomb)
+            deathAnim.restoreTimer = setTimeout(endRadioactivity, 22000 / gameSpeed);
         }
     }
 }
@@ -796,6 +787,7 @@ var Game = /** @class */ (function () {
         if (moveCount === void 0) { moveCount = 1; }
         this.time = 0;
         this.atomicDoomPending = false;
+        this.atomicDoomUntil = 0; // game time at which the fallout ends
         this.moveCount = 1;
         this.stopped = false; // set to end a visualized game early (custom match time limit / rematch)
         // this.msTime = performance.now()
@@ -817,6 +809,8 @@ var Game = /** @class */ (function () {
     }
     Game.prototype.move = function () {
         var _this = this;
+        if (this.atomicDoomPending && this.time >= this.atomicDoomUntil)
+            this.atomicDoomPending = false;
         // Between-tick decisions for policy bots (UltimateBot): both decide from the same
         // state, then act left player first. Mirrors Env::step in rl/engine/src/env.rs.
         var decisions = this.players.map(function (p) { return p.decide ? p.decide(_this.time) : undefined; });
@@ -1054,10 +1048,9 @@ var Player = /** @class */ (function () {
                 if (playerUnit.health <= 0) {
                     playerUnit.deleteAnim();
                     if (playerUnit.name === troopArr[10].name) {
+                        // fallout lasts 22 s (1320 ticks) after the latest bomb, at any game speed
                         _this.game.atomicDoomPending = true;
-                        setTimeout(function () {
-                            _this.game.atomicDoomPending = false;
-                        }, 22000 / (_this.visualize ? gameSpeed : 1)); // 22 s = 1320 ticks at any speed
+                        _this.game.atomicDoomUntil = Math.max(_this.game.atomicDoomUntil, _this.game.time + ATOMIC_DOOM_TICKS);
                     }
                     else if (playerUnit.name === troopArr[6].name) {
                         _this.game.boomerDoomer(playerUnit.position);
@@ -1161,6 +1154,9 @@ var Player = /** @class */ (function () {
                             _this.purchaseUnit(i, button);
                         else if (_this.unlockedUnits[i] && !_this.isEnoughMoney(stat.price)) {
                             _this.redden(button, 280);
+                        }
+                        else if (i === 10 && _this.game.atomicDoomPending) {
+                            _this.redden(button, 280); // no new bomb during fallout (same rule as the AIs and the server)
                         }
                         else if (_this.playerUnits.length >= _this.maxUnits) {
                             _this.redden(button, 180);
