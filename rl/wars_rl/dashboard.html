@@ -159,6 +159,7 @@ const OPP = {
 const OPP_ORDER = ['classic', 'dqn', 'past', 'random', 'self']
 const oppLabel = k => (OPP[k] || {label: k}).label
 
+const ENDED = {finished: 'finished', stopped: 'stopped', crashed: 'crashed', killed: 'killed'}
 // ---------- state ----------
 let SCHEMA = null, POLICIES = [], selected = null, view = 'empty', lastDetail = null, formState = null
 
@@ -298,7 +299,7 @@ function renderRun(d) {
   const keepScroll = window.scrollY
   const last = d.latest || {}
   const head = h('div', {class: 'row', style: 'justify-content: space-between; margin-bottom: 12px'},
-    h('div', {}, h('div', {class: 'row'}, h('h2', {style: 'margin:0;font-size:19px'}, d.name), h('span', {class: 'pill' + (d.running ? ' on' : '')}, d.running ? `training (pid ${d.pid})` : 'stopped')),
+    h('div', {}, h('div', {class: 'row'}, h('h2', {style: 'margin:0;font-size:19px'}, d.name), h('span', {class: 'pill' + (d.running ? ' on' : '')}, d.running ? `training (pid ${d.pid})` : ENDED[d.ended && d.ended.state] || 'stopped')),
       h('div', {class: 'small muted'}, last.update ? `update ${last.update} · ${fmtN(last.env_steps)} of ${fmtN(d.config.total_env_steps)} decisions · ${fmtN(last.episodes)} games · ${fmtN(last.sps)} decisions/s` : 'waiting for the first update…')),
     h('div', {class: 'row'},
       d.restarting ? h('span', {class: d.restarting.endsWith('…') ? 'note' : 'err'}, 'Restart: ' + d.restarting) : null,
@@ -308,6 +309,14 @@ function renderRun(d) {
       h('button', {onclick: () => openForm(null, d.config)}, 'Copy settings to new run'),
       h('button', {disabled: !d.has_checkpoint, onclick: () => exportDialog(d.name)}, 'Export model')))
   main.replaceChildren(head)
+  if (d.ended && ['crashed', 'killed'].includes(d.ended.state)) main.append(h('div', {class: 'card', style: 'margin-bottom:12px; border-color: var(--critical)'},
+    h('div', {}, h('b', {class: 'err'}, d.ended.state === 'crashed' ? 'Training crashed' : 'Training was killed'),
+      h('span', {class: 'muted'}, (d.ended.time ? ` ${ago(d.ended.time)}` : '') + (d.ended.update ? ` · at update ${d.ended.update}` : ''))),
+    h('div', {class: 'note', style: 'margin-top:4px'}, d.ended.reason),
+    d.ended.error ? h('pre', {style: 'max-height: 220px; margin-top: 8px'}, d.ended.error) : null,
+    h('div', {class: 'small muted', style: 'margin-top:6px'}, 'Resume continues from the last save. If it keeps happening, the trainer output at the bottom of this page shows what it was doing.')))
+  else if (d.ended && d.ended.reason && !d.running) main.append(h('div', {class: 'small muted', style: 'margin:-6px 0 10px'},
+    `Last session: ${d.ended.reason}` + (d.ended.time ? ` (${ago(d.ended.time)})` : '')))
   if (d.running || d.changes.length) main.append(settingsCard(d))
 
   // scores
@@ -323,6 +332,7 @@ function renderRun(d) {
   const bySeries = (field, opp) => S.filter(r => r[field] && r[field][opp] != null).map(r => [r.env_steps, r[field][opp]])
   const oppSeries = field => ['classic', 'dqn', 'past', 'random'].map(k => ({name: oppLabel(k), short: k, color: OPP[k].color, points: bySeries(field, k)}))
   const marks = d.changes.filter(c => Object.keys(c.applied).length).map(c => ({x: c.env_steps, label: `update ${c.update}: ` + Object.entries(c.applied).map(([k, [a, b]]) => `${k} ${fmtV(a)} → ${fmtV(b)}`).join(', ')}))
+  for (const r of d.resumes || []) marks.push({x: r.env_steps, label: `resumed at update ${r.update}: the games restart from the beginning, so the first results after this are mostly short games`})
   const one = (field, map = v => v) => [{name: field, color: 'var(--s1)', points: S.filter(r => r[field] != null).map(r => [r.env_steps, map(r[field])])}]
   main.append(h('div', {class: 'charts'},
     lineChart({marks, title: 'Win rate by opponent', subtitle: 'rolling, last 300 games each', series: oppSeries('win'), yMax: 1, yFmt: pct}),

@@ -121,6 +121,22 @@ The same data goes to `runs/v2/log.jsonl` (one JSON object per update) if you wa
   ends to the same value to pin them. When resuming from the command line later, pass
   `--config runs/v2/config.json` to keep the changed values.
 
+### Why did it stop?
+
+The run page says why the last session ended: **finished**, **stopped** (Stop button, Ctrl+C,
+closed terminal), **crashed** (with the error) or **killed** (it vanished without a word: force
+quit, out of memory, a power loss or restart). The trainer writes this to `<run_dir>/sessions.jsonl`.
+Crashed and killed runs resume from the last save, at most `save_every` updates back.
+
+Sleep doesn't stop training, it only pauses it. On macOS the trainer keeps the computer awake by
+itself (`prevent_sleep`, using `caffeinate`), except when you close the lid on battery.
+
+After a resume every game starts over from the beginning, so for a few updates the finished games
+are mostly the quick ones (fast wins against weak opponents). Game length, win rates and entropy
+jump around at that point. It is a measuring effect, not the AI getting worse. The charts mark each
+resume with a dashed line, and the rolling win rates are now saved in the checkpoint, so they
+carry on across a resume.
+
 ### How long does it take?
 
 On 4 CPU cores: about 1,200–2,500 decisions/s, so **10M decisions ≈ 2–3 hours**. The included

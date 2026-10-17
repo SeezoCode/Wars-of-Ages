@@ -113,6 +113,9 @@ FIELDS = {
                       "Decisions per game collected before each learning step. Parallel games x steps = batch size."),
     "env_threads": ("Computer", "Game threads", "CPU threads simulating games (Rust)."),
     "torch_threads": ("Computer", "Learning threads", "CPU threads for the network update (PyTorch)."),
+    "prevent_sleep": ("Computer", "Keep the Mac awake",
+                      "macOS only: stops the computer from going to sleep on its own while training "
+                      "(sleep pauses training). Closing the lid still sleeps it."),
     "rollout_torch_threads": ("Computer", "Inference threads",
                               "Threads for choosing moves while playing. 1 is usually fastest for these small batches."),
 
@@ -224,12 +227,14 @@ class Runs:
         self.cache: dict[str, dict] = {}
         self.lock = threading.Lock()
         self.restarting: dict[str, str] = {}  # run name -> status text
+        self.exit_codes: dict[str, int] = {}  # run name -> exit code of a trainer this dashboard started
 
     def trainer_pid(self, name: str) -> int:
         p = self.procs.get(name)
         if p is not None:
             if p.poll() is None:
                 return p.pid
+            self.exit_codes[name] = p.returncode
             self.procs.pop(name, None)
         try:
             with open(os.path.join(run_path(name), "trainer.pid")) as fh:
@@ -345,11 +350,49 @@ class Runs:
         except (OSError, ValueError):
             pass
         pid = self.trainer_pid(name)
+        sessions = []
+        try:
+            with open(os.path.join(d, "sessions.jsonl")) as fh:
+                sessions = [json.loads(x) for x in fh if x.strip()]
+        except (OSError, ValueError):
+            pass
+        output = tail(os.path.join(d, "train.out"), 80)
         return {"name": name, "running": bool(pid), "pid": pid, "config": config, "series": series,
+                "ended": None if pid else self._why_ended(name, sessions, output, config),
+                "resumes": [{"update": e.get("update"), "env_steps": e.get("env_steps"), "time": e.get("time")}
+                            for e in sessions if e.get("event") == "start" and e.get("update")],
                 "changes": changes, "pending": pending, "restarting": self.restarting.get(name),
                 "latest": log[-1] if log else None, "scores": scores, "recent": recent, "evals": evals,
-                "output": tail(os.path.join(d, "train.out"), 80),
+                "output": output,
                 "has_checkpoint": os.path.exists(os.path.join(d, "latest.pt"))}
+
+    def _why_ended(self, name: str, sessions: list, output: list, config: dict) -> dict | None:
+        """Why the last training session ended, from sessions.jsonl (or train.out for older runs)."""
+        code = self.exit_codes.get(name)
+        killed = ("It ended without saying why: something killed it (a force quit, the system running out of "
+                  "memory, a crash inside the game engine) or the computer restarted or shut down. Training "
+                  f"resumes from the last save (every {config.get('save_every', 10)} updates).")
+        if code is not None and code < 0:
+            try:
+                sig = signal.Signals(-code).name
+            except ValueError:
+                sig = str(-code)
+            killed += f" The process was killed by {sig}" + (" (on macOS/Linux this is usually the system running "
+                                                             "out of memory)." if sig == "SIGKILL" else ".")
+        if sessions:
+            last = sessions[-1]
+            if last.get("event") == "end":
+                return {k: last.get(k) for k in ("state", "reason", "error", "time", "update")}
+            return {"state": "killed", "reason": killed}
+        text = "\n".join(output)
+        if "Traceback (most recent call last)" in text:
+            err = text[text.rfind("Traceback (most recent call last)"):]
+            return {"state": "crashed", "reason": err.strip().splitlines()[-1][:300], "error": err[-4000:]}
+        if "interrupted" in text[-2000:]:
+            return {"state": "stopped", "reason": "stopped (Stop button, Ctrl+C or kill)"}
+        if output:
+            return {"state": "killed", "reason": killed}
+        return None
 
     def start(self, name: str, config: dict, resume: bool) -> dict:
         d = run_path(name)
@@ -387,6 +430,7 @@ class Runs:
         with open(os.path.join(d, "trainer.pid"), "w") as fh:
             fh.write(str(p.pid))
         self.cache.pop(name, None)
+        self.exit_codes.pop(name, None)
         if not self.restarting.get(name, "").endswith("…"):
             self.restarting.pop(name, None)  # clear an old restart error
         return {"pid": p.pid}

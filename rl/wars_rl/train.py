@@ -22,7 +22,10 @@ import dataclasses
 import json
 import os
 import signal
+import subprocess
+import sys
 import time
+import traceback
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import List
@@ -61,6 +64,7 @@ class TrainConfig:
     env_threads: int = 4
     torch_threads: int = 4          # for the PPO update
     rollout_torch_threads: int = 1  # small inference batches are faster single-threaded
+    prevent_sleep: bool = True      # macOS: keep the computer awake while training (caffeinate)
 
     # environment (see EnvConfig in rl/engine/src/env.rs)
     decision_interval: int = 15
@@ -283,6 +287,9 @@ class Trainer:
         self.update = ckpt["update"]
         self.env_steps = ckpt["env_steps"]
         self.episodes = ckpt.get("episodes", 0)
+        for k, v in ckpt.get("results", {}).items():  # rolling win rates continue instead of restarting empty
+            self.results[k].extend(v)
+        self.ep_ticks.extend(ckpt.get("ep_ticks", []))
         print(f"resumed from {path}: update {self.update}, {self.env_steps:,} env steps")
 
     def _next_seed(self) -> int:
@@ -501,7 +508,8 @@ class Trainer:
     def save(self):
         path = os.path.join(self.cfg.run_dir, "latest.pt")
         save_checkpoint(path + ".tmp", self.model, optimizer=self.opt.state_dict(), update=self.update,
-                        env_steps=self.env_steps, episodes=self.episodes, train_config=dataclasses.asdict(self.cfg))
+                        env_steps=self.env_steps, episodes=self.episodes, train_config=dataclasses.asdict(self.cfg),
+                        results={k: list(v) for k, v in self.results.items()}, ep_ticks=list(self.ep_ticks))
         os.replace(path + ".tmp", path)
 
     def train(self):
@@ -548,22 +556,75 @@ class Trainer:
                {"update": self.update, "env_steps": self.env_steps})
 
 
-def _interrupt(*_):
+_signal_name = "Ctrl+C"
+
+
+def _interrupt(signum, _frame):
+    global _signal_name
+    _signal_name = signal.Signals(signum).name
     raise KeyboardInterrupt
+
+
+def _session_event(run_dir: str, trainer, **rec):
+    """<run_dir>/sessions.jsonl: one line when training starts and one when it ends (and why)."""
+    rec = {"time": round(time.time(), 1), "pid": os.getpid(), **rec}
+    if trainer is not None:
+        rec.update(update=trainer.update, env_steps=trainer.env_steps)
+    try:
+        with open(os.path.join(run_dir, "sessions.jsonl"), "a") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
+
+
+def _keep_awake(cfg: TrainConfig):
+    # macOS puts the computer to sleep when idle, which pauses training. caffeinate -i -s prevents
+    # idle sleep (and, on power, system sleep) until this process exits. Closing the lid still sleeps.
+    if sys.platform == "darwin" and cfg.prevent_sleep:
+        try:
+            subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid())], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            pass
 
 
 def main():
     # Ctrl+C, a dashboard "Stop" (SIGTERM / Ctrl+Break on Windows): save, then exit. SIGINT is set
     # explicitly because processes started in the background inherit an *ignored* SIGINT.
-    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"):
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), _interrupt)
-    trainer = Trainer(parse_config())
+    cfg = parse_config()
+    os.makedirs(cfg.run_dir, exist_ok=True)
+    trainer = None
     try:
+        trainer = Trainer(cfg)
+        _session_event(cfg.run_dir, trainer, event="start")
+        _keep_awake(cfg)
         trainer.train()
+        _session_event(cfg.run_dir, trainer, event="end", state="finished", reason="reached the training length")
     except KeyboardInterrupt:
-        print("\ninterrupted: saving latest.pt (resume by running the same command again)")
+        if trainer is None:
+            _session_event(cfg.run_dir, None, event="end", state="stopped", reason=f"{_signal_name} while starting")
+            raise SystemExit(1)
+        print(f"\ninterrupted ({_signal_name}): saving latest.pt (resume by running the same command again)")
         trainer.save()
+        _session_event(cfg.run_dir, trainer, event="end", state="stopped",
+                       reason={"SIGTERM": "stopped (Stop button or kill)", "SIGINT": "stopped with Ctrl+C",
+                               "Ctrl+C": "stopped with Ctrl+C", "SIGHUP": "its terminal was closed",
+                               "SIGBREAK": "stopped (Stop button or Ctrl+Break)"}.get(_signal_name, _signal_name))
+    except BaseException as e:
+        tb = traceback.format_exc()
+        _session_event(cfg.run_dir, trainer, event="end", state="crashed",
+                       reason=f"{type(e).__name__}: {e}"[:300], error=tb[-4000:])
+        if trainer is not None and not isinstance(e, MemoryError) and \
+                all(torch.isfinite(p).all() for p in trainer.model.parameters()):
+            try:  # keep the progress since the last save if the model itself is fine
+                trainer.save()
+                print("crashed: saved latest.pt first", flush=True)
+            except BaseException:
+                pass
+        raise
 
 
 if __name__ == "__main__":
