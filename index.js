@@ -2066,7 +2066,7 @@ var LocalRLBot = /** @class */ (function (_super) {
                 this.probHistory.shift();
             }
             var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " AI Brain:</strong><br/>";
-            var _loop_2 = function (i) {
+            var _loop_3 = function (i) {
                 // Check if it is unlocked (0-11 are troops, 12 is Base, 13 is wait)
                 var isUnlocked = i < 12 ? this_1.unlockedUnits[i] : true;
                 if (isUnlocked) {
@@ -2086,7 +2086,7 @@ var LocalRLBot = /** @class */ (function (_super) {
             var this_1 = this;
             // Loop through ALL actions in their strict default order so the rows never jump around
             for (var i = 0; i < this.ACTIONS.length; i++) {
-                _loop_2(i);
+                _loop_3(i);
             }
             html += "</div>";
             // Target your existing HTML element
@@ -2292,7 +2292,7 @@ var UltimateBot = /** @class */ (function (_super) {
             out[i] = g[i];
         var egoX = function (pos) { return _this.side === 'left' ? pos / canvasWidth : (canvasWidth - pos) / canvasWidth; };
         var writeUnits = function (units, base) {
-            var _loop_3 = function (s) {
+            var _loop_4 = function (s) {
                 var u = units[s];
                 var off = base + s * ULT_UNIT;
                 var kind = troopArr.findIndex(function (t) { return t.name === u.name; });
@@ -2309,7 +2309,7 @@ var UltimateBot = /** @class */ (function (_super) {
                 out[off + 19] = Math.log(1 + Math.max(u.damage, 0)) / 5;
             };
             for (var s = 0; s < Math.min(units.length, ULT_MAX_SLOTS); s++) {
-                _loop_3(s);
+                _loop_4(s);
             }
         };
         writeUnits(me.playerUnits, ULT_GLOBAL);
@@ -2825,9 +2825,52 @@ try {
             maxUnits: Math.max(1, Math.min(50, parseInt(el_1(side + "Max").value) || kindInfo_1(kind).maxUnits)),
         };
     }
+    // models/index.json lists every model the game can load (built by rl/wars_rl/model_index.py:
+    // by the GitHub Pages workflow on deploy, and by the training dashboard on your computer)
+    var MODELS_1 = [];
+    function fillModelList(side) {
+        var info = kindInfo_1(el_1(side + "Kind").value);
+        var pick = el_1(side + "Pick"), input = el_1(side + "Model");
+        var list = MODELS_1.filter(function (m) { return m.kind === info.key; });
+        pick.style.display = list.length ? '' : 'none';
+        if (!list.length)
+            return;
+        var current = input.value.trim() || info.defaultModel;
+        var opt = function (m) {
+            var steps = m.env_steps ? " \u00B7 " + (m.env_steps / 1e6).toFixed(1) + "M decisions" : '';
+            var label = (m.source === 'default' ? m.name + " (default)" : m.name) + steps + (m.note ? " \u00B7 " + m.note : '');
+            return "<option value=\"" + m.file + "\"" + (m.file === current ? ' selected' : '') + ">" + label.replace(/</g, '&lt;') + "</option>";
+        };
+        var group = function (title, ms) { return ms.length ? "<optgroup label=\"" + title + "\">" + ms.map(opt).join('') + "</optgroup>" : ''; };
+        var known = list.some(function (m) { return m.file === current; });
+        pick.innerHTML = (known ? '' : "<option value=\"\" selected>custom: " + current.replace(/</g, '&lt;') + "</option>") +
+            group('Models in the game', list.filter(function (m) { return m.source !== 'run'; })) +
+            group('Your training runs (this computer only)', list.filter(function (m) { return m.source === 'run'; }));
+    }
+    var _loop_1 = function (side) {
+        el_1(side + "Pick").style.display = 'none';
+        el_1(side + "Pick").addEventListener('change', function () {
+            var v = el_1(side + "Pick").value;
+            if (v)
+                el_1(side + "Model").value = v === kindInfo_1(el_1(side + "Kind").value).defaultModel ? '' : v;
+            el_1(side + "File").value = '';
+        });
+        el_1(side + "Model").addEventListener('change', function () { return fillModelList(side); });
+    };
+    for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
+        var side = _a[_i];
+        _loop_1(side);
+    }
+    fetch('models/index.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (list) {
+        if (Array.isArray(list))
+            MODELS_1.push.apply(MODELS_1, list.filter(function (m) { return m && m.file && m.kind; }));
+        fillModelList('left');
+        fillModelList('right');
+    }).catch(function () { });
     function refreshPicker() {
         for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
             var side = _a[_i];
+            fillModelList(side);
             var info = kindInfo_1(el_1(side + "Kind").value);
             el_1(side + "ModelBox").style.display = info.model ? '' : 'none';
             el_1(side + "GreedyBox").style.display = info.key === 'ultimate' ? '' : 'none';
@@ -2954,8 +2997,8 @@ try {
             repeat: el_1('pickRepeat').checked,
         };
     }
-    for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
-        var side = _a[_i];
+    for (var _b = 0, _c = ['left', 'right']; _b < _c.length; _b++) {
+        var side = _c[_b];
         el_1(side + "Kind").innerHTML = PLAYER_KINDS_1.map(function (k) { return "<option value=\"" + k.key + "\">" + k.label + "</option>"; }).join('');
         el_1(side + "Kind").addEventListener('change', refreshPicker);
     }
@@ -2963,7 +3006,7 @@ try {
     el_1('rightKind').value = 'ultimate';
     var params_1 = new URLSearchParams(window.location.search);
     if (params_1.get('mode') === 'custom') {
-        var _loop_1 = function (side, s) {
+        var _loop_2 = function (side, s) {
             if (params_1.get(side) && PLAYER_KINDS_1.some(function (k) { return k.key === params_1.get(side); }))
                 el_1(side + "Kind").value = params_1.get(side);
             el_1(side + "Model").value = params_1.get(s + "model") || '';
@@ -2971,9 +3014,9 @@ try {
             el_1(side + "Max").value = params_1.get(s + "max") || '';
         };
         // prefill from the URL
-        for (var _b = 0, _c = [['left', 'l'], ['right', 'r']]; _b < _c.length; _b++) {
-            var _d = _c[_b], side = _d[0], s = _d[1];
-            _loop_1(side, s);
+        for (var _d = 0, _e = [['left', 'l'], ['right', 'r']]; _d < _e.length; _d++) {
+            var _f = _e[_d], side = _f[0], s = _f[1];
+            _loop_2(side, s);
         }
         if (params_1.get('speed'))
             el_1('pickSpeed').value = params_1.get('speed');

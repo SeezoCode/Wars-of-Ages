@@ -261,14 +261,33 @@ python -m wars_rl.export runs/v2/latest.pt ../ultimate_model.json --checkpoint-o
 python3 parity/check_model.py ../ultimate_model.json checkpoints/ultimate_v2.pt   # browser == PyTorch
 ```
 
+### Which models the game can play
+
+The game is a static web page, so it can only load model files that its web server serves. It
+can't read `.pt` checkpoints, only exported `.json` models. Where a model lives decides where you can play it:
+
+| where | how it gets there | on your computer | on GitHub Pages |
+|-------|-------------------|------------------|-----------------|
+| `ultimate_model.json`, `ultimate_dqn_model.json` (repo root) | export "make it the default" | yes (the defaults) | yes, once pushed |
+| `models/<name>.json` | export "add to the model picker", or `python -m wars_rl.export runs/v2/latest.pt ../models/v2.json --note "…"` | yes | yes, once pushed |
+| `rl/runs/<run>/ultimate_model.json` | written by the trainer every `export_every` updates | yes | no (`rl/runs/` isn't committed) |
+| any `.json` model on your disk | "or file:" in the picker | yes | yes (read by your browser, never uploaded) |
+
+The model dropdown in the match picker is built from `models/index.json`, a list of all of the
+above. Nobody edits it by hand:
+`python3 rl/wars_rl/model_index.py` writes it, and so does every export, the training dashboard
+every 2 minutes and the GitHub Pages workflow before each deploy (without the local runs). It is
+in `.gitignore` because your local copy lists runs that only exist on your computer. A picked
+checkpoint (`.pt`) needs exporting first: dashboard **Export model**, or `wars_rl.export`.
+
 Try it: the game loads the model with `fetch`, so serve the folder over HTTP instead of opening
 the file directly:
 
 ```bash
 cd ..                      # repo root
 python3 -m http.server 8000
-# open http://localhost:8000/ and pick the players (e.g. Human vs Ultimate AI). "or file:" loads a
-# model straight from disk, e.g. rl/runs/v2/ultimate_model.json, without copying it anywhere.
+# open http://localhost:8000/ and pick the players (e.g. Human vs Ultimate AI), then a model from
+# the dropdown: the defaults, models/, and your training runs (latest export of each).
 # Links work too: http://localhost:8000/?mode=custom&left=classic&right=ultimate&speed=5
 ```
 
@@ -282,7 +301,8 @@ What to commit:
 
 | file | size | why |
 |------|------|-----|
-| `ultimate_model.json` (repo root) | ~3.4 MB | the browser loads this file |
+| `ultimate_model.json` (repo root) | ~3.4 MB | the default Ultimate AI in the browser |
+| `models/<name>.json` | ~3.4 MB each | extra models in the game's model dropdown |
 | `rl/checkpoints/ultimate_vN.pt` | ~5 MB | weights to continue from later (`--init-from`) |
 | any code/config you changed | | so the run is reproducible |
 
@@ -292,7 +312,7 @@ What to commit:
 ```bash
 cd Wars-of-Ages
 git checkout -b new-ultimate-model          # or stay on your branch
-git add ultimate_model.json rl/checkpoints/ultimate_v2.pt
+git add ultimate_model.json models/v2.json rl/checkpoints/ultimate_v2.pt   # whichever you made
 git add -u                                  # plus any tracked files you edited
 git status                                  # check nothing unexpected (no rl/runs/!)
 git commit -m "Ultimate AI v2: <win rates from wars_rl.evaluate>"
@@ -301,7 +321,8 @@ git push -u origin new-ultimate-model
 
 Then open a pull request into `master` on GitHub, or push to `master` directly if that's how
 you work. **Pushing to `master` deploys the site** (`.github/workflows/static.yml` publishes the
-repo to GitHub Pages), so the new model goes live for everyone who picks *Ultimate AI*.
+repo to GitHub Pages), so the new default model goes live for everyone who picks *Ultimate AI*,
+and every model in `models/` shows up in the dropdown there.
 
 Tip: put the evaluation results in the commit message or the README's results table, so you
 can tell later which model was better.

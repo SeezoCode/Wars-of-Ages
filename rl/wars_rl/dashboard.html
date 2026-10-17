@@ -410,9 +410,26 @@ function evalPanel(d) {
     h('div', {class: 'row', style: 'margin-top:10px'}, run, msg), evals)
 }
 function exportDialog(name) {
-  const toGame = confirm(`Export "${name}" to the game?\n\nOK = replace ultimate_model.json in the repo root (what the browser plays)\nCancel = only refresh the run's own runs/${name}/ultimate_model.json`)
-  const ck = prompt('Also save a small checkpoint to rl/checkpoints/ (to commit or continue from)? Enter a name, or leave empty to skip.', '')
-  act('/api/export', {run: name, to_game: toGame, checkpoint_name: ck || ''}, 'Exporting… see Jobs')
+  const modelName = h('input', {type: 'text', value: name})
+  const note = h('input', {type: 'text', placeholder: 'e.g. beats the DQN 100%', style: 'width: 280px'})
+  const toPicker = h('input', {type: 'checkbox', checked: true})
+  const toGame = h('input', {type: 'checkbox'})
+  const ck = h('input', {type: 'text', placeholder: 'leave empty to skip'})
+  const dlg = h('dialog', {class: 'card', style: 'max-width: 560px; color: var(--ink)'},
+    h('h3', {style: 'margin-top:0'}, `Export “${name}” to the game`),
+    h('p', {class: 'note'}, `The run already re-exports itself to rl/runs/${name}/ultimate_model.json every few updates; the game lists it as a local model. Choose where else it should go:`),
+    h('div', {class: 'field'}, h('label', {}, toPicker, ' Add to the model picker'), h('div', {}, 'models/', modelName, '.json'),
+      h('div', {class: 'help'}, 'Shows up in the game\'s model list. Commit and push the file and it\'s also playable on GitHub Pages.')),
+    h('div', {class: 'field'}, h('label', {}, 'Description'), h('div', {}, note), h('div', {class: 'help'}, 'Optional; shown next to the model in the picker.')),
+    h('div', {class: 'field'}, h('label', {}, toGame, ' Make it the default'), h('div', {class: 'small'}, 'replace ultimate_model.json in the repo root'),
+      h('div', {class: 'help'}, 'The model the game picks when you choose Ultimate AI without picking a model.')),
+    h('div', {class: 'field'}, h('label', {}, 'Small checkpoint'), h('div', {}, 'rl/checkpoints/', ck, '.pt'),
+      h('div', {class: 'help'}, 'Weights only (no optimizer), small enough to commit; use it later with “Start from weights”.')),
+    h('div', {class: 'row', style: 'margin-top:12px'},
+      h('button', {class: 'primary', onclick: () => { dlg.close(); dlg.remove()
+        act('/api/export', {run: name, model_name: toPicker.checked ? modelName.value.trim() : '', note: note.value.trim(), to_game: toGame.checked, checkpoint_name: ck.value.trim()}, 'Exporting… see Jobs') }}, 'Export'),
+      h('button', {onclick: () => { dlg.close(); dlg.remove() }}, 'Cancel')))
+  document.body.append(dlg); dlg.showModal()
 }
 async function act(path, body, note) {
   try { await api(path, body); if (note) toast(note); setTimeout(() => { refreshRun(true); refreshRuns(); refreshJobs() }, 800) }

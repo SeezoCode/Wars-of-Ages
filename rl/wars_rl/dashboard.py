@@ -29,6 +29,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from . import model_index
 from .train import LIVE_FIELDS, TrainConfig
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -618,16 +619,24 @@ def export_job(body: dict) -> dict:
     src = os.path.join(run_path(name), "latest.pt")
     if not os.path.exists(src):
         raise ValueError("this run has no checkpoint yet")
-    target = os.path.join(REPO, "ultimate_model.json") if body.get("to_game") else \
-        os.path.join(run_path(name), "ultimate_model.json")
-    cmd = [sys.executable, "-u", "-m", "wars_rl.export", src, target]
+    targets = [os.path.join(run_path(name), "ultimate_model.json")]
+    if body.get("model_name"):  # models/<name>.json: listed in the game's model picker (and on GitHub Pages once pushed)
+        mn = body["model_name"].removesuffix(".json")
+        if not NAME_RE.match(mn):
+            raise ValueError("model name: letters, digits, '-', '_' and '.' only")
+        targets.append(os.path.join(REPO, "models", mn + ".json"))
+    if body.get("to_game"):
+        targets.append(os.path.join(REPO, "ultimate_model.json"))
+    cmd = [sys.executable, "-u", "-m", "wars_rl.export", src, *targets]
+    if body.get("note"):
+        cmd += ["--note", str(body["note"])[:200]]
     if body.get("checkpoint_name"):
         ck = body["checkpoint_name"]
         if not NAME_RE.match(ck):
             raise ValueError("checkpoint name: letters, digits, '-', '_' and '.' only")
         os.makedirs(os.path.join(RL_DIR, "checkpoints"), exist_ok=True)
         cmd += ["--checkpoint-out", os.path.join(RL_DIR, "checkpoints", ck if ck.endswith(".pt") else ck + ".pt")]
-    return JOBS.submit("export", f"export {name} → {os.path.relpath(target, REPO)}", cmd)
+    return JOBS.submit("export", f"export {name} → " + ", ".join(os.path.relpath(t, REPO) for t in targets[1:] or targets), cmd)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -694,6 +703,15 @@ def main():
     ap.add_argument("--host", default="127.0.0.1", help="127.0.0.1 = only this computer (recommended)")
     args = ap.parse_args()
     os.makedirs(RUNS, exist_ok=True)
+    def keep_model_list_fresh():  # runs re-export their model every few updates; keep the game's picker current
+        while True:
+            try:
+                model_index.write()
+            except Exception as e:  # never take the dashboard down over this
+                print("model list:", e)
+            time.sleep(120)
+
+    threading.Thread(target=keep_model_list_fresh, daemon=True).start()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Wars of Ages training dashboard: http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}")
     print("Ctrl+C stops the dashboard; training runs keep going in the background.")

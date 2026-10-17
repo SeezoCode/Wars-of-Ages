@@ -2,6 +2,7 @@
 
     python -m wars_rl.export runs/ultimate/latest.pt ../ultimate_model.json
     python -m wars_rl.export runs/v2/latest.pt ../ultimate_model.json --checkpoint-out checkpoints/ultimate_v2.pt
+    python -m wars_rl.export runs/v2/latest.pt ../models/v2.json --note "beats DQN 100%"   # adds it to the game's model picker
 
 Weights are stored as base64 little-endian float32. A NumPy re-implementation of
 the browser forward pass is checked against PyTorch before writing.
@@ -12,6 +13,7 @@ import argparse
 import base64
 import json
 import os
+import time
 
 import numpy as np
 import torch
@@ -76,7 +78,7 @@ def export(model: ActorCritic, out_path: str, decision_interval: int = 10, meta:
         "obs_size": model.cfg.obs_size,
         "num_actions": model.cfg.num_actions,
         "decision_interval": decision_interval,
-        "meta": meta or {},
+        "meta": {"exported": time.strftime("%Y-%m-%d %H:%M"), **(meta or {})},
         "layers": layers,
     }
     # sanity check against torch
@@ -98,7 +100,9 @@ def export(model: ActorCritic, out_path: str, decision_interval: int = 10, meta:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("checkpoint")
-    ap.add_argument("out", nargs="?", default=os.path.join(os.path.dirname(__file__), "..", "..", "ultimate_model.json"))
+    ap.add_argument("out", nargs="*", help="one or more output files (default: ultimate_model.json in the repo root, "
+                                           "which the game plays by default; files in models/ appear in the game's picker)")
+    ap.add_argument("--note", default="", help="short description shown in the game's model picker")
     ap.add_argument("--checkpoint-out", help="also write a slim weights-only checkpoint (no optimizer state), "
                                              "small enough to commit and usable with train --init-from")
     args = ap.parse_args()
@@ -109,8 +113,16 @@ def main():
         print(f"wrote {args.checkpoint_out} ({os.path.getsize(args.checkpoint_out) / 1e6:.1f} MB)")
     di = ckpt.get("train_config", {}).get("decision_interval", 10)
     meta = {"updates": ckpt.get("update"), "env_steps": ckpt.get("env_steps")}
-    path = export(model, args.out, di, meta)
-    print(f"wrote {path} ({os.path.getsize(path) / 1e6:.1f} MB)")
+    if args.note:
+        meta["note"] = args.note
+    outs = args.out or [os.path.join(os.path.dirname(__file__), "..", "..", "ultimate_model.json")]
+    for out in outs:
+        if os.path.dirname(out):
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+        path = export(model, out, di, meta)
+        print(f"wrote {path} ({os.path.getsize(path) / 1e6:.1f} MB)")
+    from . import model_index
+    print(f"updated the game's model list ({len(model_index.write())} models)")
 
 
 if __name__ == "__main__":

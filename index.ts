@@ -2974,8 +2974,44 @@ try {
         }
     }
 
+    // models/index.json lists every model the game can load (built by rl/wars_rl/model_index.py:
+    // by the GitHub Pages workflow on deploy, and by the training dashboard on your computer)
+    const MODELS: any[] = []
+    function fillModelList(side: string) {
+        const info = kindInfo(el(`${side}Kind`).value)
+        const pick = el(`${side}Pick`), input = el(`${side}Model`)
+        const list = MODELS.filter(m => m.kind === info.key)
+        pick.style.display = list.length ? '' : 'none'
+        if (!list.length) return
+        const current = input.value.trim() || info.defaultModel
+        const opt = (m: any) => {
+            const steps = m.env_steps ? ` · ${(m.env_steps / 1e6).toFixed(1)}M decisions` : ''
+            const label = (m.source === 'default' ? `${m.name} (default)` : m.name) + steps + (m.note ? ` · ${m.note}` : '')
+            return `<option value="${m.file}"${m.file === current ? ' selected' : ''}>${label.replace(/</g, '&lt;')}</option>`
+        }
+        const group = (title: string, ms: any[]) => ms.length ? `<optgroup label="${title}">${ms.map(opt).join('')}</optgroup>` : ''
+        const known = list.some(m => m.file === current)
+        pick.innerHTML = (known ? '' : `<option value="" selected>custom: ${current.replace(/</g, '&lt;')}</option>`) +
+            group('Models in the game', list.filter(m => m.source !== 'run')) +
+            group('Your training runs (this computer only)', list.filter(m => m.source === 'run'))
+    }
+    for (const side of ['left', 'right']) {
+        el(`${side}Pick`).style.display = 'none'
+        el(`${side}Pick`).addEventListener('change', () => {
+            const v = el(`${side}Pick`).value
+            if (v) el(`${side}Model`).value = v === kindInfo(el(`${side}Kind`).value).defaultModel ? '' : v
+            el(`${side}File`).value = ''
+        })
+        el(`${side}Model`).addEventListener('change', () => fillModelList(side))
+    }
+    fetch('models/index.json', {cache: 'no-store'}).then(r => r.ok ? r.json() : []).then(list => {
+        if (Array.isArray(list)) MODELS.push(...list.filter(m => m && m.file && m.kind))
+        fillModelList('left'); fillModelList('right')
+    }).catch(() => {})
+
     function refreshPicker() {
         for (const side of ['left', 'right']) {
+            fillModelList(side)
             const info = kindInfo(el(`${side}Kind`).value)
             el(`${side}ModelBox`).style.display = info.model ? '' : 'none'
             el(`${side}GreedyBox`).style.display = info.key === 'ultimate' ? '' : 'none'
