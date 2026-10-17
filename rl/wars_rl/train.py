@@ -528,7 +528,7 @@ class Trainer:
             t2 = time.time()
             self.update += 1
             if self.update % c.snapshot_every == 0:
-                self.league.add(self.model, self.update)
+                self.league.add(self.model, self.update, in_use=np.unique(self.ctrl[self.ctrl > 0]))
             self.league.save_index()
             if self.update % c.save_every == 0:
                 self.save()
