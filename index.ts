@@ -3107,14 +3107,6 @@ try {
         el('pickRepeat').checked = params.get('repeat') === '1'
     }
     refreshPicker()
-    el('customBtn').addEventListener('click', () => {
-        el('menuButtons').style.display = 'none'
-        el('customPanel').style.display = 'block'
-    })
-    el('pickBack').addEventListener('click', () => {
-        el('customPanel').style.display = 'none'
-        el('menuButtons').style.display = ''
-    })
     el('pickSwap').addEventListener('click', () => {
         for (const f of ['Kind', 'Model', 'Greedy', 'Max']) {
             const prop = f === 'Greedy' ? 'checked' : 'value'
@@ -3132,41 +3124,9 @@ try {
 
     console.log(new URLSearchParams(window.location.search).get('mode'))
 
-    document.getElementById('pl').addEventListener('click', () => {
-        window.open('?mode=player-vs-player', '_self')
-    })
-    document.getElementById('bot').addEventListener('click', () => {
-        window.open('?mode=player-vs-ai', '_self')
-    })
+    // The match picker is the start screen; the old ?mode=... links above still work.
     document.getElementById('mul1').addEventListener('click', () => {
         window.open('?mode=multiplayer', '_self')
-    })
-    document.getElementById('bot2').addEventListener('click', () => {
-        window.open('?mode=player-vs-genai', '_self')
-    })
-    document.getElementById('bot3').addEventListener('click', () => {
-        window.open('?mode=player-vs-reinforcementai', '_self')
-    })
-    document.getElementById('bot4').addEventListener('click', () => {
-        window.open('?mode=reinforcementai-vs-reinforcementai', '_self')
-    })
-    document.getElementById('bot5').addEventListener('click', () => {
-        window.open('?mode=player-vs-local-reinforcementai', '_self')
-    })
-    document.getElementById('bot6').addEventListener('click', () => {
-        window.open('?mode=local-reinforcementai-vs-reinforcementai', '_self')
-    })
-    document.getElementById('bot7').addEventListener('click', () => {
-        window.open('?mode=local-old-vs-reinforcementai', '_self')
-    })
-    document.getElementById('bot8').addEventListener('click', () => {
-        window.open('?mode=player-vs-ultimate-ai', '_self')
-    })
-    document.getElementById('bot9').addEventListener('click', () => {
-        window.open('?mode=old-bot-vs-ultimate-ai', '_self')
-    })
-    document.getElementById('bot10').addEventListener('click', () => {
-        window.open('?mode=local-reinforcementai-vs-ultimate-ai', '_self')
     })
 
 

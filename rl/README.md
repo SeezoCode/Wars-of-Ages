@@ -2,7 +2,7 @@
 
 This folder trains a policy for the browser game with **PPO + league self-play** on a
 **Rust port of the game engine**. The trained policy plays in the browser as `UltimateBot`
-(menu: *Player vs Ultimate AI*).
+(pick "Ultimate AI" for a side on the start screen).
 
 ```
 rl/
@@ -125,10 +125,10 @@ optimal policy in theory. The siege term is still game-specific knowledge: turn 
 cd rl && python -m wars_rl.export runs/ultimate/latest.pt ../ultimate_model.json
 ```
 
-Then open the game and choose **Player vs Ultimate AI** (or *old bot vs Ultimate AI* /
-*local reinforcement AI vs Ultimate AI*). `UltimateBot` runs the exported MLP in plain
-TypeScript, so there is no extra dependency. Pass `greedy = true` to its constructor to always
-play the arg-max action instead of sampling.
+Then open the game and pick **Ultimate AI** for a side on the start screen. You can set any
+player or bot (or a model file from disk) on each side, plus speed, max troops and auto-repeat.
+`UltimateBot` runs the exported MLP in plain TypeScript, so there is no extra dependency. Tick
+"always best move" to make it play the arg-max action instead of sampling.
 
 ## What the agent sees and does
 
