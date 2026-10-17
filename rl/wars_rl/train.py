@@ -106,6 +106,8 @@ class TrainConfig:
     # rewards: outcome + annealed shaping
     win_reward: float = 1.0
     draw_reward: float = -0.5
+    time_penalty: float = 0.5           # total cost of a game that lasts the full max_ticks, spread evenly
+                                        # over its decisions (not annealed): makes stalling cost something
     shaping_base_damage: float = 2.0   # x (enemy base damage - own base damage) / 800
     shaping_bounty: float = 0.03       # x (bounty earned - bounty given) / 100
     shaping_front: float = 1.0         # potential-based: gamma*phi(s') - phi(s), phi = own front - enemy front
@@ -138,7 +140,7 @@ class TrainConfig:
 LIVE_FIELDS = {
     "total_env_steps", "lr", "lr_final", "gamma", "gae_lambda", "clip", "epochs", "minibatch_size", "ent_coef",
     "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward",
-    "draw_reward", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_anneal_frac",
+    "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_anneal_frac",
     "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "max_snapshots",
     "save_every", "export_every", "torch_threads", "rollout_torch_threads",
 }
@@ -351,6 +353,7 @@ class Trainer:
             out = np.where(winner == s, c.win_reward, np.where(winner == 1 - s, -c.win_reward,
                                                                 np.where(winner == 2, c.draw_reward, 0.0)))
             r[:, s] += np.where(done, out, 0.0)
+        r -= c.time_penalty * c.decision_interval / c.max_ticks  # every decision costs a little time
         return r.astype(np.float32)
 
     def _potential(self, obs: np.ndarray) -> np.ndarray:
@@ -412,6 +415,7 @@ class Trainer:
         b_learn = np.zeros((T, N, 2), dtype=bool)
         obs, mask = self.venv.observe()
         phi = self._potential(obs)
+        self.idle = [0, 0]  # learner decisions that waited although something was affordable / all decisions
         for t in range(T):
             learn = self.ctrl == CTRL_LEARNER
             li = np.nonzero(learn)
@@ -422,6 +426,9 @@ class Trainer:
             if eps > 0:
                 self._explore(o_t[lt], m_t[lt], a, lp, eps)
             actions[li] = a.numpy()
+            could_act = mask[li][:, :WAIT].any(axis=1)
+            self.idle[0] += int(((actions[li] == WAIT) & could_act).sum())
+            self.idle[1] += len(could_act)
             self._opponent_actions(obs, mask, actions)
             b_obs[t], b_mask[t] = o_t, m_t
             b_act[t][lt], b_logp[t][lt], b_val[t][lt] = a, lp, v
@@ -544,6 +551,7 @@ class Trainer:
                        update_s=round(t2 - t1, 2), win=win, draw=draw, games=games,
                        ep_ticks=round(float(np.mean(self.ep_ticks))) if self.ep_ticks else None,
                        hints_now=round(max(0.0, 1.0 - progress / max(c.shaping_anneal_frac, 1e-9)), 4),
+                       idle_wait=round(self.idle[0] / max(1, self.idle[1]), 4),
                        explore_now=round(c.explore_eps * max(0.0, 1.0 - progress / max(c.explore_anneal_frac, 1e-9)), 5),
                        **stats)
             with open(os.path.join(c.run_dir, "log.jsonl"), "a") as fh:

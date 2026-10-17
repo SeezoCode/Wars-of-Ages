@@ -151,6 +151,10 @@ FIELDS = {
 
     "win_reward": ("Rewards", "Win / loss reward", "+this for a win, -this for a loss."),
     "draw_reward": ("Rewards", "Draw reward", "Usually negative so stalling isn't a safe option."),
+    "time_penalty": ("Rewards", "Time cost",
+                     "Total penalty for a game that lasts the whole time limit, charged a little on every decision "
+                     "(never fades). Makes stalling and waiting cost something, so it learns to end games. Keep it "
+                     "around the size of the draw penalty; 0 turns it off."),
     "shaping_base_damage": ("Rewards", "Hint: base damage", "x (damage dealt - damage taken) / 800 base HP."),
     "shaping_bounty": ("Rewards", "Hint: kill money", "x (money earned from kills - money given) / 100."),
     "shaping_front": ("Rewards", "Hint: front line", "Reward for pushing the front line forward."),
@@ -306,7 +310,7 @@ class Runs:
             c = self._cached(name)
             c["log_pos"], rows = self._read_new(os.path.join(d, "log.jsonl"), c["log_pos"])
             keep = ("update", "env_steps", "episodes", "sps", "win", "draw", "games", "entropy", "explained_var",
-                    "approx_kl", "ep_ticks", "lr", "ent_coef", "hints_now", "explore_now", "rollout_s", "update_s")
+                    "approx_kl", "ep_ticks", "lr", "ent_coef", "hints_now", "explore_now", "idle_wait", "rollout_s", "update_s")
             c["log"].extend({k: r.get(k) for k in keep} for r in rows)
             c["ep_pos"], eps = self._read_new(os.path.join(d, "episodes.jsonl"), c["ep_pos"])
             for e in eps:

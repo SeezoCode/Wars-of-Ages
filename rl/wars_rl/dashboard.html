@@ -340,7 +340,8 @@ function renderRun(d) {
     lineChart({marks, title: 'Game length', subtitle: 'average minutes of game time', series: one('ep_ticks', v => v / 3600), yFmt: v => v.toFixed(1) + ' min'}),
     lineChart({marks, title: 'Training speed', subtitle: 'decisions per second', series: one('sps'), yFmt: fmtN}),
     lineChart({marks, title: 'Entropy', subtitle: 'how varied its choices are; near 0 = it stopped exploring', series: one('entropy'), yFmt: v => v.toFixed(2)}),
-    lineChart({marks, title: 'Explained variance', subtitle: 'how well the critic predicts outcomes (1 = perfect, below 0 = worse than guessing; clipped at -1)', series: one('explained_var', v => Math.max(-1, v)), yMax: 1, yFmt: v => v.toFixed(2)})))
+    lineChart({marks, title: 'Explained variance', subtitle: 'how well the critic predicts outcomes (1 = perfect, below 0 = worse than guessing; clipped at -1)', series: one('explained_var', v => Math.max(-1, v)), yMax: 1, yFmt: v => v.toFixed(2)}),
+    lineChart({marks, title: 'Waiting with money', subtitle: 'share of its decisions that were "wait" although it could afford a troop, research or upgrade', series: one('idle_wait'), yMax: 1, yFmt: pct})))
 
   // recent games
   main.append(h('h2', {}, 'Recent games'))
@@ -364,7 +365,7 @@ function renderRun(d) {
 function fmtV(v) { return typeof v === 'number' && v !== 0 && (Math.abs(v) < 1e-2 || Math.abs(v) >= 1e6) ? v.toExponential(2) : String(+(+v).toPrecision(6)) }
 function settingsCard(d) {
   const L = d.latest || {}
-  const now = [['learning rate', L.lr], ['entropy bonus', L.ent_coef], ['random-move rate', L.explore_now], ['reward hints at', L.hints_now != null ? Math.round(L.hints_now * 100) + '%' : null]]
+  const now = [['learning rate', L.lr], ['entropy bonus', L.ent_coef], ['random-move rate', L.explore_now], ['reward hints at', L.hints_now != null ? Math.round(L.hints_now * 100) + '%' : null], ['waits with money', L.idle_wait != null ? (L.idle_wait * 100).toFixed(1) + '%' : null]]
     .filter(([, v]) => v != null).map(([k, v]) => h('span', {style: 'margin-right:16px'}, h('span', {class: 'muted'}, k + ' '), typeof v === 'number' ? fmtV(v) : v))
   const pend = Object.entries(d.pending || {})
   const hist = d.changes.slice(-8).reverse().map(c => h('div', {class: 'small'}, h('span', {class: 'muted'}, `${ago(c.time)} · update ${c.update} · ${fmtN(c.env_steps)} decisions: `),

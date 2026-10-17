@@ -209,6 +209,15 @@ a JSON file: `python -m wars_rl.train --config configs/ultimate.json` (flags ove
 | `--max-ticks` | 54000 | game length limit (15 min) before it counts as a draw |
 | `--seed` | 1 | change to get a different run with the same settings |
 
+### Stalling: time cost
+
+`time_penalty` (dashboard: Rewards → *Time cost*, default 0.5) charges a small cost on every
+decision, adding up to that value for a game that lasts the whole time limit. Unlike the reward
+hints it never fades, and it can't be gamed: spamming troops doesn't avoid it, only ending the
+game does. It is live-changeable. The *Waiting with money* chart shows how often the AI waits
+although it could afford something. Some waiting is fine (saving up for a Trebuchet), but a
+high or rising share means it is stalling.
+
 ### Training without base upgrades
 
 `--max-upgrades 0` (dashboard: Game → *Max base upgrades*) turns off the +20% base upgrade for
