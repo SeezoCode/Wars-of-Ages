@@ -233,8 +233,9 @@ the file directly:
 ```bash
 cd ..                      # repo root
 python3 -m http.server 8000
-# open http://localhost:8000/?mode=player-vs-ultimate-ai
-#   (or ?mode=old-bot-vs-ultimate-ai to watch it against the classic bot)
+# open http://localhost:8000/ and pick the players (e.g. Human vs Ultimate AI). "or file:" loads a
+# model straight from disk, e.g. rl/runs/v2/ultimate_model.json, without copying it anywhere.
+# Links work too: http://localhost:8000/?mode=custom&left=classic&right=ultimate&speed=5
 ```
 
 `index.js` already contains `UltimateBot`. You only need `npx tsc` if you edit `index.ts`.
@@ -266,7 +267,7 @@ git push -u origin new-ultimate-model
 
 Then open a pull request into `master` on GitHub, or push to `master` directly if that's how
 you work. **Pushing to `master` deploys the site** (`.github/workflows/static.yml` publishes the
-repo to GitHub Pages), so the new model goes live for everyone choosing *Player vs Ultimate AI*.
+repo to GitHub Pages), so the new model goes live for everyone who picks *Ultimate AI*.
 
 Tip: put the evaluation results in the commit message or the README's results table, so you
 can tell later which model was better.

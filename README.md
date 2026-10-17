@@ -18,4 +18,4 @@ After that open the IP address in your browser and play
 ## Ultimate AI (reinforcement learning)
 `rl/` has a Rust port of the game engine (checked tick-for-tick against `index.js`) and a
 PyTorch PPO trainer with league self-play. The trained bot plays in the browser as
-**Player vs Ultimate AI** and loads `ultimate_model.json`. See [rl/README.md](rl/README.md).
+the **Ultimate AI** (pick it on the start screen) and loads `ultimate_model.json`. See [rl/README.md](rl/README.md).
