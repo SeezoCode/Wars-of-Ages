@@ -1,22 +1,49 @@
 import fs from "node:fs";
 
+
+
+
+
+// ============================================================================
+// THIS WAS SPECIFICALLY DESIGNED FOR A 10M STEP TRAINING RUN, AND MAY NOT BE OPTIMAL FOR OTHER SETTINGS.
+// ============================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ============================================================================
 // 1. TRAINING CONFIGURATION
 // ============================================================================
-const TARGET_STEPS = 500_000;        // Total RL decisions to train
+const TARGET_STEPS = 200_000_000;        // Total RL decisions to train
 const LOAD_FROM_MEMORY = true;       // true = resume from ultimate_dqn_model.json | false = fresh brain
 const MODEL_FILE = "./ultimate_dqn_model.json";
-const MAX_TICKS_PER_MATCH = 1_000_000;  // 5 minutes max match duration (at 60 ticks/s) before draw reset
+const MAX_TICKS_PER_MATCH = 300_000;  // 5 minutes max match duration (at 60 ticks/s) before draw reset
 
 // Reward & Penalty Weights
-const TROOP_DMG_WEIGHT = 0.3;        // +1.0 per troop damage dealt
+const TROOP_DMG_WEIGHT = 0.2;        // +1.0 per troop damage dealt
 const BASE_DMG_WEIGHT = 120.0;       // +80.0 per enemy base damage dealt
-const OWN_BASE_LOSS_PENALTY = 3.5;   // -3.5 per own base health lost
-const SPEND_PENALTY_FACTOR = 0.4;    // Linear cost penalty: -0.4 per 1 gold spent
-const WIN_BONUS = 900.0;             // Bonus for destroying the enemy base
+const OWN_BASE_LOSS_PENALTY = 80.0;   // -3.5 per own base health lost
+const SPEND_PENALTY_FACTOR = 0.1;    // Linear cost penalty: -0.4 per 1 gold spent
+const WIN_BONUS = 7000.0;             // Bonus for destroying the enemy base
 
 // Network Hyperparameters (147 -> 256 -> 128 -> Dueling Value + Advantage)
-const INPUT_SIZE = 147;              // Expanded to track Base Levels
+const INPUT_SIZE = 148;              // Expanded to track Base Levels
 const HIDDEN_1 = 256;
 const HIDDEN_2 = 128;
 const ACTIONS = [
@@ -31,20 +58,20 @@ const N_STEPS = 4;
 const GAMMA = 0.94;
 const TAU = 0.005;
 const BATCH_SIZE = 24;
-const TRAIN_EVERY_N_STEPS = 2;       // Run mini-batch backprop every 2 decisions for fast throughput
-const REPLAY_CAPACITY = 67_000;
+const TRAIN_EVERY_N_STEPS = 4;       // Run mini-batch backprop every 2 decisions for fast throughput
+const REPLAY_CAPACITY = 400_000;
 const PER_ALPHA = 0.6;
 
-const LR_INITIAL = 0.0008;
-const LR_MIN = 0.00015;
+const LR_INITIAL = 0.0003;
+const LR_MIN = 0.00001;
 const ADAM_BETA1 = 0.9;
 const ADAM_BETA2 = 0.999;
 const ADAM_EPS = 1e-8;
 const WEIGHT_DECAY = 1e-5;
 
-let EPSILON = 0.30;                  // Starts at 30% exploration and decays to 3% over 100k steps
-const EPSILON_MIN = 0.03;
-const EPSILON_DECAY = 0.999975;
+let EPSILON = 1.0;                  // Starts at 30% exploration and decays to 3% over 100k steps
+const EPSILON_MIN = 0.05;
+const EPSILON_DECAY = 0.9999999;
 
 const canvasWidth = 700;
 const baseStats = { health: 800, maxHealth: 800, position: 0, span: 45, level: 1 };
@@ -124,6 +151,8 @@ let adamV = createZeroGrads(onlineNet);
 let stepCounter = 0;
 let updateCounter = 0;
 
+let savedStepCounter = 0;
+
 if (LOAD_FROM_MEMORY && fs.existsSync(MODEL_FILE)) {
   try {
     const saved = JSON.parse(fs.readFileSync(MODEL_FILE, "utf8"));
@@ -131,6 +160,7 @@ if (LOAD_FROM_MEMORY && fs.existsSync(MODEL_FILE)) {
       for (const k of PARAM_KEYS) onlineNet[k] = new Float32Array(saved[k]);
       targetNet = cloneNetwork(onlineNet);
       stepCounter = saved.stepCounter || 0;
+      savedStepCounter = stepCounter;
       if (typeof saved.epsilon === "number") EPSILON = Math.max(EPSILON_MIN, saved.epsilon);
       console.log(`[LOADED] Resuming from ${MODEL_FILE} at step ${stepCounter} (Eps: ${EPSILON.toFixed(4)})`);
     } else {
@@ -246,7 +276,7 @@ function accumulateSampleGradients(x, actionIdx, targetQ, isWeight, grads) {
 }
 
 function applyAdamUpdate(grads, batchCount, step) {
-  const lr = Math.max(LR_MIN, LR_INITIAL * Math.pow(0.99995, step));
+  const lr = Math.max(LR_MIN, LR_INITIAL * Math.pow(0.999999, step));
   const biasCorr1 = 1 - Math.pow(ADAM_BETA1, step);
   const biasCorr2 = 1 - Math.pow(ADAM_BETA2, step);
   const invBatch = 1 / batchCount;
@@ -290,16 +320,16 @@ function extractFeatures(payload) {
   const enemyCounts = new Array(12).fill(0);
   for (const u of myUnits) {
     const m = UNIT_META[u.name];
-    if (m && m.id < 12) myCounts[m.id] += 1 / 7;
+    if (m && m.id < 12) myCounts[m.id] += 1 / 10;
   }
   for (const u of enemyUnits) {
     const m = UNIT_META[u.name];
-    if (m && m.id < 12) enemyCounts[m.id] += 1 / 7;
+    if (m && m.id < 12) enemyCounts[m.id] += 1 / 10;
   }
   const unlockedFlags = Array.from({ length: 12 }, (_, i) => (unlocked[i] ? 1.0 : 0.0));
   features.push(...myCounts, ...enemyCounts, ...unlockedFlags);
 
-  const zones = Array.from({ length: 7 }, () => ({ myHP: 0, myDPS: 0, enHP: 0, enDPS: 0, enCount: 0 }));
+  const zones = Array.from({ length: 10 }, () => ({ myHP: 0, myDPS: 0, enHP: 0, enDPS: 0, enCount: 0 }));
   for (const u of myUnits) {
     const z = Math.max(0, Math.min(6, Math.floor((u.distanceToMyBase || 0) / 100)));
     const m = UNIT_META[u.name] || UNIT_META["Basic Troop"];
@@ -367,7 +397,7 @@ function extractFeatures(payload) {
   // Normalized Base Metrics
   const myBaseNorm = Math.min(2.5, (field.playerBaseHealth ?? 800) / 2000);
   const enemyBaseNorm = Math.min(2.5, (field.enemyBaseHealth ?? 800) / 2000);
-  const myCapRatio = myUnits.length / 7;
+  const myCapRatio = myUnits.length / 10;
   const myBaseLevelNorm = Math.min(2.0, (field.myBaseLevel || 1) / 5);
   const enBaseLevelNorm = Math.min(2.0, (field.enemyBaseLevel || 1) / 5);
   const canUpg = field.canUpgradeBase ? 1.0 : 0.0;
@@ -380,7 +410,7 @@ function extractFeatures(payload) {
     myFrontNow, myFront1s, myFront2s, myFront5s, myFront10s, myFront20s,
     enFrontNow, enFront1s, enFront2s, enFront5s, enFront10s, enFront20s,
     frontlineGap, moneyNorm, encNorm, myBaseNorm, enemyBaseNorm, myCapRatio, doggoComboReady,
-    myBaseLevelNorm, enBaseLevelNorm, canUpg
+    myBaseLevelNorm, enBaseLevelNorm, canUpg, field.isFallout || 0.0
   );
 
   return Float32Array.from(features);
@@ -545,7 +575,7 @@ const range = (maxQ - minQ) + 1e-8;
 // 0.1 = Very Strict (95% chance to pick #1)
 // 0.2 = Dynamic (70-80% chance for #1, 20% for #2, small chance for others)
 // 0.5 = Chaotic (Very spread out)
-const TEMPERATURE = 0.2; 
+const TEMPERATURE = 0.1; 
 
 // 2. Normalize and convert to probabilities
 let sumExp = 0;
@@ -794,7 +824,7 @@ class HeadlessRLBot {
     this.side = side;
     this.financialAid = [true, true, true];
     this.unlockedUnits = [true, false, false, false, false, false, false, false, false, false, false, false];
-    this.maxUnits = 7;
+    this.maxUnits = 10;
     this.multiplier = 1;
     this.cooldown = 5;
     this.toUnlockUnit = 1;
@@ -822,9 +852,12 @@ class HeadlessRLBot {
   addTroop(index) {
     if (index === undefined || index < 0) return;
     if (this.isEnoughMoney(troopArr[index].price) && this.playerUnits.length < this.maxUnits) {
-      this.stats.spending += troopArr[index].price;
-      this.addFunds(-troopArr[index].price);
-      this.playerUnits.push(createTroopInstance(index, this.side, this, this.enemy, this.multiplier));
+      if (index === 10 && this.game.atomicDoomPending) {}
+      else {
+        this.stats.spending += troopArr[index].price;
+        this.addFunds(-troopArr[index].price);
+        this.playerUnits.push(createTroopInstance(index, this.side, this, this.enemy, this.multiplier));
+      }
     }
   }
 
@@ -873,6 +906,7 @@ class HeadlessRLBot {
     return {
       time: this.game.time,
       money: Math.round(this.money),
+      isFallout: this.game.atomicDoomPending ? 1.0 : 0.0, 
       troopDamageDealt: troopDmg,
       playerBaseHealth: Math.round(this.playerBase.health),
       enemyBaseHealth: Math.round(this.enemyBase.health),
@@ -965,7 +999,7 @@ class HeadlessRLBot {
 
     const enc = this.encouragement();
 
-    const upgCost = 350 * this.playerBase.level;
+    const upgCost = 1500;
     let availableUnits = [];
 
     if (this.playerUnits.length < this.maxUnits) {
@@ -983,6 +1017,7 @@ class HeadlessRLBot {
       const payload = {
         side: this.side,
         money: Math.round(this.money),
+        isFallout: this.game.atomicDoomPending ? 1.0 : 0.0, 
         encouragement: enc,
         unlockedUnits: this.unlockedUnits,
         availableUnits,
@@ -1143,7 +1178,7 @@ while (stepCounter < TARGET_STEPS) {
     if (stepCounter - lastLogStep >= 2000) {
       lastLogStep = stepCounter;
       const elapsedSec = (performance.now() - startTime) / 1000;
-      const stepsPerSec = Math.round(stepCounter / Math.max(0.1, elapsedSec));
+      const stepsPerSec = Math.round((stepCounter - savedStepCounter) / Math.max(0.1, elapsedSec));
       saveModelSafely();
       console.log(
         `[Step ${stepCounter.toLocaleString()}/${TARGET_STEPS.toLocaleString()}] ` +
