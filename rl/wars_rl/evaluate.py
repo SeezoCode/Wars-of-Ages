@@ -181,6 +181,7 @@ def main():
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--max-ticks", type=int, default=54000)
     ap.add_argument("--dqn-model", default=os.path.join(REPO, "ultimate_dqn_model.json"))
+    ap.add_argument("--json", action="store_true", help="also print one JSON line per opponent (for the dashboard)")
     args = ap.parse_args()
     policy = load_policy(args.policy)
     print(f"{args.policy} ({'greedy' if args.greedy else 'sampled'}), {args.games} games per opponent")
@@ -192,6 +193,9 @@ def main():
         print(f"  vs {opp:<10} W {r['wins']:4d}  D {r['draws']:4d}  L {r['losses']:4d}  "
               f"win {100 * r['wins'] / max(1, r['games']):5.1f}% (95% CI {100 * lo:.1f}-{100 * hi:.1f})  "
               f"avg game {r['avg_seconds']:.0f}s  [{time.time() - t0:.0f}s]", flush=True)
+        if args.json:
+            print("JSON " + json.dumps({"opponent": opp, **r, "ci_low": lo, "ci_high": hi,
+                                        "greedy": args.greedy, "max_ticks": args.max_ticks}), flush=True)
 
 
 if __name__ == "__main__":

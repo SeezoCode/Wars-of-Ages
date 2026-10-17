@@ -21,6 +21,7 @@ import argparse
 import dataclasses
 import json
 import os
+import signal
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -65,6 +66,11 @@ class TrainConfig:
     decision_interval: int = 15
     max_ticks: int = 54_000             # 15 minutes; then a draw
     nuke_freeze_ticks: int = 45
+    start_money: float = 55.0
+    agent_max_units: int = 10
+    classic_max_units: int = 7
+    dqn_max_units: int = 10
+    worker_latency: int = 1
     worker_unit_ticks_per_frame: float = 60_000.0
     dqn_model: str = os.path.join(REPO, "ultimate_dqn_model.json")
 
@@ -160,7 +166,9 @@ class Trainer:
         self.venv = wars_engine.VecEnv(
             cfg.num_envs, decision_interval=cfg.decision_interval, max_ticks=cfg.max_ticks,
             nuke_freeze_ticks=cfg.nuke_freeze_ticks, worker_unit_ticks_per_frame=cfg.worker_unit_ticks_per_frame,
-            dqn_model=dqn_path, threads=cfg.env_threads)
+            start_money=cfg.start_money, agent_max_units=cfg.agent_max_units,
+            classic_max_units=cfg.classic_max_units, dqn_max_units=cfg.dqn_max_units,
+            worker_latency=cfg.worker_latency, dqn_model=dqn_path, threads=cfg.env_threads)
         mcfg = ModelConfig(wars_engine.OBS_SIZE, wars_engine.NUM_ACTIONS, list(cfg.actor_hidden),
                            list(cfg.critic_hidden), cfg.activation, cfg.layernorm)
         self.model = ActorCritic(mcfg)
@@ -172,6 +180,7 @@ class Trainer:
         self.results = defaultdict(lambda: deque(maxlen=300))  # opponent kind -> learner scores
         self.ep_ticks = deque(maxlen=300)
         self.seed_counter = cfg.seed * 1_000_003
+        self.episode_log = open(os.path.join(cfg.run_dir, "episodes.jsonl"), "a")  # one line per finished game
         self.ctrl = np.zeros((self.N, 2), dtype=np.int64)
         self.activity = np.ones(self.N)
         self.kind = [""] * self.N
@@ -238,9 +247,20 @@ class Trainer:
         self.episodes += 1
         self.ep_ticks.append(ticks)
         kind = self.kind[i]
+        info = self.venv.info(i)
+        side = 0 if kind == "self" or self.ctrl[i, 0] == CTRL_LEARNER else 1
+        me, en = ("left", "right") if side == 0 else ("right", "left")
+        rec = {"time": round(time.time(), 1), "update": self.update, "opponent": kind, "side": me,
+               "ticks": ticks, "own_base": round(info[me]["base_health"]), "enemy_base": round(info[en]["base_health"]),
+               "result": "W" if winner == side else ("L" if winner == 1 - side else "D")}
+        if kind == "past":
+            rec["opponent_id"] = int(self.ctrl[i, 1 - side])
+        if kind == "random":
+            rec["activity"] = round(float(self.activity[i]), 3)
+        self.episode_log.write(json.dumps(rec) + "\n")
+        self.episode_log.flush()
         if kind == "self":
             return
-        side = 0 if self.ctrl[i, 0] == CTRL_LEARNER else 1
         score = 1.0 if winner == side else (0.0 if winner == 1 - side else 0.5)
         self.results[kind].append(score)
         if kind == "past":
@@ -454,7 +474,16 @@ class Trainer:
                {"update": self.update, "env_steps": self.env_steps})
 
 
+def _interrupt(*_):
+    raise KeyboardInterrupt
+
+
 def main():
+    # Ctrl+C, a dashboard "Stop" (SIGTERM / Ctrl+Break on Windows): save, then exit. SIGINT is set
+    # explicitly because processes started in the background inherit an *ignored* SIGINT.
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), _interrupt)
     trainer = Trainer(parse_config())
     try:
         trainer.train()

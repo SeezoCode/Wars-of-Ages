@@ -38,6 +38,10 @@ Re-run `pip install ./rl/engine` whenever you change Rust code.
 
 ## Train
 
+**Easiest:** `cd rl && python -m wars_rl.dashboard`, then open http://localhost:8008. This is a web
+UI with every setting, live scores and charts, evaluation and export (see [TRAINING.md](TRAINING.md)).
+Or use the command line:
+
 ```bash
 cd rl
 python -m wars_rl.train                                    # defaults

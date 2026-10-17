@@ -8,6 +8,22 @@ All `python -m wars_rl...` commands are run from the `rl/` folder.
 
 ---
 
+## Easiest: the training dashboard
+
+```bash
+cd rl
+python -m wars_rl.dashboard        # open http://localhost:8008
+```
+
+A web page for everything in this guide: start, stop and resume runs with every setting
+(presets included, and an explanation for each advanced setting), live charts of win and draw
+rates per opponent, the score of every finished game, CPU and memory use, evaluations, and
+export to the game. Training keeps running if you close the dashboard; open it again to pick it
+back up. `pip install psutil` gives more accurate CPU numbers. The rest of this guide is the same
+thing on the command line.
+
+---
+
 ## 1. One-time setup
 
 You need **Rust** (https://rustup.rs), **Python 3.9+** and **Node.js** (only for the parity
