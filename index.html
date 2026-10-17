@@ -111,6 +111,22 @@
         /*        width: 145px;*/
         /*    }*/
         /*}*/
+        /* two columns side by side (left player | right player) without depending on the bootstrap CDN */
+        #shBot > .row, #controls, .picker-row { display: flex; flex-wrap: nowrap }
+        #shBot > .row > .col, #controls > .col, .picker-row > .col { flex: 1 1 0; min-width: 0 }
+        #controls > br { display: none }
+        .picker { width: 100%; margin: 3px 0; padding: 3px 6px; border-radius: 8px; border: 1px solid #ccc;
+                  background: white; color: black; font-size: 14px }
+        .picker-inline { width: auto; display: inline-block }
+        .picker-side { padding: 4px 6px }
+        .picker-title { font-weight: 600 }
+        .picker-small { font-size: 12px; color: #888; display: block; margin: 2px 0; text-align: left }
+        .picker-small input[type=file] { font-size: 11px; max-width: 100% }
+        .picker-options { font-size: 14px; margin-top: 6px }
+        .picker-options label { margin: 0 6px }
+        @media (prefers-color-scheme: dark) {
+            .picker { background: #1c1c1c; color: rgb(220, 220, 220); border-color: #444 }
+        }
         .label {
             display: inline-flex;
             align-items: center;
@@ -191,6 +207,8 @@
     <div id="startingScreen" class="vertical-center">
         <h1>Wars of Ages</h1>
         <p style="color: #c3c3c3">Filip Hostinský</p>
+        <div id="menuButtons">
+        <button id="customBtn" style="font-weight: 600">Custom match…</button><br>
         <button id="pl">Player vs Player</button>
         <button id="bot">Player vs AI</button>
         <button id="bot2">Player vs genAI</button>
@@ -202,6 +220,45 @@
         <button id="bot8">Player vs Ultimate AI</button>
         <button id="bot9">old bot vs Ultimate AI</button>
         <button id="bot10">local reinforcement AI vs Ultimate AI</button>
+        </div>
+        <div id="customPanel" style="display: none; max-width: 520px; margin: 0 auto">
+            <h5 style="margin-top: 6px">Custom match</h5>
+            <div class="row picker-row" style="margin: 0">
+                <div class="col picker-side">
+                    <div class="picker-title" style="color: royalblue">Left</div>
+                    <select id="leftKind" class="picker"></select>
+                    <label class="picker-small">Max troops <input id="leftMax" class="picker picker-inline" type="number" min="1" max="50" style="width: 60px"></label>
+                    <div id="leftModelBox" class="picker-model">
+                        <input id="leftModel" class="picker" type="text" placeholder="model URL">
+                        <label class="picker-small">or file: <input id="leftFile" type="file" accept=".json,application/json"></label>
+                        <label id="leftGreedyBox" class="picker-small"><input id="leftGreedy" type="checkbox"> always best move (greedy)</label>
+                    </div>
+                </div>
+                <div class="col picker-side">
+                    <div class="picker-title" style="color: crimson">Right</div>
+                    <select id="rightKind" class="picker"></select>
+                    <label class="picker-small">Max troops <input id="rightMax" class="picker picker-inline" type="number" min="1" max="50" style="width: 60px"></label>
+                    <div id="rightModelBox" class="picker-model">
+                        <input id="rightModel" class="picker" type="text" placeholder="model URL">
+                        <label class="picker-small">or file: <input id="rightFile" type="file" accept=".json,application/json"></label>
+                        <label id="rightGreedyBox" class="picker-small"><input id="rightGreedy" type="checkbox"> always best move (greedy)</label>
+                    </div>
+                </div>
+            </div>
+            <div class="picker-options">
+                <label>Speed <select id="pickSpeed" class="picker picker-inline">
+                    <option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option>
+                </select></label>
+                <label>Money <input id="pickMoney" class="picker picker-inline" type="number" min="0" value="55" style="width: 70px"></label>
+                <label>Draw after <input id="pickLimit" class="picker picker-inline" type="number" min="0" value="15" style="width: 55px"> min</label>
+                <label><input id="pickRepeat" type="checkbox"> auto-repeat (bots only)</label>
+            </div>
+            <p class="picker-small" style="margin: 2px 0 6px">Speed 1× = normal game speed. "Draw after" uses game time (0 = no limit). Empty max troops = default
+                (the AIs were trained with Ultimate/DQN 10, Classic 7; the Ultimate AI only sees its first 10 units).</p>
+            <button id="pickSwap" class="keep-size" style="width: 120px">⇄ Swap</button>
+            <button id="pickStart" class="keep-size" style="width: 160px; font-weight: 600">Start</button>
+            <button id="pickBack" class="keep-size" style="width: 120px">Back</button>
+        </div>
         <br> <hr>
         <p id="onlineIndicator">Play online</p>
         <button id="mul1">Multiplayer Server</button>
@@ -223,6 +280,11 @@
     </div>
 
 
+    <div id="matchInfo" style="display: none; font-size: 14px; margin: 4px auto 2px; max-width: 700px">
+        <span id="matchText"></span>
+        <button id="matchRematch" class="keep-size" style="width: auto; padding: 2px 12px; margin: 0 4px">Rematch</button>
+        <button id="matchMenu" class="keep-size" style="width: auto; padding: 2px 12px; margin: 0 4px">Menu</button>
+    </div>
     <canvas id="cx" style="overflow-x: auto; width: 100%; max-width: 700px; display: none; padding: 0; margin-bottom: 0"></canvas>
     <script type="module" src="index.js"></script>
 

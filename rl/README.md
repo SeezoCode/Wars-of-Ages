@@ -173,10 +173,26 @@ Two browser-only effects are modelled approximately (both are off in the parity 
 
 ## Speed
 
-On 4 CPU cores: ~2.6M game ticks/s for agent-vs-agent games (≈260k decisions/s); the DQN bot
-runs ~350k ticks/s. The classic bot is the slow one (a few thousand ticks/s), because every
-decision simulates up to ~400 full battles, just like the original. Its Rust worker stops
-battles that can provably never progress, e.g. Catapult vs Catapult (identical result, far less work).
+Measured on 4 CPU cores. Reproduce with `node rl/parity/bench_js.js 4 150` and
+`RAYON_NUM_THREADS=1 rl/engine/target/release/bench 4`.
+
+**Game engine, single thread, same workload** (random agents observing every 10 ticks):
+
+| matchup | JS (`index.js`, Node/V8) | Rust | speed-up |
+|---------|--------------------------|------|----------|
+| agent vs agent | 100k ticks/s | 3.1M ticks/s | ~31× |
+| agent vs DQN bot | 49k ticks/s | 264k ticks/s | ~5× (both spend most time in the DQN forward pass) |
+| classic bot's battle simulations | 0.27–0.66M sim-ticks/s | 7–9M sim-ticks/s | ~19–27× |
+
+Rust also runs the classic bot's ~400 battle simulations per decision in parallel, and runs
+many games at once: the Python `VecEnv` does 2.5M ticks/s (250k decisions/s) on 4 threads.
+Both engines stop battles that can provably never progress (e.g. Catapult vs Catapult) early,
+with an identical result. In JS that made those simulations ~80× faster.
+
+**Training throughput:** the old JS DQN trainers (`train_headless.js`, `ai_training/headless.js`)
+do ~100 decisions/s with a ~73k-parameter network, slowing down as the replay buffer fills.
+`wars_rl.train` does 1,200–2,500 decisions/s with a 1.28M-parameter network (~15–25× more
+decisions and ~400× more network compute per second).
 
 ## Using another RL library
 

@@ -261,7 +261,8 @@ fn puppy_free(units: &[usize]) -> bool {
 pub struct SimResult {
     pub damage: f64,
     pub spending: f64,
-    /// Sum over ticks of living units, as the JS worker would have simulated (no early exit).
+    /// Sum over ticks of living units: the work the JS worker does for this battle (it uses the
+    /// same early exit, see `Game.animation` in index.ts), used to model its reply latency.
     pub js_unit_ticks: f64,
 }
 
@@ -286,7 +287,6 @@ pub fn simulate(units_left: &[usize], units_right: &[usize], rng: &mut Rng) -> S
         right.add_troop(k);
     }
     let mut g = Game::new(left, right, *rng, Rng::new(0));
-    g.sim = true;
     let mut work = 0.0;
     let mut checkpoint: Vec<f64> = Vec::new();
     let mut scratch: Vec<f64> = Vec::new();
@@ -305,7 +305,6 @@ pub fn simulate(units_left: &[usize], units_right: &[usize], rng: &mut Rng) -> S
                 }
             }
             if !g.atomic_doom && scratch == checkpoint && !g.is_over() {
-                work += alive * (SIM_MAX_TICKS - g.time) as f64;
                 break;
             }
             std::mem::swap(&mut checkpoint, &mut scratch);

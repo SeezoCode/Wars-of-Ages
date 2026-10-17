@@ -56,6 +56,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from) {
 };
 // But be careful not to write it wrong since it has a powerful resolution going for the people that test my forms
 var canvasWidth, canvasHeight, cx, explosionIMG, explosionAtomicIMG, radiationSymbolIMG, buttonColor, deathAnimPending, radioactivityPending, bgColor, buttonBg, darkTheme, playingHostedGame;
+// ticks simulated per animation frame in the visualized game; real-time effects (nuke animation,
+// fallout timer) divide by it so they last the same number of game ticks at any speed
+var gameSpeed = 1;
 try {
     var canvas = document.querySelector('canvas');
     canvasWidth = canvas.width = 700;
@@ -495,20 +498,7 @@ var ExplodingTroop = /** @class */ (function (_super) {
     function ExplodingTroop(side, player, enemy, multiplier, specialParameters, troopStats) {
         if (specialParameters === void 0) { specialParameters = {}; }
         if (troopStats === void 0) { troopStats = troopArr[6]; }
-        var _this = _super.call(this, troopStats, side, player.visualize, multiplier, specialParameters) || this;
-        // @ts-ignore
-        if (player.visualize)
-            Array.from(document.getElementsByClassName(_this.side + "Button")).forEach(function (btn) {
-                if (btn.id === troopArr[6].name) {
-                    // @ts-ignore
-                    btn.disabled = true;
-                    setTimeout(function () {
-                        // @ts-ignore
-                        btn.disabled = false;
-                    }, 400);
-                }
-            });
-        return _this;
+        return _super.call(this, troopStats, side, player.visualize, multiplier, specialParameters) || this;
     }
     ExplodingTroop.prototype.attack = function (enemyTroopers, stats) {
         if (enemyTroopers[0]) {
@@ -665,25 +655,14 @@ var AtomicBomb = /** @class */ (function (_super) {
     // enemy: playerInterface
     function AtomicBomb(side, player, enemy, multiplier, specialParameters) {
         if (specialParameters === void 0) { specialParameters = {}; }
-        var _this = _super.call(this, side, player, enemy, multiplier, specialParameters, troopArr[10]) || this;
-        // this.player = player
-        // this.enemy = enemy
-        if (_this.visualize)
-            document.querySelectorAll('button').forEach(function (e) {
-                if (e.id === troopArr[10].name) {
-                    e.disabled = true;
-                    setTimeout(function () {
-                        e.removeAttribute('disabled');
-                    }, 100000);
-                }
-            });
-        return _this;
+        return _super.call(this, side, player, enemy, multiplier, specialParameters, troopArr[10]) || this;
     }
     AtomicBomb.prototype.attack = function (enemyTroopers) {
         this.health = 0;
     };
     AtomicBomb.prototype.deleteAnim = function () {
-        if (this.visualize)
+        // ExplodingTroop calls deleteAnim on every attack-timer tick; only the actual explosion animates
+        if (this.visualize && this.health <= 0)
             holdDeathAnim(this.position, this.span, this.visualize);
     };
     AtomicBomb.prototype.draw = function () {
@@ -701,35 +680,50 @@ var BossTroop = /** @class */ (function (_super) {
     }
     return BossTroop;
 }(Trooper));
+var ATOMIC_DOOM_TICKS = 1320; // 22 s of fallout at 60 ticks/s
+// One nuke animation at a time: a new explosion restarts it instead of stacking another loop
+var deathAnim = { frame: 0, running: false, position: 0, span: 0, restoreTimer: null };
+function endRadioactivity() {
+    radioactivityPending = false;
+    document.body.style.backgroundColor = bgColor;
+    document.querySelectorAll('button').forEach(function (e) {
+        e.style.backgroundColor = buttonBg;
+        e.style.color = buttonColor;
+    });
+}
 function holdDeathAnim(position, span, visualize) {
     if (!visualize)
         return;
-    var i = 0;
+    deathAnim.position = position;
+    deathAnim.span = span;
+    deathAnim.frame = 0;
+    if (deathAnim.restoreTimer) {
+        clearTimeout(deathAnim.restoreTimer);
+        deathAnim.restoreTimer = null;
+    }
     document.body.style.backgroundColor = 'rgb(26,38,26)';
     document.querySelectorAll('button').forEach(function (e) {
         e.style.backgroundColor = 'rgb(22,48,6)';
         e.style.color = 'rgb(166,172,154)';
     });
+    if (deathAnim.running)
+        return;
+    deathAnim.running = true;
     requestAnimationFrame(hold);
     function hold() {
         deathAnimPending = true;
-        i++;
-        cx.globalAlpha = i / 100;
-        cx.drawImage(explosionAtomicIMG, position - 171 / 2 + span / 4, 20);
+        deathAnim.frame += gameSpeed;
+        cx.globalAlpha = Math.min(1, deathAnim.frame / 100);
+        cx.drawImage(explosionAtomicIMG, deathAnim.position - 171 / 2 + deathAnim.span / 4, 20);
         cx.globalAlpha = 1;
-        if (i <= 45)
+        if (deathAnim.frame <= 45)
             requestAnimationFrame(hold);
         else {
+            deathAnim.running = false;
             deathAnimPending = false;
             radioactivityPending = true;
-            setTimeout(function () {
-                radioactivityPending = false;
-                document.body.style.backgroundColor = bgColor;
-                document.querySelectorAll('button').forEach(function (e) {
-                    e.style.backgroundColor = buttonBg;
-                    e.style.color = buttonColor;
-                });
-            }, 22000);
+            // the fallout look lasts as long as the fallout (22 s of game time after the latest bomb)
+            deathAnim.restoreTimer = setTimeout(endRadioactivity, 22000 / gameSpeed);
         }
     }
 }
@@ -793,7 +787,9 @@ var Game = /** @class */ (function () {
         if (moveCount === void 0) { moveCount = 1; }
         this.time = 0;
         this.atomicDoomPending = false;
+        this.atomicDoomUntil = 0; // game time at which the fallout ends
         this.moveCount = 1;
+        this.stopped = false; // set to end a visualized game early (custom match time limit / rematch)
         // this.msTime = performance.now()
         this.DOMAccess = DOMAccess;
         this.playerOneUnits = [];
@@ -807,10 +803,14 @@ var Game = /** @class */ (function () {
         this.players[0].map(this.players[1], visualize, DOMAccess, this.playerOneUnits, playerUnits1, this.playerTwoUnits, this.playerTwoBase, this.playerOneBase, this);
         this.players[1].map(this.players[0], visualize, DOMAccess, this.playerTwoUnits, playerUnits2, this.playerOneUnits, this.playerOneBase, this.playerTwoBase, this);
         this.moveCount = moveCount;
+        if (visualize)
+            gameSpeed = Math.max(1, moveCount);
         this.animation();
     }
     Game.prototype.move = function () {
         var _this = this;
+        if (this.atomicDoomPending && this.time >= this.atomicDoomUntil)
+            this.atomicDoomPending = false;
         // Between-tick decisions for policy bots (UltimateBot): both decide from the same
         // state, then act left player first. Mirrors Env::step in rl/engine/src/env.rs.
         var decisions = this.players.map(function (p) { return p.decide ? p.decide(_this.time) : undefined; });
@@ -877,6 +877,7 @@ var Game = /** @class */ (function () {
         var aliveBases = function () {
             return _this.players[0].doesBaseHaveHealth() && _this.players[1].doesBaseHaveHealth();
         };
+        var isStopped = function () { return _this.stopped; };
         if (this.visualize)
             requestAnimationFrame(hold);
         // if (this.DOMAccess) {
@@ -885,8 +886,21 @@ var Game = /** @class */ (function () {
         //     }, .001)
         // }
         else {
+            // Headless battle (the classic bot's worker simulations).
+            // Exact early exit for stalemates such as Catapult vs Catapult, which otherwise run all 120 000
+            // ticks: positions only move forward and health only goes down, so if nothing changed between
+            // two checkpoints further apart than any attack cycle (Trebuchet: 300 ticks), nothing ever will.
+            // The result and the Math.random() calls are the same as running to the end.
+            var checkpoint = '';
+            var fingerprint = function () { return __spreadArray(__spreadArray(__spreadArray([_this.playerOneBase.health, _this.playerTwoBase.health], _this.playerOneUnits.map(function (u) { return u.position + "," + u.health; })), ['|']), _this.playerTwoUnits.map(function (u) { return u.position + "," + u.health; })).join(';'); };
             while (aliveBases() && this.playerOneUnits.length && this.playerTwoUnits.length && this.time < 120000) { //
                 move();
+                if (this.time % 610 === 0) {
+                    var fp = fingerprint();
+                    if (!this.atomicDoomPending && fp === checkpoint)
+                        break;
+                    checkpoint = fp;
+                }
             }
             // console.log('Game ended,',
             //     (!this.playerOneUnits.length && !this.playerTwoUnits.length ? 'nobody' : (this.playerOneUnits.length ? 'left' : 'right')), 'won',
@@ -894,6 +908,8 @@ var Game = /** @class */ (function () {
             //     'Right player damage:', this.players[1].stats.damageDealt)
         }
         function hold() {
+            if (isStopped())
+                return;
             for (var i = 0; i < mc; i++)
                 move();
             if (aliveBases())
@@ -1032,10 +1048,9 @@ var Player = /** @class */ (function () {
                 if (playerUnit.health <= 0) {
                     playerUnit.deleteAnim();
                     if (playerUnit.name === troopArr[10].name) {
+                        // fallout lasts 22 s (1320 ticks) after the latest bomb, at any game speed
                         _this.game.atomicDoomPending = true;
-                        setTimeout(function () {
-                            _this.game.atomicDoomPending = false;
-                        }, 22000);
+                        _this.game.atomicDoomUntil = Math.max(_this.game.atomicDoomUntil, _this.game.time + ATOMIC_DOOM_TICKS);
                     }
                     else if (playerUnit.name === troopArr[6].name) {
                         _this.game.boomerDoomer(playerUnit.position);
@@ -1140,7 +1155,10 @@ var Player = /** @class */ (function () {
                         else if (_this.unlockedUnits[i] && !_this.isEnoughMoney(stat.price)) {
                             _this.redden(button, 280);
                         }
-                        else if (_this.playerUnits.length >= 10) {
+                        else if (i === 10 && _this.game.atomicDoomPending) {
+                            _this.redden(button, 280); // no new bomb during fallout (same rule as the AIs and the server)
+                        }
+                        else if (_this.playerUnits.length >= _this.maxUnits) {
                             _this.redden(button, 180);
                         }
                         else if (_this.unlockedUnits[i])
@@ -2048,7 +2066,7 @@ var LocalRLBot = /** @class */ (function (_super) {
                 this.probHistory.shift();
             }
             var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " AI Brain:</strong><br/>";
-            var _loop_1 = function (i) {
+            var _loop_2 = function (i) {
                 // Check if it is unlocked (0-11 are troops, 12 is Base, 13 is wait)
                 var isUnlocked = i < 12 ? this_1.unlockedUnits[i] : true;
                 if (isUnlocked) {
@@ -2068,7 +2086,7 @@ var LocalRLBot = /** @class */ (function (_super) {
             var this_1 = this;
             // Loop through ALL actions in their strict default order so the rows never jump around
             for (var i = 0; i < this.ACTIONS.length; i++) {
-                _loop_1(i);
+                _loop_2(i);
             }
             html += "</div>";
             // Target your existing HTML element
@@ -2150,6 +2168,8 @@ var UltimateBot = /** @class */ (function (_super) {
         _this.decisionInterval = 10;
         _this.layers = null;
         _this.lastProbs = null;
+        _this.computeMs = [];
+        _this.brainHistory = [];
         _this.greedy = greedy;
         if (modelUrl)
             _this.loadModel(modelUrl);
@@ -2272,7 +2292,7 @@ var UltimateBot = /** @class */ (function (_super) {
             out[i] = g[i];
         var egoX = function (pos) { return _this.side === 'left' ? pos / canvasWidth : (canvasWidth - pos) / canvasWidth; };
         var writeUnits = function (units, base) {
-            var _loop_2 = function (s) {
+            var _loop_3 = function (s) {
                 var u = units[s];
                 var off = base + s * ULT_UNIT;
                 var kind = troopArr.findIndex(function (t) { return t.name === u.name; });
@@ -2289,7 +2309,7 @@ var UltimateBot = /** @class */ (function (_super) {
                 out[off + 19] = Math.log(1 + Math.max(u.damage, 0)) / 5;
             };
             for (var s = 0; s < Math.min(units.length, ULT_MAX_SLOTS); s++) {
-                _loop_2(s);
+                _loop_3(s);
             }
         };
         writeUnits(me.playerUnits, ULT_GLOBAL);
@@ -2348,6 +2368,7 @@ var UltimateBot = /** @class */ (function (_super) {
     UltimateBot.prototype.decide = function (time) {
         if (!this.layers || time % this.decisionInterval !== 0)
             return undefined;
+        var t0 = typeof performance !== 'undefined' ? performance.now() : 0;
         var mask = this.actionMask();
         var logits = this.forward(this.observe());
         var maxL = -Infinity;
@@ -2383,28 +2404,53 @@ var UltimateBot = /** @class */ (function (_super) {
                         break;
                 }
         }
-        if (this.DOMAccess)
+        if (this.DOMAccess) {
+            this.showComputeTime(performance.now() - t0);
             this.showBrain(probs);
+        }
         return action;
     };
-    UltimateBot.actionName = function (a) {
-        if (a < troopArr.length)
-            return troopArr[a].name;
-        if (a < ULT_UPGRADE)
-            return "Research " + troopArr[a - ULT_RESEARCH0].name;
-        return a === ULT_UPGRADE ? 'Upgrade +20%' : 'wait';
+    /** "Computed in" line, like the other bots: last decision and the average of the last 60. */
+    UltimateBot.prototype.showComputeTime = function (ms) {
+        this.computeMs.push(ms);
+        if (this.computeMs.length > 60)
+            this.computeMs.shift();
+        var avg = this.computeMs.reduce(function (a, b) { return a + b; }, 0) / this.computeMs.length;
+        var perEl = typeof document !== 'undefined' ? document.getElementById("per" + this.side) : null;
+        if (perEl)
+            perEl.innerText = "Computed in: " + ms.toFixed(2) + "ms (avg " + avg.toFixed(2) + "ms)";
     };
+    /** Probability bars in a fixed order (like LocalRLBot): every unlocked troop, research, upgrade, wait.
+     *  Each bar shows the highest probability over the last 8 decisions so it doesn't flicker. */
     UltimateBot.prototype.showBrain = function (probs) {
+        var _this = this;
         var el = typeof document !== 'undefined' ? document.getElementById("ai-stats-" + this.side) : null;
         if (!el)
             return;
-        var top = probs.map(function (p, a) { return ({ p: p, a: a }); }).filter(function (x) { return x.p > 0.005; }).sort(function (x, y) { return y.p - x.p; }).slice(0, 6);
-        var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " Ultimate AI:</strong><br/>";
-        for (var _i = 0, top_1 = top; _i < top_1.length; _i++) {
-            var _a = top_1[_i], p = _a.p, a = _a.a;
-            var color = a < troopArr.length ? troopArr[a].color : (a === ULT_UPGRADE ? 'gold' : 'gray');
-            html += "<div style=\"margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;\">\n                <div style=\"width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;\">" + UltimateBot.actionName(a) + "</div>\n                <div style=\"flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;\">\n                    <div style=\"width: " + p * 100 + "%; background: " + color + "; height: 100%; border-radius: 4px;\"></div>\n                </div>\n                <div style=\"width: 35px; text-align: right;\">" + (p * 100).toFixed(0) + "%</div>\n            </div>";
+        var researchSum = 0, researchBest = -1;
+        for (var i = 0; i < troopArr.length; i++) {
+            var p = probs[ULT_RESEARCH0 + i];
+            researchSum += p;
+            if (p > 0 && (researchBest < 0 || p > probs[ULT_RESEARCH0 + researchBest]))
+                researchBest = i;
         }
+        // rows 0-11 troops, 12 research (all targets), 13 upgrade, 14 wait
+        var rows = probs.slice(0, troopArr.length).concat([researchSum, probs[ULT_UPGRADE], probs[ULT_WAIT]]);
+        this.brainHistory.push({ rows: rows, research: researchBest >= 0 ? troopArr[researchBest].name : '' });
+        if (this.brainHistory.length > 8)
+            this.brainHistory.shift();
+        var peak = function (r) { return Math.max.apply(Math, _this.brainHistory.map(function (h) { return h.rows[r]; })) * 100; };
+        var lastResearch = __spreadArray([], this.brainHistory).reverse().find(function (h) { return h.research; });
+        var bar = function (label, title, color, pct) { return "\n            <div style=\"margin-top: 4px; font-size: 11px; display: flex; align-items: center; width: 100%;\" title=\"" + title + "\">\n                <div style=\"width: 85px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;\">" + label + "</div>\n                <div style=\"flex-grow: 1; background: #e0e0e0; height: 8px; margin: 0 8px; border-radius: 4px; overflow: hidden;\">\n                    <div style=\"width: " + pct + "%; background: " + color + "; height: 100%; border-radius: 4px; transition: width 0.2s ease-out;\"></div>\n                </div>\n                <div style=\"width: 35px; text-align: right;\">" + pct.toFixed(0) + "%</div>\n            </div>"; };
+        var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " Ultimate AI:</strong><br/>";
+        for (var i = 0; i < troopArr.length; i++) {
+            if (this.unlockedUnits[i])
+                html += bar(troopArr[i].name, troopArr[i].name, troopArr[i].color, peak(i));
+        }
+        var resName = lastResearch ? lastResearch.research : '';
+        html += bar(resName ? "Res: " + resName : 'Research', resName ? "Research " + resName : 'Research a new unit', 'mediumpurple', peak(troopArr.length));
+        html += bar('Upgrade +20%', 'Increase all troop stats by 20% (1500)', 'gold', peak(troopArr.length + 1));
+        html += bar('wait', 'wait', 'gray', peak(troopArr.length + 2));
         el.innerHTML = html + "</div>";
     };
     return UltimateBot;
@@ -2660,6 +2706,8 @@ function initializeUI() {
 }
 function resize() {
     document.querySelectorAll('button').forEach(function (e) {
+        if (e.classList.contains('keep-size'))
+            return;
         if (document.body.scrollWidth > 440) {
             e.style.width = 200 + 'px';
             if (darkTheme)
@@ -2755,6 +2803,212 @@ try {
         game_1 = new Game(new LocalRLBot(55, 'left', !shiftDown_1, 'ultimate_dqn_model.json', 10), new UltimateBot(55, 'right', !shiftDown_1, 'ultimate_model.json'), true, true, [], []);
         initializeUI();
     }
+    // ---------------- Custom match picker: any player/model vs any other ----------------
+    var PLAYER_KINDS_1 = [
+        { key: 'human', label: 'Human', model: false, maxUnits: 10 },
+        { key: 'classic', label: 'Classic AI (Player vs AI bot)', model: false, maxUnits: 7 },
+        { key: 'dqn', label: 'Local reinforcement AI (DQN)', model: true, defaultModel: 'ultimate_dqn_model.json', maxUnits: 10 },
+        { key: 'ultimate', label: 'Ultimate AI', model: true, defaultModel: 'ultimate_model.json', maxUnits: 10 },
+        { key: 'http', label: 'HTTP bot (server on localhost:6767)', model: false, maxUnits: 7 },
+    ];
+    var kindInfo_1 = function (key) { return PLAYER_KINDS_1.find(function (k) { return k.key === key; }) || PLAYER_KINDS_1[0]; };
+    var el_1 = function (id) { return document.getElementById(id); };
+    var custom_1 = { cfg: null, tally: { left: 0, right: 0, draw: 0 }, recorded: false, timer: null };
+    function readSide(side) {
+        var kind = el_1(side + "Kind").value;
+        var file = el_1(side + "File").files && el_1(side + "File").files[0];
+        return {
+            kind: kind,
+            model: el_1(side + "Model").value.trim() || kindInfo_1(kind).defaultModel || '',
+            file: kindInfo_1(kind).model && file ? file : null,
+            greedy: el_1(side + "Greedy").checked,
+            maxUnits: Math.max(1, Math.min(50, parseInt(el_1(side + "Max").value) || kindInfo_1(kind).maxUnits)),
+        };
+    }
+    function refreshPicker() {
+        for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
+            var side = _a[_i];
+            var info = kindInfo_1(el_1(side + "Kind").value);
+            el_1(side + "ModelBox").style.display = info.model ? '' : 'none';
+            el_1(side + "GreedyBox").style.display = info.key === 'ultimate' ? '' : 'none';
+            el_1(side + "Model").placeholder = info.defaultModel || '';
+            el_1(side + "Max").placeholder = String(info.maxUnits);
+        }
+    }
+    function sideName(c) {
+        var info = kindInfo_1(c.kind);
+        if (!info.model)
+            return info.label + (c.maxUnits !== info.maxUnits ? " (max " + c.maxUnits + ")" : '');
+        var src = c.file ? c.file.name : c.model;
+        var extras = (c.greedy && info.key === 'ultimate' ? ', greedy' : '') +
+            (c.maxUnits !== info.maxUnits ? ", max " + c.maxUnits : '');
+        return (info.key === 'ultimate' ? 'Ultimate AI' : 'DQN AI') + " (" + src.split('/').pop() + extras + ")";
+    }
+    function makeCustomPlayer(c, side, money) {
+        var p = makeCustomPlayerOfKind(c, side, money);
+        p.maxUnits = c.maxUnits;
+        return p;
+    }
+    function makeCustomPlayerOfKind(c, side, money) {
+        var modelUrl = c.file ? (c.fileUrl = c.fileUrl || URL.createObjectURL(c.file)) : c.model;
+        var noReload = function (b) {
+            // these bots reload the page when they lose; keep the custom match (and its tally) instead
+            b.doesBaseHaveHealth = function () { return Player.prototype.doesBaseHaveHealth.call(b); };
+            return b;
+        };
+        switch (c.kind) {
+            case 'classic':
+                return new SimulatingBot(money, side, true);
+            case 'dqn':
+                return noReload(new LocalRLBot(money, side, true, modelUrl, 10));
+            case 'ultimate':
+                return new UltimateBot(money, side, true, modelUrl, c.greedy);
+            case 'http':
+                return noReload(new HttpBot(money, side, true));
+            default:
+                return new Player(money, side, true);
+        }
+    }
+    function showMatchInfo(status) {
+        if (status === void 0) { status = ''; }
+        var c = custom_1.cfg, t = custom_1.tally;
+        el_1('matchInfo').style.display = 'block';
+        el_1('matchText').innerHTML = "<b style=\"color: royalblue\">" + sideName(c.left) + "</b> " + t.left + " : " + t.right + " " +
+            ("<b style=\"color: crimson\">" + sideName(c.right) + "</b> &nbsp;\u00B7&nbsp; draws " + t.draw) + (status ? " &nbsp;\u00B7&nbsp; " + status : '');
+    }
+    function startCustomMatch() {
+        var c = custom_1.cfg;
+        if (game_1)
+            game_1.stopped = true;
+        // remove the previous match's troop buttons before human players create new ones
+        for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
+            var side = _a[_i];
+            el_1(side).querySelectorAll('button, br, hr').forEach(function (e) { return e.remove(); });
+        }
+        el_1('ai-stats-left').innerHTML = el_1('ai-stats-right').innerHTML = '';
+        el_1('leftMoney').innerHTML = el_1('rightMoney').innerHTML = "Money: " + c.money;
+        var left = makeCustomPlayer(c.left, 'left', c.money);
+        var right = makeCustomPlayer(c.right, 'right', c.money);
+        custom_1.recorded = false;
+        game_1 = new Game(left, right, true, true, [], [], c.speed);
+        initializeUI();
+        showMatchInfo('playing…');
+        if (!custom_1.timer)
+            custom_1.timer = setInterval(watchCustomMatch, 250);
+    }
+    function watchCustomMatch() {
+        if (!game_1 || custom_1.recorded || !custom_1.cfg)
+            return;
+        var c = custom_1.cfg;
+        var leftDead = game_1.playerOneBase.health <= 0, rightDead = game_1.playerTwoBase.health <= 0;
+        var timeUp = c.limit > 0 && game_1.time >= c.limit * 60 * 60;
+        if (!leftDead && !rightDead && !timeUp)
+            return;
+        custom_1.recorded = true;
+        var status;
+        if (leftDead && !rightDead) {
+            custom_1.tally.right++;
+            status = 'right won';
+        }
+        else if (rightDead && !leftDead) {
+            custom_1.tally.left++;
+            status = 'left won';
+        }
+        else {
+            custom_1.tally.draw++;
+            status = timeUp ? "draw (" + c.limit + " min limit)" : 'draw';
+            game_1.stopped = true;
+        }
+        var botsOnly = c.left.kind !== 'human' && c.right.kind !== 'human';
+        showMatchInfo(status + (c.repeat && botsOnly ? ' — next game in 3 s' : ''));
+        if (c.repeat && botsOnly)
+            setTimeout(function () { if (custom_1.recorded)
+                startCustomMatch(); }, 3000);
+    }
+    function launchCustom(cfg) {
+        custom_1.cfg = cfg;
+        custom_1.tally = { left: 0, right: 0, draw: 0 };
+        // shareable / reloadable link (uploaded files can't go into a URL)
+        var q = new URLSearchParams({
+            mode: 'custom', left: cfg.left.kind, right: cfg.right.kind, speed: String(cfg.speed),
+            money: String(cfg.money), limit: String(cfg.limit), repeat: cfg.repeat ? '1' : '0',
+        });
+        for (var _i = 0, _a = [['l', cfg.left], ['r', cfg.right]]; _i < _a.length; _i++) {
+            var _b = _a[_i], side = _b[0], c = _b[1];
+            if (kindInfo_1(c.kind).model && !c.file)
+                q.set(side + "model", c.model);
+            if (c.greedy)
+                q.set(side + "greedy", '1');
+            if (c.maxUnits !== kindInfo_1(c.kind).maxUnits)
+                q.set(side + "max", String(c.maxUnits));
+        }
+        history.replaceState(null, '', '?' + q.toString());
+        startCustomMatch();
+    }
+    function pickerConfig() {
+        return {
+            left: readSide('left'), right: readSide('right'),
+            speed: Math.max(1, parseInt(el_1('pickSpeed').value) || 1),
+            money: Math.max(0, parseFloat(el_1('pickMoney').value) || 0),
+            limit: Math.max(0, parseFloat(el_1('pickLimit').value) || 0),
+            repeat: el_1('pickRepeat').checked,
+        };
+    }
+    for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
+        var side = _a[_i];
+        el_1(side + "Kind").innerHTML = PLAYER_KINDS_1.map(function (k) { return "<option value=\"" + k.key + "\">" + k.label + "</option>"; }).join('');
+        el_1(side + "Kind").addEventListener('change', refreshPicker);
+    }
+    el_1('leftKind').value = 'human';
+    el_1('rightKind').value = 'ultimate';
+    var params_1 = new URLSearchParams(window.location.search);
+    if (params_1.get('mode') === 'custom') {
+        var _loop_1 = function (side, s) {
+            if (params_1.get(side) && PLAYER_KINDS_1.some(function (k) { return k.key === params_1.get(side); }))
+                el_1(side + "Kind").value = params_1.get(side);
+            el_1(side + "Model").value = params_1.get(s + "model") || '';
+            el_1(side + "Greedy").checked = params_1.get(s + "greedy") === '1';
+            el_1(side + "Max").value = params_1.get(s + "max") || '';
+        };
+        // prefill from the URL
+        for (var _b = 0, _c = [['left', 'l'], ['right', 'r']]; _b < _c.length; _b++) {
+            var _d = _c[_b], side = _d[0], s = _d[1];
+            _loop_1(side, s);
+        }
+        if (params_1.get('speed'))
+            el_1('pickSpeed').value = params_1.get('speed');
+        if (params_1.get('money'))
+            el_1('pickMoney').value = params_1.get('money');
+        if (params_1.get('limit'))
+            el_1('pickLimit').value = params_1.get('limit');
+        el_1('pickRepeat').checked = params_1.get('repeat') === '1';
+    }
+    refreshPicker();
+    el_1('customBtn').addEventListener('click', function () {
+        el_1('menuButtons').style.display = 'none';
+        el_1('customPanel').style.display = 'block';
+    });
+    el_1('pickBack').addEventListener('click', function () {
+        el_1('customPanel').style.display = 'none';
+        el_1('menuButtons').style.display = '';
+    });
+    el_1('pickSwap').addEventListener('click', function () {
+        for (var _i = 0, _a = ['Kind', 'Model', 'Greedy', 'Max']; _i < _a.length; _i++) {
+            var f = _a[_i];
+            var prop = f === 'Greedy' ? 'checked' : 'value';
+            var tmp = el_1("left" + f)[prop];
+            el_1("left" + f)[prop] = el_1("right" + f)[prop];
+            el_1("right" + f)[prop] = tmp;
+        }
+        el_1('leftFile').value = el_1('rightFile').value = ''; // file inputs can't be swapped
+        refreshPicker();
+    });
+    el_1('pickStart').addEventListener('click', function () { return launchCustom(pickerConfig()); });
+    el_1('matchRematch').addEventListener('click', function () { if (custom_1.cfg)
+        startCustomMatch(); });
+    el_1('matchMenu').addEventListener('click', function () { return window.open('?', '_self'); });
+    if (params_1.get('mode') === 'custom')
+        launchCustom(pickerConfig());
     console.log(new URLSearchParams(window.location.search).get('mode'));
     document.getElementById('pl').addEventListener('click', function () {
         window.open('?mode=player-vs-player', '_self');
