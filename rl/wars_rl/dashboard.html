@@ -163,7 +163,7 @@ const oppLabel = k => (OPP[k] || {label: k}).label
 let SCHEMA = null, POLICIES = [], selected = null, view = 'empty', lastDetail = null, formState = null
 
 // ---------- line chart (SVG; crosshair tooltip; direct end labels; table view) ----------
-function lineChart({title, subtitle, series, yMax, yMin, yFmt = v => v.toFixed(2), xFmt = fmtN, xLabel = 'decisions trained'}) {
+function lineChart({title, subtitle, series, yMax, yMin, yFmt = v => v.toFixed(2), xFmt = fmtN, xLabel = 'decisions trained', marks = []}) {
   const card = h('div', {class: 'card chart-card'})
   const tableBtn = h('button', {class: 'linkbtn'}, 'table')
   card.append(h('div', {class: 'chart-head'}, h('div', {}, h('h3', {}, title), subtitle ? h('div', {class: 'small muted'}, subtitle) : null), tableBtn))
@@ -202,6 +202,11 @@ function lineChart({title, subtitle, series, yMax, yMin, yFmt = v => v.toFixed(2
     for (let i = 0; i <= 4; i++) {
       const v = xmin + (xmax - xmin) * i / 4
       svg.append(s('text', {x: X(v), y: H - 10, 'text-anchor': i === 0 ? 'start' : i === 4 ? 'end' : 'middle', 'font-size': 11, fill: 'var(--muted)'}, xFmt(v)))
+    }
+    for (const m of marks) {  // settings changed during the run
+      if (m.x < xmin || m.x > xmax) continue
+      const ln = s('line', {x1: X(m.x), x2: X(m.x), y1: T, y2: H - B, stroke: 'var(--ink-2)', 'stroke-width': 1, 'stroke-dasharray': '3 3', opacity: 0.7})
+      ln.append(s('title', {}, m.label)); svg.append(ln)
     }
     const ends = []
     for (const se of live) {
@@ -283,7 +288,7 @@ async function refreshRun(force) {
   if (view !== 'run' || !selected) return
   let d
   try { d = await api('/api/run?name=' + encodeURIComponent(selected)) } catch (e) { return }
-  const sig = JSON.stringify([d.running, d.latest && d.latest.update, d.recent.length && d.recent[0].time, d.evals.length, d.output.slice(-3)])
+  const sig = JSON.stringify([d.running, d.latest && d.latest.update, d.recent.length && d.recent[0].time, d.evals.length, d.output.slice(-3), d.changes.length, d.pending, d.restarting])
   if (!force && lastDetail === sig) return
   lastDetail = sig
   renderRun(d)
@@ -296,11 +301,14 @@ function renderRun(d) {
     h('div', {}, h('div', {class: 'row'}, h('h2', {style: 'margin:0;font-size:19px'}, d.name), h('span', {class: 'pill' + (d.running ? ' on' : '')}, d.running ? `training (pid ${d.pid})` : 'stopped')),
       h('div', {class: 'small muted'}, last.update ? `update ${last.update} · ${fmtN(last.env_steps)} of ${fmtN(d.config.total_env_steps)} decisions · ${fmtN(last.episodes)} games · ${fmtN(last.sps)} decisions/s` : 'waiting for the first update…')),
     h('div', {class: 'row'},
+      d.restarting ? h('span', {class: d.restarting.endsWith('…') ? 'note' : 'err'}, 'Restart: ' + d.restarting) : null,
+      d.running ? h('button', {class: 'primary', onclick: () => openForm(d.name, d.config, d.latest || {})}, 'Change settings…') : null,
       d.running ? h('button', {class: 'danger', onclick: () => act('/api/stop', {name: d.name}, 'Stopping (saves first)…')}, 'Stop (saves)') :
-        h('button', {class: 'primary', onclick: () => openForm(d.name, d.config)}, d.has_checkpoint ? 'Resume…' : 'Start…'),
+        h('button', {class: 'primary', disabled: !!(d.restarting && d.restarting.endsWith('…')), onclick: () => openForm(d.name, d.config)}, d.has_checkpoint ? 'Resume…' : 'Start…'),
       h('button', {onclick: () => openForm(null, d.config)}, 'Copy settings to new run'),
       h('button', {disabled: !d.has_checkpoint, onclick: () => exportDialog(d.name)}, 'Export model')))
   main.replaceChildren(head)
+  if (d.running || d.changes.length) main.append(settingsCard(d))
 
   // scores
   main.append(h('h2', {}, 'Game scores (training games)'))
@@ -314,14 +322,15 @@ function renderRun(d) {
   const S = d.series.filter(r => r.update)
   const bySeries = (field, opp) => S.filter(r => r[field] && r[field][opp] != null).map(r => [r.env_steps, r[field][opp]])
   const oppSeries = field => ['classic', 'dqn', 'past', 'random'].map(k => ({name: oppLabel(k), short: k, color: OPP[k].color, points: bySeries(field, k)}))
+  const marks = d.changes.filter(c => Object.keys(c.applied).length).map(c => ({x: c.env_steps, label: `update ${c.update}: ` + Object.entries(c.applied).map(([k, [a, b]]) => `${k} ${fmtV(a)} → ${fmtV(b)}`).join(', ')}))
   const one = (field, map = v => v) => [{name: field, color: 'var(--s1)', points: S.filter(r => r[field] != null).map(r => [r.env_steps, map(r[field])])}]
   main.append(h('div', {class: 'charts'},
-    lineChart({title: 'Win rate by opponent', subtitle: 'rolling, last 300 games each', series: oppSeries('win'), yMax: 1, yFmt: pct}),
-    lineChart({title: 'Draw rate by opponent', subtitle: 'games that hit the time limit (or both bases fell)', series: oppSeries('draw'), yMax: 1, yFmt: pct}),
-    lineChart({title: 'Game length', subtitle: 'average minutes of game time', series: one('ep_ticks', v => v / 3600), yFmt: v => v.toFixed(1) + ' min'}),
-    lineChart({title: 'Training speed', subtitle: 'decisions per second', series: one('sps'), yFmt: fmtN}),
-    lineChart({title: 'Entropy', subtitle: 'how varied its choices are; near 0 = it stopped exploring', series: one('entropy'), yFmt: v => v.toFixed(2)}),
-    lineChart({title: 'Explained variance', subtitle: 'how well the critic predicts outcomes (1 = perfect, below 0 = worse than guessing; clipped at -1)', series: one('explained_var', v => Math.max(-1, v)), yMax: 1, yFmt: v => v.toFixed(2)})))
+    lineChart({marks, title: 'Win rate by opponent', subtitle: 'rolling, last 300 games each', series: oppSeries('win'), yMax: 1, yFmt: pct}),
+    lineChart({marks, title: 'Draw rate by opponent', subtitle: 'games that hit the time limit (or both bases fell)', series: oppSeries('draw'), yMax: 1, yFmt: pct}),
+    lineChart({marks, title: 'Game length', subtitle: 'average minutes of game time', series: one('ep_ticks', v => v / 3600), yFmt: v => v.toFixed(1) + ' min'}),
+    lineChart({marks, title: 'Training speed', subtitle: 'decisions per second', series: one('sps'), yFmt: fmtN}),
+    lineChart({marks, title: 'Entropy', subtitle: 'how varied its choices are; near 0 = it stopped exploring', series: one('entropy'), yFmt: v => v.toFixed(2)}),
+    lineChart({marks, title: 'Explained variance', subtitle: 'how well the critic predicts outcomes (1 = perfect, below 0 = worse than guessing; clipped at -1)', series: one('explained_var', v => Math.max(-1, v)), yMax: 1, yFmt: v => v.toFixed(2)})))
 
   // recent games
   main.append(h('h2', {}, 'Recent games'))
@@ -341,6 +350,20 @@ function renderRun(d) {
   const pre = h('pre', {}, d.output.join('\n') || '(no output yet)')
   main.append(pre)
   requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; window.scrollTo(0, keepScroll) })
+}
+function fmtV(v) { return typeof v === 'number' && v !== 0 && (Math.abs(v) < 1e-2 || Math.abs(v) >= 1e6) ? v.toExponential(2) : String(+(+v).toPrecision(6)) }
+function settingsCard(d) {
+  const L = d.latest || {}
+  const now = [['learning rate', L.lr], ['entropy bonus', L.ent_coef], ['random-move rate', L.explore_now], ['reward hints at', L.hints_now != null ? Math.round(L.hints_now * 100) + '%' : null]]
+    .filter(([, v]) => v != null).map(([k, v]) => h('span', {style: 'margin-right:16px'}, h('span', {class: 'muted'}, k + ' '), typeof v === 'number' ? fmtV(v) : v))
+  const pend = Object.entries(d.pending || {})
+  const hist = d.changes.slice(-8).reverse().map(c => h('div', {class: 'small'}, h('span', {class: 'muted'}, `${ago(c.time)} · update ${c.update} · ${fmtN(c.env_steps)} decisions: `),
+    Object.entries(c.applied).map(([k, [a, b]]) => `${k} ${fmtV(a)} → ${fmtV(b)}`).join(', ') || 'nothing changed',
+    Object.keys(c.rejected).length ? h('span', {class: 'err'}, ' · not applied: ' + Object.entries(c.rejected).map(([k, why]) => `${k} (${why})`).join(', ')) : null))
+  return h('div', {class: 'card', style: 'margin-bottom:12px'},
+    now.length ? h('div', {class: 'small'}, h('b', {}, 'Right now: '), now) : null,
+    pend.length ? h('div', {class: 'small', style: 'margin-top:6px'}, h('b', {}, 'Waiting for the next update: '), pend.map(([k, v]) => `${k} = ${fmtV(v)}`).join(', ')) : null,
+    hist.length ? h('div', {style: 'margin-top:6px'}, h('div', {class: 'small'}, h('b', {}, 'Changed during training'), h('span', {class: 'muted'}, ' (dashed lines on the charts)')), hist) : null)
 }
 function scoreCard(k, sc) {
   const l = sc.last100, n = Math.max(1, sc.last100_n)
@@ -401,7 +424,10 @@ function toast(text) {
 }
 
 // ---------- settings form ----------
-function openForm(resumeName, baseConfig) {
+function openForm(resumeName, baseConfig, liveNow) {
+  // liveNow (the latest log row) = change the settings of a run that is training right now
+  const isLive = !!liveNow
+  $('#main').oninput = $('#main').onchange = null
   view = 'form'; selected = resumeName; lastDetail = null
   refreshRuns()
   const defaults = {}
@@ -409,18 +435,25 @@ function openForm(resumeName, baseConfig) {
   const values = {...defaults}
   if (baseConfig) for (const k of Object.keys(defaults)) if (baseConfig[k] !== undefined) values[k] = baseConfig[k]
   for (const k of ['init_from', 'dqn_model']) if (values[k] && values[k].includes('/rl/')) values[k] = values[k].split('/rl/').pop()
-  formState = {values, inputs: {}, defaults}
+  formState = {values, inputs: {}, defaults: isLive ? {...values} : defaults, live: isLive, now: liveNow}
   const main = $('#main')
   const nameInput = h('input', {type: 'text', value: resumeName || suggestName(), disabled: !!resumeName})
   const preset = h('select', {onchange: () => applyPreset(preset.value)}, h('option', {value: ''}, '— load a preset —'),
     Object.keys(SCHEMA.presets).map(p => h('option', {value: p}, p)))
   main.replaceChildren(
-    h('h2', {style: 'font-size:19px'}, resumeName ? `Resume “${resumeName}”` : 'New training run'),
+    h('h2', {style: 'font-size:19px'}, isLive ? `Change “${resumeName}” while it trains` : resumeName ? `Resume “${resumeName}”` : 'New training run'),
+    isLive ? h('div', {}, h('p', {class: 'intro'}, 'The form shows the run\'s current settings. Settings without a “restart” tag are applied by the running trainer ' +
+      'before its next update (usually within a minute), keeping the model, optimizer and league as they are. Settings tagged “restart” are ' +
+      'applied by saving, stopping and resuming the run automatically. Changed settings are marked with •.'),
+      h('p', {class: 'intro'}, 'Learning rate and entropy bonus slide from their start value to their end value over the run, so the value used right now ' +
+      'is in between (shown next to them). To pin a value from now on, set start and end to the same number. Changing the training length moves the run\'s ' +
+      'position in every schedule (learning rate, entropy, reward hints, random moves).')) :
     h('p', {class: 'intro'}, resumeName ?
       'Continues from the run\'s latest checkpoint (model, optimizer, league and schedules). You can change most settings; network sizes must stay the same.' :
       'Pick a preset or change any setting below. The sections at the bottom are for experimenting with the AI itself; each explains what it does. Changed settings are marked with •.'),
     h('div', {class: 'card row', style: 'margin-bottom:12px'}, 'Run name ', nameInput, resumeName ? null : preset,
-      h('button', {onclick: () => { openForm(resumeName, null) }}, 'Reset to defaults')))
+      isLive ? h('button', {onclick: () => openForm(resumeName, baseConfig, liveNow)}, 'Undo my changes') :
+        h('button', {onclick: () => { openForm(resumeName, null) }}, 'Reset to defaults')))
   for (const sec of SCHEMA.sections) {
     const det = h('details', {class: 'section', open: !sec.advanced},
       h('summary', {}, sec.name, sec.advanced ? h('span', {class: 'adv'}, 'advanced') : null),
@@ -429,6 +462,7 @@ function openForm(resumeName, baseConfig) {
   }
   const msg = h('span', {class: 'note'})
   const totalWeights = h('span', {class: 'note'})
+  if (isLive) return liveButtons(resumeName, msg)
   main.append(h('div', {class: 'row', style: 'margin-top: 14px'},
     h('button', {class: 'primary', onclick: async () => {
       const name = nameInput.value.trim()
@@ -438,6 +472,35 @@ function openForm(resumeName, baseConfig) {
       } catch (e) { msg.textContent = e.message; msg.className = 'err' }
     }}, resumeName ? 'Resume training' : 'Start training'),
     h('button', {onclick: () => resumeName ? openRun(resumeName) : ($('#main').replaceChildren(h('div', {class: 'empty'}, 'Pick a run on the left or start a new one.')), view = 'empty')}, 'Cancel'), msg, totalWeights))
+  window.scrollTo(0, 0)
+}
+function liveButtons(name, msg) {
+  const LIVE = new Set(SCHEMA.live_fields)
+  const changed = () => Object.entries(formState.inputs).filter(([k, {f, input}]) => JSON.stringify(read(f, input)) !== JSON.stringify(formState.defaults[k])).map(([k]) => k)
+  const btn = h('button', {class: 'primary'})
+  const upd = () => {
+    const ch = changed(), slow = ch.filter(k => !LIVE.has(k))
+    btn.disabled = !ch.length
+    btn.textContent = !ch.length ? 'Apply' : slow.length ? 'Save, restart & resume' : `Apply now (no restart)`
+    msg.className = 'note'
+    msg.textContent = slow.length ? `${slow.map(k => formState.inputs[k].f.label).join(', ')} need${slow.length === 1 ? 's' : ''} a restart (about a minute of saving and loading)` : ''
+  }
+  btn.onclick = async () => {
+    const ch = changed()
+    try {
+      if (ch.some(k => !LIVE.has(k))) {
+        if (!confirm('Save the checkpoint, stop the trainer and resume it with these settings?')) return
+        await api('/api/restart', {name, config: collect()})
+        toast('Restarting with the new settings…')
+      } else {
+        await api('/api/live', {name, changes: Object.fromEntries(ch.map(k => [k, read(formState.inputs[k].f, formState.inputs[k].input)]))})
+        toast('Sent: applied before the next update')
+      }
+      openRun(name)
+    } catch (e) { msg.textContent = e.message; msg.className = 'err' }
+  }
+  const form = $('#main'); form.oninput = upd; form.onchange = upd; upd()
+  $('#main').append(h('div', {class: 'row', style: 'margin-top: 14px'}, btn, h('button', {onclick: () => openRun(name)}, 'Cancel'), msg))
   window.scrollTo(0, 0)
 }
 function suggestName() { const d = new Date(); return `run-${d.getMonth() + 1}-${d.getDate()}-${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}` }
@@ -453,7 +516,8 @@ function fieldRow(f, values, resuming) {
   else if (f.type === 'str') input = h('input', {type: 'text', value: v ?? '', style: 'width: 320px'})
   else input = h('input', {type: 'number', value: v, step: 'any'})
   if (locked) input.disabled = true
-  const row = h('div', {class: 'field'}, h('label', {}, f.label), h('div', {}, input, extraHint(f, input)), f.help ? h('div', {class: 'help'}, f.help) : null)
+  const restartTag = formState.live && !locked && !SCHEMA.live_fields.includes(f.name) ? h('span', {class: 'adv', title: 'changing this saves, stops and resumes the run'}, 'restart') : null
+  const row = h('div', {class: 'field'}, h('label', {}, f.label, restartTag), h('div', {}, input, extraHint(f, input)), f.help ? h('div', {class: 'help'}, f.help) : null)
   const mark = () => row.classList.toggle('changed', JSON.stringify(read(f, input)) !== JSON.stringify(formState.defaults[f.name]))
   input.addEventListener('input', mark); input.addEventListener('change', mark); mark()
   formState.inputs[f.name] = {f, input, row, mark}
@@ -468,8 +532,13 @@ function extraHint(f, input) {
     else if (f.name === 'decision_interval') span.textContent = `= ${(60 / Math.max(1, x)).toFixed(1)} decisions per second`
     else if (f.name === 'total_env_steps') span.textContent = `≈ ${(x / 1500 / 3600).toFixed(1)}–${(x / 900 / 3600).toFixed(1)} h on 4 cores`
     else if (f.name === 'gamma') span.textContent = x < 1 ? `looks ~${Math.round(1 / (1 - x))} decisions ahead` : ''
+    const now = formState.now
+    if (now) {
+      const nowText = {lr: now.lr, ent_coef: now.ent_coef, explore_eps: now.explore_now, shaping_anneal_frac: now.hints_now != null ? `hints at ${Math.round(now.hints_now * 100)}%` : null}[f.name]
+      if (nowText != null) span.textContent += (span.textContent ? ' · ' : '') + 'right now: ' + (typeof nowText === 'number' ? fmtV(nowText) : nowText)
+    }
   }
-  if (['max_ticks', 'decision_interval', 'total_env_steps', 'gamma'].includes(f.name)) { input.addEventListener('input', upd); upd(); return span }
+  if (['max_ticks', 'decision_interval', 'total_env_steps', 'gamma', 'lr', 'ent_coef', 'explore_eps', 'shaping_anneal_frac'].includes(f.name)) { input.addEventListener('input', upd); upd(); return span }
   return null
 }
 function read(f, input) {

@@ -22,6 +22,15 @@ export to the game. Training keeps running if you close the dashboard; open it a
 back up. `pip install psutil` gives more accurate CPU numbers. The rest of this guide is the same
 thing on the command line.
 
+**Changing settings while it trains.** "New training run" always starts a new model (unless you
+pick "Start from weights"). To adjust a run that is already going, open it and click **Change
+settings…**. Rewards (win, draw, every hint), learning rate, entropy, random moves, opponent
+weights, PPO step settings, training length and save/snapshot intervals are applied by the
+running trainer before its next update, with nothing lost. Settings tagged *restart* (game rules,
+parallel games, threads…) are applied by saving, stopping and resuming automatically. Every
+change is listed on the run page and drawn as a dashed line on the charts, so you can see what
+it did.
+
 ---
 
 ## 1. One-time setup
@@ -90,7 +99,8 @@ The same data goes to `runs/v2/log.jsonl` (one JSON object per update) if you wa
 | `latest.pt` | full checkpoint incl. optimizer (~15 MB), saved every 10 updates and on Ctrl+C |
 | `ultimate_model.json` | browser model, re-exported every 20 updates |
 | `league/` | frozen snapshots the AI trains against |
-| `log.jsonl`, `config.json` | training log and the exact settings used |
+| `log.jsonl`, `config.json` | training log and the current settings (updated by live changes) |
+| `changes.jsonl` | settings changed while training: when, old → new, anything rejected |
 
 `runs/` is in `.gitignore`. Nothing in it gets committed by accident.
 
@@ -102,6 +112,14 @@ The same data goes to `runs/v2/log.jsonl` (one JSON object per update) if you wa
 * Long runs survive closing the terminal with
   `nohup python -m wars_rl.train --run-dir runs/v2 > runs/v2.log 2>&1 &` (or use `tmux`/`screen`).
   Then `tail -f runs/v2.log` to watch.
+* **Change settings without stopping:** write the new values into `<run_dir>/live.json`, e.g.
+  `echo '{"lr": 1e-4, "lr_final": 1e-4, "draw_reward": -1}' > runs/v2/live.json`. The trainer
+  applies them before its next update, deletes the file, prints `[live change at update N] …`
+  and logs it to `changes.jsonl`. Allowed: rewards, learning rate and the other PPO settings,
+  exploration, opponent weights, `total_env_steps` and the save/snapshot intervals (`LIVE_FIELDS`
+  in `train.py`). Learning rate and entropy slide from start to end over the run, so set both
+  ends to the same value to pin them. When resuming from the command line later, pass
+  `--config runs/v2/config.json` to keep the changed values.
 
 ### How long does it take?
 

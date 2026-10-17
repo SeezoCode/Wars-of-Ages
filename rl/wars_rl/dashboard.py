@@ -29,7 +29,7 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .train import TrainConfig
+from .train import LIVE_FIELDS, TrainConfig
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RL_DIR = os.path.abspath(os.path.join(HERE, ".."))
@@ -189,7 +189,7 @@ def schema() -> dict:
     sections = [{"name": n, "advanced": adv, "intro": intro, "fields": fields.get(n, [])} for n, adv, intro in SECTIONS]
     if "Other" in fields:
         sections.append({"name": "Other", "advanced": True, "intro": "", "fields": fields["Other"]})
-    return {"sections": sections, "presets": PRESETS}
+    return {"sections": sections, "presets": PRESETS, "live_fields": sorted(LIVE_FIELDS)}
 
 
 # --------------------------------------------------------------------------- run bookkeeping
@@ -222,6 +222,7 @@ class Runs:
         self.procs: dict[str, subprocess.Popen] = {}
         self.cache: dict[str, dict] = {}
         self.lock = threading.Lock()
+        self.restarting: dict[str, str] = {}  # run name -> status text
 
     def trainer_pid(self, name: str) -> int:
         p = self.procs.get(name)
@@ -295,7 +296,7 @@ class Runs:
             c = self._cached(name)
             c["log_pos"], rows = self._read_new(os.path.join(d, "log.jsonl"), c["log_pos"])
             keep = ("update", "env_steps", "episodes", "sps", "win", "draw", "games", "entropy", "explained_var",
-                    "approx_kl", "ep_ticks", "lr", "rollout_s", "update_s")
+                    "approx_kl", "ep_ticks", "lr", "ent_coef", "hints_now", "explore_now", "rollout_s", "update_s")
             c["log"].extend({k: r.get(k) for k in keep} for r in rows)
             c["ep_pos"], eps = self._read_new(os.path.join(d, "episodes.jsonl"), c["ep_pos"])
             for e in eps:
@@ -331,8 +332,20 @@ class Runs:
                 evals = [json.loads(x) for x in fh if x.strip()][-40:][::-1]
         except (OSError, ValueError):
             pass
+        changes, pending = [], {}
+        try:
+            with open(os.path.join(d, "changes.jsonl")) as fh:
+                changes = [json.loads(x) for x in fh if x.strip()][-100:]
+        except (OSError, ValueError):
+            pass
+        try:
+            with open(os.path.join(d, "live.json")) as fh:
+                pending = json.load(fh)
+        except (OSError, ValueError):
+            pass
         pid = self.trainer_pid(name)
         return {"name": name, "running": bool(pid), "pid": pid, "config": config, "series": series,
+                "changes": changes, "pending": pending, "restarting": self.restarting.get(name),
                 "latest": log[-1] if log else None, "scores": scores, "recent": recent, "evals": evals,
                 "output": tail(os.path.join(d, "train.out"), 80),
                 "has_checkpoint": os.path.exists(os.path.join(d, "latest.pt"))}
@@ -352,6 +365,10 @@ class Runs:
                 cfg[k] = os.path.abspath(os.path.join(RL_DIR, cfg[k]))
         cfg["run_dir"] = d
         cfg["resume"] = True
+        try:  # a live change that never reached the old trainer must not override these settings
+            os.remove(os.path.join(d, "live.json"))
+        except OSError:
+            pass
         cfg_path = os.path.join(d, "dashboard_config.json")
         with open(cfg_path, "w") as fh:
             json.dump(cfg, fh, indent=2)
@@ -369,6 +386,8 @@ class Runs:
         with open(os.path.join(d, "trainer.pid"), "w") as fh:
             fh.write(str(p.pid))
         self.cache.pop(name, None)
+        if not self.restarting.get(name, "").endswith("…"):
+            self.restarting.pop(name, None)  # clear an old restart error
         return {"pid": p.pid}
 
     def stop(self, name: str) -> dict:
@@ -380,6 +399,60 @@ class Runs:
         else:
             os.kill(pid, signal.SIGTERM)  # the trainer saves latest.pt, then exits
         return {"stopping": pid}
+
+    def live(self, name: str, changes: dict) -> dict:
+        """Queue settings for a running trainer; it picks them up before its next update."""
+        d = run_path(name)
+        if not self.trainer_pid(name):
+            raise ValueError(f"{name} is not training (change the settings with Resume instead)")
+        bad = [k for k in changes if k not in LIVE_FIELDS]
+        if bad:
+            raise ValueError(f"these settings need a restart: {', '.join(bad)}")
+        clean = {}
+        for k, v in changes.items():
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+                raise ValueError(f"{k}: expected a number, got {v!r}")
+            clean[k] = v
+        path = os.path.join(d, "live.json")
+        with self.lock:
+            pending = {}
+            try:
+                with open(path) as fh:
+                    pending = json.load(fh)
+            except (OSError, ValueError):
+                pass
+            pending.update(clean)
+            tmp = path + ".tmp"
+            with open(tmp, "w") as fh:
+                json.dump(pending, fh)
+            os.replace(tmp, path)  # atomic: the trainer never sees a half-written file
+        return {"pending": pending}
+
+    def restart(self, name: str, config: dict) -> dict:
+        """Stop (which saves), wait for the trainer to exit, then resume with new settings."""
+        run_path(name)
+        if self.restarting.get(name, "").endswith("…"):
+            raise ValueError(f"{name} is already restarting")
+        self.restarting[name] = "saving and stopping…"
+
+        def work():
+            try:
+                if self.trainer_pid(name):
+                    self.stop(name)
+                deadline = time.time() + 600
+                while self.trainer_pid(name):
+                    if time.time() > deadline:
+                        self.restarting[name] = "the old trainer did not exit; stop it and resume by hand"
+                        return
+                    time.sleep(0.5)
+                self.restarting[name] = "starting…"
+                self.start(name, config, True)
+                self.restarting.pop(name, None)
+            except Exception as e:  # shown in the run view
+                self.restarting[name] = f"restart failed: {e}"
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"restarting": True}
 
 
 def tail(path: str, n: int) -> list:
@@ -602,6 +675,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, RUNS_STATE.start(body["name"], body.get("config", {}), bool(body.get("resume"))))
             if url.path == "/api/stop":
                 return self._send(200, RUNS_STATE.stop(body["name"]))
+            if url.path == "/api/live":
+                return self._send(200, RUNS_STATE.live(body["name"], dict(body.get("changes") or {})))
+            if url.path == "/api/restart":
+                return self._send(200, RUNS_STATE.restart(body["name"], body.get("config", {})))
             if url.path == "/api/evaluate":
                 return self._send(200, evaluate_job(body))
             if url.path == "/api/export":

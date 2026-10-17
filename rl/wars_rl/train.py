@@ -126,6 +126,21 @@ class TrainConfig:
     init_from: str = ""                 # warm-start weights from a checkpoint (e.g. checkpoints/ultimate_v1.pt)
 
 
+# Settings a running trainer picks up between updates: the dashboard (or you) writes
+# {"lr": 1e-4, ...} to <run_dir>/live.json. Everything else (network, parallel games, game rules)
+# needs a restart. Scheduled values (lr, entropy, exploration, reward hints) keep fading relative to
+# the new start/end values and total_env_steps.
+LIVE_FIELDS = {
+    "total_env_steps", "lr", "lr_final", "gamma", "gae_lambda", "clip", "epochs", "minibatch_size", "ent_coef",
+    "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward",
+    "draw_reward", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_anneal_frac",
+    "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "max_snapshots",
+    "save_every", "export_every", "torch_threads", "rollout_torch_threads",
+}
+POSITIVE_INT = {"total_env_steps", "epochs", "minibatch_size", "snapshot_every", "max_snapshots", "save_every",
+                "export_every", "torch_threads", "rollout_torch_threads"}
+
+
 def parse_config() -> TrainConfig:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="JSON file with TrainConfig fields")
@@ -185,8 +200,7 @@ class Trainer:
         self.activity = np.ones(self.N)
         self.kind = [""] * self.N
         self._maybe_resume()
-        p = np.array([cfg.p_self, cfg.p_past, cfg.p_classic, cfg.p_dqn if self.has_dqn else 0.0, cfg.p_random])
-        self.opp_probs = p / p.sum()
+        self.opp_probs = self._opponent_probs()
         for i in range(self.N):
             self._reset_env(i)
         self.log_path = os.path.join(cfg.run_dir, "log.jsonl")
@@ -195,6 +209,60 @@ class Trainer:
         n_params = sum(p.numel() for p in self.model.parameters())
         print(f"model: actor {cfg.actor_hidden} critic {cfg.critic_hidden} ({n_params / 1e6:.2f}M params) | "
               f"envs {self.N} x {cfg.rollout_steps} steps | opponents {dict(zip(OPPONENT_KINDS, self.opp_probs.round(3)))}")
+
+    def _opponent_probs(self) -> np.ndarray:
+        c = self.cfg
+        p = np.array([c.p_self, c.p_past, c.p_classic, c.p_dqn if self.has_dqn else 0.0, c.p_random], dtype=float)
+        if not (np.all(p >= 0) and p.sum() > 0):
+            raise ValueError("opponent weights must be >= 0 and not all zero")
+        return p / p.sum()
+
+    def _apply_live_changes(self):
+        """Apply <run_dir>/live.json (written by the dashboard) between updates."""
+        path = os.path.join(self.cfg.run_dir, "live.json")
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path) as fh:
+                changes = json.load(fh)
+            os.remove(path)
+        except (OSError, ValueError):
+            return  # half-written; try again next update
+        applied, rejected = {}, {}
+        backup = dataclasses.asdict(self.cfg)
+        for k, v in changes.items():
+            old = getattr(self.cfg, k, None)
+            if k not in LIVE_FIELDS:
+                rejected[k] = "needs a restart"
+                continue
+            try:
+                new = int(v) if isinstance(old, int) else float(v)
+                if not np.isfinite(new) or (k in POSITIVE_INT and new < 1) or (k.startswith("p_") and new < 0):
+                    raise ValueError
+            except (TypeError, ValueError):
+                rejected[k] = f"invalid value {v!r}"
+                continue
+            if new != old:
+                setattr(self.cfg, k, new)
+                applied[k] = [old, new]
+        try:
+            self.opp_probs = self._opponent_probs()
+        except ValueError as e:
+            for k in list(applied):
+                if k.startswith("p_"):
+                    setattr(self.cfg, k, backup[k])
+                    rejected[k] = str(e)
+                    applied.pop(k)
+        self.league.max_snapshots = self.cfg.max_snapshots
+        if applied:
+            with open(os.path.join(self.cfg.run_dir, "config.json"), "w") as fh:
+                json.dump(dataclasses.asdict(self.cfg), fh, indent=2)
+        rec = {"time": round(time.time(), 1), "update": self.update, "env_steps": self.env_steps,
+               "applied": applied, "rejected": rejected}
+        with open(os.path.join(self.cfg.run_dir, "changes.jsonl"), "a") as fh:
+            fh.write(json.dumps(rec) + "\n")
+        print(f"[live change at update {self.update}] applied {applied}" + (f" rejected {rejected}" if rejected else ""),
+              flush=True)
 
     # ------------------------------------------------------------------ setup
     def _maybe_resume(self):
@@ -438,7 +506,10 @@ class Trainer:
 
     def train(self):
         c = self.cfg
-        while self.env_steps < c.total_env_steps:
+        while True:
+            self._apply_live_changes()
+            if self.env_steps >= c.total_env_steps:
+                break
             t0 = time.time()
             progress = self.env_steps / c.total_env_steps
             torch.set_num_threads(c.rollout_torch_threads)
@@ -462,7 +533,10 @@ class Trainer:
             rec = dict(update=self.update, env_steps=self.env_steps, episodes=self.episodes,
                        sps=round(c.num_envs * c.rollout_steps / (t2 - t0)), rollout_s=round(t1 - t0, 2),
                        update_s=round(t2 - t1, 2), win=win, draw=draw, games=games,
-                       ep_ticks=round(float(np.mean(self.ep_ticks))) if self.ep_ticks else None, **stats)
+                       ep_ticks=round(float(np.mean(self.ep_ticks))) if self.ep_ticks else None,
+                       hints_now=round(max(0.0, 1.0 - progress / max(c.shaping_anneal_frac, 1e-9)), 4),
+                       explore_now=round(c.explore_eps * max(0.0, 1.0 - progress / max(c.explore_anneal_frac, 1e-9)), 5),
+                       **stats)
             with open(os.path.join(c.run_dir, "log.jsonl"), "a") as fh:
                 fh.write(json.dumps(rec) + "\n")
             print(f"[u{self.update} {self.env_steps / 1e6:.2f}M] sps {rec['sps']} ({rec['rollout_s']}s+{rec['update_s']}s) "
