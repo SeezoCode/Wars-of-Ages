@@ -396,12 +396,13 @@ function evalPanel(d) {
   const minutes = h('input', {type: 'number', value: 15, min: 1, max: 240, step: 1})
   const greedy = h('input', {type: 'checkbox'})
   const threads = h('input', {type: 'number', value: 4, min: 1, max: 64})
+  const upgrades = h('input', {type: 'number', value: d.config.max_upgrades ?? -1, min: -1, style: 'width: 60px', title: '-1 = unlimited (the real game), 0 = none'})
   const msg = h('span', {class: 'note'})
   const run = h('button', {class: 'primary', onclick: async () => {
     const opponents = boxes.map(b => b.querySelector('input')).filter(i => i.checked).map(i => i.value)
     if (vsModel.value) opponents.push(vsModel.value)
     try {
-      await api('/api/evaluate', {run: d.name, policy: pol.value, opponents, games: +games.value, max_minutes: +minutes.value, greedy: greedy.checked, threads: +threads.value})
+      await api('/api/evaluate', {run: d.name, policy: pol.value, opponents, games: +games.value, max_minutes: +minutes.value, greedy: greedy.checked, threads: +threads.value, max_upgrades: +upgrades.value})
       msg.textContent = 'started: see Jobs on the left; results appear below when done'; refreshJobs()
     } catch (e) { msg.textContent = e.message; msg.className = 'err' }
   }}, 'Run evaluation')
@@ -410,12 +411,12 @@ function evalPanel(d) {
     d.evals.map(e => h('tr', {}, h('td', {}, ago(e.time)), h('td', {}, e.policy), h('td', {}, oppLabel(e.opponent)),
       h('td', {class: 'res-W'}, e.wins), h('td', {class: 'res-D'}, e.draws), h('td', {class: 'res-L'}, e.losses),
       h('td', {}, `${Math.round(e.wins / Math.max(1, e.games) * 100)}% (${Math.round(e.ci_low * 100)}–${Math.round(e.ci_high * 100)}%)`),
-      h('td', {}, Math.round(e.avg_seconds / 60) + ' min'), h('td', {class: 'muted'}, `${e.greedy ? 'greedy' : 'sampled'}, limit ${Math.round(e.max_ticks / 3600)} min`))))) :
+      h('td', {}, Math.round(e.avg_seconds / 60) + ' min'), h('td', {class: 'muted'}, `${e.greedy ? 'greedy' : 'sampled'}, limit ${Math.round(e.max_ticks / 3600)} min` + (e.max_upgrades >= 0 ? `, max ${e.max_upgrades} upgrades` : '')))))) :
     h('div', {class: 'small muted', style: 'margin-top:8px'}, 'No evaluations for this run yet.')
   return h('div', {class: 'card'},
     h('div', {class: 'note', style: 'margin-bottom:8px'}, 'Plays separate test games (half on each side) without learning, and reports the score with a 95% confidence range. Fewer parallel games while training is running keeps both fast.'),
     h('div', {class: 'row'}, 'Model ', pol), h('div', {class: 'row', style: 'margin-top:6px'}, 'Opponents ', boxes, vsModel),
-    h('div', {class: 'row', style: 'margin-top:6px'}, 'Games ', games, ' time limit (min) ', minutes, ' threads ', threads,
+    h('div', {class: 'row', style: 'margin-top:6px'}, 'Games ', games, ' time limit (min) ', minutes, ' max base upgrades ', upgrades, ' threads ', threads,
       h('label', {}, greedy, ' always best move (greedy)')),
     h('div', {class: 'row', style: 'margin-top:10px'}, run, msg), evals)
 }

@@ -44,7 +44,7 @@ impl PyVecEnv {
     #[new]
     #[pyo3(signature = (num_envs, decision_interval=10, max_ticks=36000, start_money=55.0, agent_max_units=10,
                         classic_max_units=7, dqn_max_units=10, nuke_freeze_ticks=45, worker_latency=1,
-                        worker_unit_ticks_per_frame=60000.0, dqn_model=None, threads=0))]
+                        worker_unit_ticks_per_frame=60000.0, dqn_model=None, threads=0, max_upgrades=-1))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         num_envs: usize,
@@ -59,6 +59,7 @@ impl PyVecEnv {
         worker_unit_ticks_per_frame: f64,
         dqn_model: Option<String>,
         threads: usize,
+        max_upgrades: i64,
     ) -> PyResult<Self> {
         let dqn = match dqn_model {
             Some(p) => Some(Arc::new(DqnNet::from_file(&p).map_err(PyValueError::new_err)?)),
@@ -74,6 +75,8 @@ impl PyVecEnv {
             nuke_freeze_ticks,
             worker_latency,
             worker_unit_ticks_per_frame,
+            // negative = unlimited (the game's rule)
+            max_upgrades: if max_upgrades < 0 { u32::MAX } else { max_upgrades.min(u32::MAX as i64) as u32 },
         };
         Ok(PyVecEnv { inner: VecEnv::new(num_envs, cfg, dqn, threads) })
     }

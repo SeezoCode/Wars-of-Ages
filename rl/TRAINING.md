@@ -209,6 +209,21 @@ a JSON file: `python -m wars_rl.train --config configs/ultimate.json` (flags ove
 | `--max-ticks` | 54000 | game length limit (15 min) before it counts as a draw |
 | `--seed` | 1 | change to get a different run with the same settings |
 
+### Training without base upgrades
+
+`--max-upgrades 0` (dashboard: Game → *Max base upgrades*) turns off the +20% base upgrade for
+every player in training games: the AI, the classic bot, the DQN bot and random players. Games
+are then decided by troops and tactics, not by who out-upgrades whom. `-1` is unlimited, as in
+the game, and any other number is a cap. It needs a restart, not a live change, because it is a
+rule of the game.
+
+The limit is saved in the exported model, and `UltimateBot` respects it in the browser: a model
+trained without upgrades never upgrades there either. Otherwise it would pick an action it never
+learned. Its opponents still can, unless you set **Max upgrades** in the match picker, which
+applies to both sides. Evaluate under the same rules with `--max-upgrades 0` (or the field in the
+dashboard's Evaluate panel). A practical plan is to train without upgrades first, then continue
+with Start from weights and upgrades back on, so it learns when upgrading is worth it.
+
 ### Tips
 
 * **Watch `win`/`draw` per opponent, not the total.** Beating random and the DQN is easy; the

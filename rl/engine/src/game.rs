@@ -129,6 +129,9 @@ pub struct Player {
     pub unlocked: [bool; NUM_TROOPS],
     pub max_units: usize,
     pub multiplier: f64,
+    /// Base upgrades bought so far and the cap (training option; u32::MAX = unlimited like the game).
+    pub upgrades: u32,
+    pub max_upgrades: u32,
     pub financial_aid: [bool; 3],
     /// `stats.damageDealt`
     pub damage_dealt: f64,
@@ -152,6 +155,8 @@ impl Player {
             unlocked,
             max_units,
             multiplier: 1.0,
+            upgrades: 0,
+            max_upgrades: u32::MAX,
             financial_aid: [true; 3],
             damage_dealt: 0.0,
             spending: 0.0,
@@ -161,6 +166,11 @@ impl Player {
     }
 
     #[inline]
+    #[inline]
+    pub fn can_upgrade(&self) -> bool {
+        self.upgrades < self.max_upgrades
+    }
+
     pub fn is_enough_money(&self, amount: f64) -> bool {
         !self.check_money || self.money >= amount
     }

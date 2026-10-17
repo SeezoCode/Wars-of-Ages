@@ -31,7 +31,7 @@ pub fn action_mask(me: &Player, atomic_doom: bool, mask: &mut [bool]) {
         mask[i] = me.unlocked[i] && me.money >= TROOPS[i].price && room && !(i == ATOMIC_BOMB && atomic_doom);
         mask[ACTION_RESEARCH0 + i] = !me.unlocked[i] && me.money >= TROOPS[i].research_price;
     }
-    mask[ACTION_UPGRADE] = me.money >= UPGRADE_COST;
+    mask[ACTION_UPGRADE] = me.money >= UPGRADE_COST && me.can_upgrade();
     mask[ACTION_WAIT] = true;
 }
 
@@ -53,6 +53,7 @@ pub fn apply_action(game: &mut Game, p: usize, action: usize) {
     } else if action == ACTION_UPGRADE {
         me.multiplier *= UPGRADE_FACTOR;
         me.money -= UPGRADE_COST;
+        me.upgrades += 1;
     }
 }
 

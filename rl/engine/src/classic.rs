@@ -120,9 +120,10 @@ pub fn after_move_army(game: &mut Game, p: usize, st: &mut ClassicState) {
     let (me, en) = if p == 0 { (&mut a[0], &mut b[0]) } else { (&mut b[0], &mut a[0]) };
 
     me.financial_aid();
-    if me.money > 1800.0 {
+    if me.money > 1800.0 && me.can_upgrade() {
         me.multiplier *= UPGRADE_FACTOR;
         me.money -= UPGRADE_COST;
+        me.upgrades += 1;
     }
     let enc = encouragement(me, en);
     if enc > 50.0 && me.units.len() <= 1 {

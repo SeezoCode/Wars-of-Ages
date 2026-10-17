@@ -74,6 +74,7 @@ class TrainConfig:
     agent_max_units: int = 10
     classic_max_units: int = 7
     dqn_max_units: int = 10
+    max_upgrades: int = -1              # base upgrades per player: -1 = unlimited (the game), 0 = none
     worker_latency: int = 1
     worker_unit_ticks_per_frame: float = 60_000.0
     dqn_model: str = os.path.join(REPO, "ultimate_dqn_model.json")
@@ -185,7 +186,7 @@ class Trainer:
         self.venv = wars_engine.VecEnv(
             cfg.num_envs, decision_interval=cfg.decision_interval, max_ticks=cfg.max_ticks,
             nuke_freeze_ticks=cfg.nuke_freeze_ticks, worker_unit_ticks_per_frame=cfg.worker_unit_ticks_per_frame,
-            start_money=cfg.start_money, agent_max_units=cfg.agent_max_units,
+            start_money=cfg.start_money, agent_max_units=cfg.agent_max_units, max_upgrades=cfg.max_upgrades,
             classic_max_units=cfg.classic_max_units, dqn_max_units=cfg.dqn_max_units,
             worker_latency=cfg.worker_latency, dqn_model=dqn_path, threads=cfg.env_threads)
         mcfg = ModelConfig(wars_engine.OBS_SIZE, wars_engine.NUM_ACTIONS, list(cfg.actor_hidden),
@@ -534,7 +535,7 @@ class Trainer:
                 self.save()
             if self.update % c.export_every == 0:
                 export(self.model, os.path.join(c.run_dir, "ultimate_model.json"), c.decision_interval,
-                       {"update": self.update, "env_steps": self.env_steps})
+                       {"update": self.update, "env_steps": self.env_steps, "max_upgrades": c.max_upgrades})
             win = {k: round(float(np.mean(np.array(v) == 1.0)), 3) for k, v in self.results.items() if len(v)}
             draw = {k: round(float(np.mean(np.array(v) == 0.5)), 3) for k, v in self.results.items() if len(v)}
             games = {k: len(v) for k, v in self.results.items()}
@@ -553,7 +554,7 @@ class Trainer:
                   flush=True)
         self.save()
         export(self.model, os.path.join(c.run_dir, "ultimate_model.json"), c.decision_interval,
-               {"update": self.update, "env_steps": self.env_steps})
+               {"update": self.update, "env_steps": self.env_steps, "max_upgrades": c.max_upgrades})
 
 
 _signal_name = "Ctrl+C"

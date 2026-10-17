@@ -112,7 +112,8 @@ def main():
         torch.save({k: ckpt[k] for k in keys if k in ckpt}, args.checkpoint_out)
         print(f"wrote {args.checkpoint_out} ({os.path.getsize(args.checkpoint_out) / 1e6:.1f} MB)")
     di = ckpt.get("train_config", {}).get("decision_interval", 10)
-    meta = {"updates": ckpt.get("update"), "env_steps": ckpt.get("env_steps")}
+    meta = {"updates": ckpt.get("update"), "env_steps": ckpt.get("env_steps"),
+            "max_upgrades": ckpt.get("train_config", {}).get("max_upgrades", -1)}
     if args.note:
         meta["note"] = args.note
     outs = args.out or [os.path.join(os.path.dirname(__file__), "..", "..", "ultimate_model.json")]

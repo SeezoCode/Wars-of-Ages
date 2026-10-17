@@ -923,6 +923,8 @@ var Player = /** @class */ (function () {
         if (money === void 0) { money = 0; }
         this.financialAid = [true, true, true];
         this.multiplier = 1;
+        this.upgrades = 0; // +20% base upgrades bought
+        this.maxUpgrades = Infinity; // match option (0 = no upgrades)
         this.money = money;
         this.side = side;
         this.score = 0;
@@ -949,6 +951,9 @@ var Player = /** @class */ (function () {
             }
         };
     }
+    Player.prototype.canUpgrade = function () {
+        return this.upgrades < this.maxUpgrades;
+    };
     Player.prototype.map = function (enemy, visualize, DOMAccess, playerUnits, startingPlayerUnits, enemyUnits, enemyBase, playerBase, game) {
         var _this = this;
         this.enemy = enemy;
@@ -1177,8 +1182,9 @@ var Player = /** @class */ (function () {
             button_1.id = 'incMult';
             if (bindEventListeners) {
                 button_1.addEventListener('click', function () {
-                    if (_this.isEnoughMoney(1500)) {
+                    if (_this.isEnoughMoney(1500) && _this.canUpgrade()) {
                         _this.multiplier *= 1.2;
+                        _this.upgrades++;
                         _this.addFunds(-1500);
                         // console.log(this.multiplier)
                     }
@@ -1321,8 +1327,9 @@ var SimulatingBot = /** @class */ (function (_super) {
     SimulatingBot.prototype.afterMoveArmy = function () {
         var _this = this;
         _super.prototype.afterMoveArmy.call(this);
-        if (this.money > 1800) {
+        if (this.money > 1800 && this.canUpgrade()) {
             this.multiplier *= 1.2;
+            this.upgrades++;
             this.addFunds(-1500);
         }
         var enc = this.encouragement();
@@ -1588,7 +1595,7 @@ var HttpBot = /** @class */ (function (_super) {
                 .map(function (t, index) { return ({ index: index, name: t.name, price: t.price }); })
                 .filter(function (t, index) { return _this.unlockedUnits[index] && _this.money >= t.price; });
         }
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableUnits.push({ index: 12, name: "Upgrade Base", price: upgCost });
         }
         // Only ask the server if there are valid choices available
@@ -1621,8 +1628,9 @@ var HttpBot = /** @class */ (function (_super) {
                 var _a, _b;
                 var choice = (_b = (_a = data === null || data === void 0 ? void 0 : data.unit) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.unit_to_send) !== null && _b !== void 0 ? _b : (Array.isArray(data) ? data[0] : data);
                 if (choice === "Upgrade Base") {
-                    if (_this.money >= 1500) {
+                    if (_this.money >= 1500 && _this.canUpgrade()) {
                         _this.multiplier *= 1.2;
+                        _this.upgrades++;
                         _this.addFunds(-1500);
                         _this.playerBase.level = (_this.playerBase.level || 1) + 1;
                         _this.stats.spending += upgCost;
@@ -1989,7 +1997,7 @@ var LocalRLBot = /** @class */ (function (_super) {
                 }
             });
         }
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableNames.push("Upgrade Base");
             allowedIndices.push(12);
         }
@@ -2109,8 +2117,9 @@ var LocalRLBot = /** @class */ (function (_super) {
             }
             var choice_1 = this.ACTIONS[chosenIdx];
             if (choice_1 === "Upgrade Base") {
-                if (this.money >= 1500 && Math.random() > 0.5) {
+                if (this.money >= 1500 && Math.random() > 0.5 && this.canUpgrade()) {
                     this.multiplier *= 1.2;
+                    this.upgrades++;
                     this.addFunds(-1500);
                     // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
                     // this.playerBase.health += 400;
@@ -2168,6 +2177,7 @@ var UltimateBot = /** @class */ (function (_super) {
         _this.decisionInterval = 10;
         _this.layers = null;
         _this.lastProbs = null;
+        _this.modelMaxUpgrades = -1;
         _this.computeMs = [];
         _this.brainHistory = [];
         _this.greedy = greedy;
@@ -2215,6 +2225,8 @@ var UltimateBot = /** @class */ (function (_super) {
             throw new Error("model expects obs " + json.obs_size + "/actions " + json.num_actions + ", game has " + ULT_OBS_SIZE + "/" + ULT_NUM_ACTIONS);
         }
         this.decisionInterval = json.decision_interval || 10;
+        var mu = json.meta && json.meta.max_upgrades;
+        this.modelMaxUpgrades = typeof mu === 'number' && mu >= 0 ? mu : -1;
         this.layers = json.layers.map(function (l) { return ({
             type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
             weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
@@ -2235,7 +2247,8 @@ var UltimateBot = /** @class */ (function (_super) {
             mask[i] = this.unlockedUnits[i] && this.money >= troopArr[i].price && room && !(i === 10 && this.game.atomicDoomPending);
             mask[ULT_RESEARCH0 + i] = !this.unlockedUnits[i] && this.money >= troopArr[i].researchPrice;
         }
-        mask[ULT_UPGRADE] = this.money >= 1500;
+        // the model's own training limit applies too (meta.max_upgrades: -1 = unlimited)
+        mask[ULT_UPGRADE] = this.money >= 1500 && this.canUpgrade() && (this.modelMaxUpgrades < 0 || this.upgrades < this.modelMaxUpgrades);
         mask[ULT_WAIT] = true;
         return mask;
     };
@@ -2253,6 +2266,7 @@ var UltimateBot = /** @class */ (function (_super) {
         }
         else if (action === ULT_UPGRADE) {
             this.multiplier *= 1.2;
+            this.upgrades++;
             this.addFunds(-1500);
         }
     };
@@ -2890,6 +2904,7 @@ try {
     function makeCustomPlayer(c, side, money) {
         var p = makeCustomPlayerOfKind(c, side, money);
         p.maxUnits = c.maxUnits;
+        p.maxUpgrades = custom_1.cfg && custom_1.cfg.upgrades >= 0 ? custom_1.cfg.upgrades : Infinity;
         return p;
     }
     function makeCustomPlayerOfKind(c, side, money) {
@@ -2993,6 +3008,7 @@ try {
             left: readSide('left'), right: readSide('right'),
             speed: Math.max(1, parseInt(el_1('pickSpeed').value) || 1),
             money: Math.max(0, parseFloat(el_1('pickMoney').value) || 0),
+            upgrades: el_1('pickUpgrades').value === '' ? -1 : Math.max(-1, parseInt(el_1('pickUpgrades').value)),
             limit: Math.max(0, parseFloat(el_1('pickLimit').value) || 0),
             repeat: el_1('pickRepeat').checked,
         };
@@ -3022,6 +3038,8 @@ try {
             el_1('pickSpeed').value = params_1.get('speed');
         if (params_1.get('money'))
             el_1('pickMoney').value = params_1.get('money');
+        if (params_1.get('upgrades'))
+            el_1('pickUpgrades').value = params_1.get('upgrades');
         if (params_1.get('limit'))
             el_1('pickLimit').value = params_1.get('limit');
         el_1('pickRepeat').checked = params_1.get('repeat') === '1';

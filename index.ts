@@ -1040,6 +1040,12 @@ class Player implements playerInterface {
     maxUnits: number
     DOMAccess: boolean
     multiplier: number = 1
+    upgrades: number = 0              // +20% base upgrades bought
+    maxUpgrades: number = Infinity    // match option (0 = no upgrades)
+
+    canUpgrade(): boolean {
+        return this.upgrades < this.maxUpgrades
+    }
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean) {
         this.money = money
@@ -1289,8 +1295,9 @@ class Player implements playerInterface {
             button.id = 'incMult'
             if (bindEventListeners) {
                 button.addEventListener('click', () => {
-                    if (this.isEnoughMoney(1500)) {
+                    if (this.isEnoughMoney(1500) && this.canUpgrade()) {
                         this.multiplier *= 1.2
+                        this.upgrades++
                         this.addFunds(-1500)
                         // console.log(this.multiplier)
                     } else this.redden(button, 800)
@@ -1429,8 +1436,9 @@ class SimulatingBot extends Player {
 
     afterMoveArmy() {
         super.afterMoveArmy()
-        if (this.money > 1800) {
+        if (this.money > 1800 && this.canUpgrade()) {
             this.multiplier *= 1.2
+            this.upgrades++
             this.addFunds(-1500)
         }
         let enc = this.encouragement()
@@ -1721,7 +1729,7 @@ class HttpBot extends SimulatingBot {
                 .filter((t, index) => this.unlockedUnits[index] && this.money >= t.price);
         }
 
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableUnits.push({index: 12, name: "Upgrade Base", price: upgCost});
         }
 
@@ -1757,8 +1765,9 @@ class HttpBot extends SimulatingBot {
                     const choice = data?.unit ?? data?.unit_to_send ?? (Array.isArray(data) ? data[0] : data)
 
                     if (choice === "Upgrade Base") {
-                        if (this.money >= 1500) {
+                        if (this.money >= 1500 && this.canUpgrade()) {
                             this.multiplier *= 1.2
+                            this.upgrades++
                             this.addFunds(-1500)
                             this.playerBase.level = (this.playerBase.level || 1) + 1
                             this.stats.spending += upgCost
@@ -2116,7 +2125,7 @@ class LocalRLBot extends SimulatingBot {
                 }
             });
         }
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableNames.push("Upgrade Base");
             allowedIndices.push(12);
         }
@@ -2254,8 +2263,9 @@ class LocalRLBot extends SimulatingBot {
 
 
             if (choice === "Upgrade Base") {
-                if (this.money >= 1500 && Math.random() > 0.5) {
+                if (this.money >= 1500 && Math.random() > 0.5 && this.canUpgrade()) {
                     this.multiplier *= 1.2;
+                    this.upgrades++;
                     this.addFunds(-1500);
                     // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
                     // this.playerBase.health += 400;
@@ -2320,6 +2330,7 @@ class UltimateBot extends Player {
     greedy: boolean
     layers: Array<UltimateLayer> = null
     lastProbs: Array<number> = null
+    modelMaxUpgrades: number = -1
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_model.json', greedy: boolean = false) {
         super(money, side, checkForAvailMoney)
@@ -2351,6 +2362,8 @@ class UltimateBot extends Player {
             throw new Error(`model expects obs ${json.obs_size}/actions ${json.num_actions}, game has ${ULT_OBS_SIZE}/${ULT_NUM_ACTIONS}`)
         }
         this.decisionInterval = json.decision_interval || 10
+        const mu = json.meta && json.meta.max_upgrades
+        this.modelMaxUpgrades = typeof mu === 'number' && mu >= 0 ? mu : -1
         this.layers = json.layers.map(l => ({
             type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
             weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
@@ -2373,7 +2386,8 @@ class UltimateBot extends Player {
             mask[i] = this.unlockedUnits[i] && this.money >= troopArr[i].price && room && !(i === 10 && this.game.atomicDoomPending)
             mask[ULT_RESEARCH0 + i] = !this.unlockedUnits[i] && this.money >= troopArr[i].researchPrice
         }
-        mask[ULT_UPGRADE] = this.money >= 1500
+        // the model's own training limit applies too (meta.max_upgrades: -1 = unlimited)
+        mask[ULT_UPGRADE] = this.money >= 1500 && this.canUpgrade() && (this.modelMaxUpgrades < 0 || this.upgrades < this.modelMaxUpgrades)
         mask[ULT_WAIT] = true
         return mask
     }
@@ -2389,6 +2403,7 @@ class UltimateBot extends Player {
             this.unlockedUnits[i] = true
         } else if (action === ULT_UPGRADE) {
             this.multiplier *= 1.2
+            this.upgrades++
             this.addFunds(-1500)
         }
     }
@@ -3032,6 +3047,7 @@ try {
     function makeCustomPlayer(c: any, side: string, money: number): any {
         const p = makeCustomPlayerOfKind(c, side, money)
         p.maxUnits = c.maxUnits
+        p.maxUpgrades = custom.cfg && custom.cfg.upgrades >= 0 ? custom.cfg.upgrades : Infinity
         return p
     }
 
@@ -3117,6 +3133,7 @@ try {
             left: readSide('left'), right: readSide('right'),
             speed: Math.max(1, parseInt(el('pickSpeed').value) || 1),
             money: Math.max(0, parseFloat(el('pickMoney').value) || 0),
+            upgrades: el('pickUpgrades').value === '' ? -1 : Math.max(-1, parseInt(el('pickUpgrades').value)),
             limit: Math.max(0, parseFloat(el('pickLimit').value) || 0),
             repeat: el('pickRepeat').checked,
         }
@@ -3139,6 +3156,7 @@ try {
         }
         if (params.get('speed')) el('pickSpeed').value = params.get('speed')
         if (params.get('money')) el('pickMoney').value = params.get('money')
+        if (params.get('upgrades')) el('pickUpgrades').value = params.get('upgrades')
         if (params.get('limit')) el('pickLimit').value = params.get('limit')
         el('pickRepeat').checked = params.get('repeat') === '1'
     }

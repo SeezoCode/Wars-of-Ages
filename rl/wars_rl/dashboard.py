@@ -95,6 +95,10 @@ FIELDS = {
     "agent_max_units": ("Game", "AI max troops", "Troop limit for the AI being trained (the game's human limit is 10). "
                                                  "The AI can only see 10 of its own troops."),
     "classic_max_units": ("Game", "Classic AI max troops", "The classic bot uses 7 in the game."),
+    "max_upgrades": ("Game", "Max base upgrades",
+                     "How many +20% base upgrades each player (the AI and every opponent) may buy. -1 = unlimited, "
+                     "like the game; 0 = none, so games are won with troops and tactics instead of out-upgrading. "
+                     "Saved into the exported model, which then never upgrades past it in the browser either."),
     "dqn_max_units": ("Game", "Old RL AI max troops", "The old reinforcement bot uses 10 against humans."),
     "decision_interval": ("Game", "Decision interval (ticks)",
                           "The AI decides every N ticks (15 = 4 times per second). Lower reacts faster but every "
@@ -641,7 +645,7 @@ def evaluate_job(body: dict) -> dict:
     threads = max(1, min(os.cpu_count() or 4, int(body.get("threads", 4))))
     cmd = [sys.executable, "-u", "-m", "wars_rl.evaluate", policy, "--opponents", ",".join(opps), "--games",
            str(games), "--max-ticks", str(max_ticks), "--threads", str(threads), "--envs", str(min(games, 50)),
-           "--json"]
+           "--json", "--max-upgrades", str(int(body.get("max_upgrades", -1)))]
     if body.get("greedy"):
         cmd.append("--greedy")
     out_file = os.path.join(run_path(name), "evals.jsonl") if name else None

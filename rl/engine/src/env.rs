@@ -52,6 +52,8 @@ pub struct EnvConfig {
     /// Classic bot worker reply delay: `worker_latency + js_work / worker_unit_ticks_per_frame` ticks.
     pub worker_latency: i64,
     pub worker_unit_ticks_per_frame: f64,
+    /// Base upgrades each player may buy (u32::MAX = unlimited, as in the game; 0 = none).
+    pub max_upgrades: u32,
 }
 
 impl Default for EnvConfig {
@@ -66,6 +68,7 @@ impl Default for EnvConfig {
             nuke_freeze_ticks: 45,
             worker_latency: 1,
             worker_unit_ticks_per_frame: 60_000.0,
+            max_upgrades: u32::MAX,
         }
     }
 }
@@ -87,6 +90,12 @@ pub struct Env {
 }
 
 fn make_player(side: Side, kind: Kind, cfg: &EnvConfig, dqn: &Option<Arc<DqnNet>>) -> Result<Player, String> {
+    let mut p = make_player_of_kind(side, kind, cfg, dqn)?;
+    p.max_upgrades = cfg.max_upgrades;
+    Ok(p)
+}
+
+fn make_player_of_kind(side: Side, kind: Kind, cfg: &EnvConfig, dqn: &Option<Arc<DqnNet>>) -> Result<Player, String> {
     Ok(match kind {
         Kind::Agent => Player::new(side, cfg.start_money, true, cfg.agent_max_units, Controller::Plain),
         Kind::Classic => Player::new(
