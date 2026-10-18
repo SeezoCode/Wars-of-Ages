@@ -131,6 +131,7 @@ class TrainConfig:
 
     # league / bookkeeping
     snapshot_every: int = 20
+    milestone_every: int = 50           # keep a small permanent copy of the actor (milestones/) for strength tests
     max_snapshots: int = 40
     save_every: int = 10
     export_every: int = 20
@@ -147,10 +148,11 @@ LIVE_FIELDS = {
     "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward", "loss_reward",
     "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_siege_progress",
     "shaping_anneal_frac",
-    "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "max_snapshots",
+    "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "milestone_every",
+    "max_snapshots",
     "save_every", "export_every", "torch_threads", "rollout_torch_threads",
 }
-POSITIVE_INT = {"total_env_steps", "epochs", "minibatch_size", "snapshot_every", "max_snapshots", "save_every",
+POSITIVE_INT = {"total_env_steps", "epochs", "minibatch_size", "snapshot_every", "milestone_every", "max_snapshots", "save_every",
                 "export_every", "torch_threads", "rollout_torch_threads"}
 
 
@@ -599,6 +601,16 @@ class Trainer:
         return out
 
     # ------------------------------------------------------------------ main
+    def save_milestone(self):
+        """Actor-only copy that is never deleted, so strength can be measured over the whole run."""
+        d = os.path.join(self.cfg.run_dir, "milestones")
+        os.makedirs(d, exist_ok=True)
+        torch.save({"model_config": self.model.cfg.to_dict(), "actor": self.model.actor.state_dict(),
+                    "update": self.update, "env_steps": self.env_steps,
+                    "train_config": {"decision_interval": self.cfg.decision_interval,
+                                     "max_upgrades": self.cfg.max_upgrades}},
+                   os.path.join(d, f"u{self.update:06d}.pt"))
+
     def save(self):
         path = os.path.join(self.cfg.run_dir, "latest.pt")
         save_checkpoint(path + ".tmp", self.model, optimizer=self.opt.state_dict(), update=self.update,
@@ -621,6 +633,8 @@ class Trainer:
             stats = self.ppo_update(batch, progress)
             t2 = time.time()
             self.update += 1
+            if self.update % c.milestone_every == 0:
+                self.save_milestone()
             if self.update % c.snapshot_every == 0:
                 self.league.add(self.model, self.update, in_use=np.unique(self.ctrl[self.ctrl > 0]))
             self.league.save_index()

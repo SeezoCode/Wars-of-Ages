@@ -171,7 +171,7 @@ function lineChart({title, subtitle, series, yMax, yMin, yFmt = v => v.toFixed(2
   card.append(h('div', {class: 'chart-head'}, h('div', {}, h('h3', {}, title), subtitle ? h('div', {class: 'small muted'}, subtitle) : null), tableBtn))
   const live = series.filter(s => s.points.length)
   if (!live.length) { card.append(h('div', {class: 'empty small'}, 'no data yet')); return card }
-  if (live.length >= 2) card.append(h('div', {class: 'legend'}, live.map(se => h('span', {}, h('i', {class: 'key', style: `background:${se.color}`}), se.name))))
+  if (live.length >= 2) card.append(h('div', {class: 'legend'}, live.map(se => h('span', {}, h('i', {class: 'key', style: se.dash ? `background: repeating-linear-gradient(90deg, ${se.color} 0 4px, transparent 4px 7px)` : `background:${se.color}`}), se.name))))
   const box = h('div', {class: 'chart'}); card.append(box)
   const tip = h('div', {class: 'tip'}); box.append(tip)
   let showTable = false
@@ -292,7 +292,7 @@ async function refreshRun(force) {
   if (view !== 'run' || !selected) return
   let d
   try { d = await api('/api/run?name=' + encodeURIComponent(selected)) } catch (e) { return }
-  const sig = JSON.stringify([d.running, d.latest && d.latest.update, d.recent.length && d.recent[0].time, d.evals.length, d.output.slice(-3), d.changes.length, d.pending, d.restarting])
+  const sig = JSON.stringify([d.running, d.latest && d.latest.update, d.recent.length && d.recent[0].time, d.evals.length, d.output.slice(-3), d.changes.length, d.pending, d.restarting, d.strength.length, d.milestones])
   if (!force && lastDetail === sig) return
   lastDetail = sig
   renderRun(d)
@@ -349,6 +349,7 @@ function renderRun(d) {
     lineChart({marks, title: 'Waiting with money', subtitle: 'share of its decisions that were "wait" although it could afford a troop, research or upgrade', series: one('idle_wait'), yMax: 1, yFmt: pct})))
 
   // recent games
+  main.append(strengthSection(d))
   main.append(rewardSection(d))
 
   main.append(h('h2', {}, 'Recent games'))
@@ -440,6 +441,40 @@ const TROOP_COLORS = {'Basic Troop': 'limegreen', 'Fast Troop': 'lightpink', 'Ra
   'Atomic Troop': 'forestgreen', 'Atomic Bomb': 'forestgreen', 'Boss': 'crimson'}
 const swatch = l => l.hatch ? `background: repeating-linear-gradient(45deg, ${l.color} 0 2px, transparent 2px 4px)` : `background:${l.color}`
 let patternSeq = 0
+// strength over the run: saved milestones played against fixed opponents (absolute, unlike "past versions")
+const strengthForm = {opps: {dqn: true, classic: false}, games: 40, points: 8, minutes: 15}
+function strengthSection(d) {
+  const wrap = h('div', {}, h('h2', {}, 'Real strength (fixed opponents)'))
+  const agg = {}
+  for (const r of d.strength) {
+    const k = r.opponent + '|' + r.milestone
+    const a = agg[k] = agg[k] || {opp: r.opponent, x: r.env_steps, update: r.update, w: 0, dr: 0, n: 0}
+    a.w += r.wins; a.dr += r.draws; a.n += r.games
+  }
+  const rows = Object.values(agg).sort((a, b) => a.x - b.x)
+  const opps = ['dqn', 'classic'].filter(o => rows.some(r => r.opp === o))
+  const series = opps.flatMap(o => [
+    {name: `wins vs ${oppLabel(o)}`, short: `wins ${o}`, color: OPP[o].color, points: rows.filter(r => r.opp === o).map(r => [r.x, r.w / r.n])},
+    {name: `draws vs ${oppLabel(o)}`, short: `draws ${o}`, color: OPP[o].color, dash: '4 4', points: rows.filter(r => r.opp === o).map(r => [r.x, r.dr / r.n])}])
+  const boxes = ['dqn', 'classic'].map(o => h('label', {style: 'margin-right:12px'}, h('input', {type: 'checkbox', checked: strengthForm.opps[o],
+    onchange: e => strengthForm.opps[o] = e.target.checked}), ' ', oppLabel(o)))
+  const num = (k, attrs) => h('input', {type: 'number', value: strengthForm[k], style: 'width:64px', ...attrs, oninput: e => strengthForm[k] = +e.target.value})
+  const msg = h('span', {class: 'note'})
+  const btn = h('button', {class: 'primary', disabled: !d.milestones, onclick: async () => {
+    try {
+      await api('/api/strength', {run: d.name, opponents: Object.keys(strengthForm.opps).filter(o => strengthForm.opps[o]),
+        games: strengthForm.games, points: strengthForm.points, max_minutes: strengthForm.minutes, threads: 4, max_upgrades: d.config.max_upgrades ?? -1})
+      msg.textContent = 'started: see Jobs on the left; points appear as each copy finishes'; msg.className = 'note'; refreshJobs()
+    } catch (e) { msg.textContent = e.message; msg.className = 'err' }
+  }}, 'Measure strength')
+  wrap.append(h('div', {class: 'card', style: 'margin-bottom:12px'},
+    h('div', {class: 'note', style: 'margin-bottom:8px'}, `The "past versions" win rate is relative: its opponents get stronger too, so it can fall while the AI improves. ` +
+      `This plays copies saved during training (every ${d.config.milestone_every || 50} updates; ${d.milestones} so far) against opponents that never change, so the line shows whether it really gets better or worse.`),
+    h('div', {class: 'row'}, 'Against ', boxes, ' games per copy ', num('games', {min: 4}), ' copies ', num('points', {min: 2, max: 60}), ' time limit (min) ', num('minutes', {min: 1}), btn, msg)))
+  if (rows.length) wrap.append(h('div', {class: 'charts'}, lineChart({title: 'Win and draw rate of saved copies', subtitle: 'solid = wins, dashed = draws; each point is one saved copy',
+    series, yMax: 1, yMin: 0, yFmt: pct})))
+  return wrap
+}
 function detailsSlot(run) {
   const slot = h('div', {id: 'gameDetails'})
   if (pinnedGame && pinnedGame.run === run && pinnedGame.details) slot.append(pinnedGame.details)

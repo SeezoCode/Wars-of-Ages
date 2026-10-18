@@ -209,6 +209,16 @@ a JSON file: `python -m wars_rl.train --config configs/ultimate.json` (flags ove
 | `--max-ticks` | 54000 | game length limit (15 min) before it counts as a draw |
 | `--seed` | 1 | change to get a different run with the same settings |
 
+### Is it really getting better?
+
+The "past versions" win rate is relative: those opponents improve too, so the number can fall while
+the AI gets stronger. The trainer saves a small copy of the AI every `milestone_every` updates
+(default 50) in `<run_dir>/milestones/`. On the run page, **Real strength → Measure strength**
+plays a spread of those copies against opponents that never change (the old RL AI and/or the
+classic bot) and charts win and draw rate across the run. Measuring again only plays copies and
+settings not measured yet. From the command line:
+`python -m wars_rl.evaluate runs/v2/milestones/u000500.pt runs/v2/milestones/u001000.pt --opponents dqn`.
+
 ### What is the AI actually rewarded with?
 
 The run page's **Reward signals** section shows the reward from finished games, split by source:

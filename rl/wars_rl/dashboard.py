@@ -385,6 +385,14 @@ class Runs:
                 pending = json.load(fh)
         except (OSError, ValueError):
             pass
+        strength = []
+        try:
+            with open(os.path.join(d, "strength.jsonl")) as fh:
+                strength = [json.loads(x) for x in fh if x.strip()]
+        except (OSError, ValueError):
+            pass
+        mdir = os.path.join(d, "milestones")
+        n_milestones = len([f for f in os.listdir(mdir) if f.endswith(".pt")]) if os.path.isdir(mdir) else 0
         pid = self.trainer_pid(name)
         sessions = []
         try:
@@ -397,7 +405,8 @@ class Runs:
                 "ended": None if pid else self._why_ended(name, sessions, output, config),
                 "resumes": [{"update": e.get("update"), "env_steps": e.get("env_steps"), "time": e.get("time")}
                             for e in sessions if e.get("event") == "start" and e.get("update")],
-                "changes": changes, "pending": pending, "rewards": rewards, "restarting": self.restarting.get(name),
+                "changes": changes, "pending": pending, "rewards": rewards, "strength": strength,
+                "milestones": n_milestones, "restarting": self.restarting.get(name),
                 "latest": log[-1] if log else None, "scores": scores, "recent": recent, "evals": evals,
                 "output": output,
                 "has_checkpoint": os.path.exists(os.path.join(d, "latest.pt"))}
@@ -798,6 +807,50 @@ def evaluate_job(body: dict) -> dict:
     return JOBS.submit("evaluate", f"evaluate {label} vs {', '.join(os.path.basename(o) for o in opps)}", cmd, on_line)
 
 
+def strength_job(body: dict) -> dict:
+    """Play saved milestones (milestones/u*.pt) against fixed opponents: real strength over the run."""
+    name = body["run"]
+    d = run_path(name)
+    mdir = os.path.join(d, "milestones")
+    files = sorted(f for f in os.listdir(mdir) if f.endswith(".pt")) if os.path.isdir(mdir) else []
+    if not files:
+        raise ValueError("no milestones yet: the trainer saves one every milestone_every updates (default 50)")
+    opps = [o for o in body.get("opponents", ["dqn"]) if o in ("classic", "dqn")]
+    if not opps:
+        raise ValueError("pick at least one opponent")
+    games = max(4, min(1000, int(body.get("games", 40))))
+    max_ticks = max(600, int(float(body.get("max_minutes", 15)) * 3600))
+    points = max(2, min(60, int(body.get("points", 8))))
+    threads = max(1, min(os.cpu_count() or 4, int(body.get("threads", 4))))
+    out_file = os.path.join(d, "strength.jsonl")
+    done = set()
+    try:
+        with open(out_file) as fh:
+            for x in fh:
+                r = json.loads(x)
+                done.add((r["milestone"], r["opponent"], r["games"], r["max_ticks"]))
+    except (OSError, ValueError, KeyError):
+        pass
+    # evenly spread over the run, always including the newest
+    idx = sorted({round(i * (len(files) - 1) / (points - 1)) for i in range(points)}) if len(files) > 1 else [0]
+    todo = [files[i] for i in idx if any((files[i], o, games, max_ticks) not in done for o in opps)]
+    if not todo:
+        raise ValueError("those milestones are already measured with these settings; add points or games")
+    cmd = [sys.executable, "-u", "-m", "wars_rl.evaluate", *[os.path.join(mdir, f) for f in todo],
+           "--opponents", ",".join(opps), "--games", str(games), "--max-ticks", str(max_ticks),
+           "--threads", str(threads), "--envs", str(min(games, 50)), "--json",
+           "--max-upgrades", str(int(body.get("max_upgrades", -1)))]
+
+    def on_line(line):
+        if line.startswith("JSON "):
+            rec = json.loads(line[5:])
+            rec.update(milestone=os.path.basename(rec.pop("policy_path")), time=time.time())
+            with open(out_file, "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+
+    return JOBS.submit("strength", f"strength of {name}: {len(todo)} milestones vs {', '.join(opps)}", cmd, on_line)
+
+
 def export_job(body: dict) -> dict:
     name = body["run"]
     src = os.path.join(run_path(name), "latest.pt")
@@ -876,6 +929,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, RUNS_STATE.restart(body["name"], body.get("config", {})))
             if url.path == "/api/evaluate":
                 return self._send(200, evaluate_job(body))
+            if url.path == "/api/strength":
+                return self._send(200, strength_job(body))
             if url.path == "/api/export":
                 return self._send(200, export_job(body))
             return self._send(404, {"error": "not found"})

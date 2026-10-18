@@ -22,7 +22,7 @@ import torch
 
 import wars_engine
 
-from .model import load_model
+from .model import MASK_VALUE, FrozenActor, ModelConfig, load_model
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -31,12 +31,18 @@ WAIT = wars_engine.NUM_ACTIONS - 1
 
 class TorchPolicy:
     def __init__(self, path: str):
-        self.model, ckpt = load_model(path)
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        if "actor" in ckpt:  # actor-only file: a milestone or league snapshot
+            self.actor = FrozenActor(ModelConfig(**ckpt["model_config"]), ckpt["actor"]).actor
+        else:
+            model, ckpt = load_model(path)
+            self.actor = model.actor
         self.decision_interval = ckpt.get("train_config", {}).get("decision_interval", 10)
+        self.update, self.env_steps = ckpt.get("update"), ckpt.get("env_steps")
 
     def logits(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
         with torch.no_grad():
-            return self.model.logits(torch.from_numpy(obs), torch.from_numpy(mask)).numpy()
+            return self.actor(torch.from_numpy(obs)).masked_fill(~torch.from_numpy(mask), MASK_VALUE).numpy()
 
 
 class JsonPolicy:
@@ -169,7 +175,8 @@ def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: i
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("policy", help=".pt checkpoint, exported .json, or 'random'")
+    ap.add_argument("policy", nargs="+", help=".pt checkpoint(s), exported .json, or 'random'; several are "
+                                              "evaluated one after another (e.g. a run's milestones/*.pt)")
     ap.add_argument("--opponents", default="classic,dqn,random",
                     help="comma list of: classic, dqn, random, or a .pt/.json policy path")
     ap.add_argument("--games", type=int, default=100)
@@ -184,8 +191,13 @@ def main():
     ap.add_argument("--dqn-model", default=os.path.join(REPO, "ultimate_dqn_model.json"))
     ap.add_argument("--json", action="store_true", help="also print one JSON line per opponent (for the dashboard)")
     args = ap.parse_args()
-    policy = load_policy(args.policy)
-    print(f"{args.policy} ({'greedy' if args.greedy else 'sampled'}), {args.games} games per opponent")
+    for spec in args.policy:
+        run_one(args, spec)
+
+
+def run_one(args, spec: str):
+    policy = load_policy(spec)
+    print(f"{spec} ({'greedy' if args.greedy else 'sampled'}), {args.games} games per opponent")
     for opp in args.opponents.split(","):
         t0 = time.time()
         r = evaluate(policy, opp, args.games, args.envs, args.greedy, args.seed, args.dqn_model, args.threads,
@@ -198,7 +210,9 @@ def main():
         if args.json:
             print("JSON " + json.dumps({"opponent": opp, **r, "ci_low": lo, "ci_high": hi,
                                         "greedy": args.greedy, "max_ticks": args.max_ticks,
-                                        "max_upgrades": args.max_upgrades}), flush=True)
+                                        "max_upgrades": args.max_upgrades, "policy_path": spec,
+                                        "update": getattr(policy, "update", None),
+                                        "env_steps": getattr(policy, "env_steps", None)}), flush=True)
 
 
 if __name__ == "__main__":
