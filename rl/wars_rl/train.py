@@ -51,6 +51,7 @@ CTRL_LEARNER = 0
 CTRL_BUILTIN = -1
 CTRL_RANDOM = -2
 WAIT = wars_engine.NUM_ACTIONS - 1
+REWARD_PARTS = ("outcome", "base_damage", "kill_money", "position", "time")
 OPPONENT_KINDS = ["self", "past", "classic", "dqn", "random"]
 
 
@@ -206,6 +207,11 @@ class Trainer:
         self.ctrl = np.zeros((self.N, 2), dtype=np.int64)
         self.activity = np.ones(self.N)
         self.kind = [""] * self.N
+        # reward the learner actually received this game, by source (REWARD_PARTS), plus the running
+        # total sampled at every minute of game time (for the dashboard's reward charts)
+        self.ep_rew = np.zeros((self.N, 2, len(REWARD_PARTS)))
+        self.ep_minute = np.zeros(self.N, dtype=np.int64)
+        self.ep_curve = [[] for _ in range(self.N)]
         self._maybe_resume()
         self.opp_probs = self._opponent_probs()
         for i in range(self.N):
@@ -323,6 +329,10 @@ class Trainer:
 
     def _record_episode(self, i: int, winner: int, ticks: int):
         self.episodes += 1
+        side_ = 0 if self.kind[i] == "self" or self.ctrl[i, 0] == CTRL_LEARNER else 1
+        parts = self.ep_rew[i, side_]
+        curve = [[round(float(x), 3) for x in row[side_]] for row in self.ep_curve[i]] + \
+                [[round(float(x), 3) for x in parts]]
         self.ep_ticks.append(ticks)
         kind = self.kind[i]
         info = self.venv.info(i)
@@ -330,7 +340,10 @@ class Trainer:
         me, en = ("left", "right") if side == 0 else ("right", "left")
         rec = {"time": round(time.time(), 1), "update": self.update, "opponent": kind, "side": me,
                "ticks": ticks, "own_base": round(info[me]["base_health"]), "enemy_base": round(info[en]["base_health"]),
-               "result": "W" if winner == side else ("L" if winner == 1 - side else "D")}
+               "result": "W" if winner == side else ("L" if winner == 1 - side else "D"),
+               "env_steps": self.env_steps,
+               "rewards": {k: round(float(v), 4) for k, v in zip(REWARD_PARTS, parts)},
+               "reward_curve": curve}  # cumulative REWARD_PARTS at the end of each game minute, then at the end
         if kind == "past":
             rec["opponent_id"] = int(self.ctrl[i, 1 - side])
         if kind == "random":
@@ -355,6 +368,22 @@ class Trainer:
             r[:, s] += np.where(done, out, 0.0)
         r -= c.time_penalty * c.decision_interval / c.max_ticks  # every decision costs a little time
         return r.astype(np.float32)
+
+    def _track_rewards(self, comp, done, winner, shaping, pot, total, ticks):
+        """Split this step's reward into REWARD_PARTS (only bookkeeping; training uses `total`)."""
+        c = self.cfg
+        time_cost = c.time_penalty * c.decision_interval / c.max_ticks
+        parts = np.zeros((self.N, 2, len(REWARD_PARTS)))
+        parts[..., 1] = shaping * c.shaping_base_damage * (comp[..., 0] - comp[..., 1])
+        parts[..., 2] = shaping * c.shaping_bounty * (comp[..., 2] - comp[..., 3])
+        parts[..., 3] = pot
+        parts[..., 4] = -time_cost
+        parts[..., 0] = total - parts[..., 1:].sum(-1)  # what is left is the win / loss / draw reward
+        self.ep_rew += parts
+        minute = np.asarray(ticks) // 3600
+        for i in np.flatnonzero((minute > self.ep_minute) & ~done):
+            self.ep_curve[i].append(self.ep_rew[i].copy())
+            self.ep_minute[i] = minute[i]
 
     def _potential(self, obs: np.ndarray) -> np.ndarray:
         """Potential for shaping (gamma*phi(s') - phi(s) keeps the optimal policy unchanged).
@@ -439,10 +468,14 @@ class Trainer:
             phi_next = np.where(done[:, None], 0.0, self._potential(obs))
             b_rew[t] += shaping * (c.gamma * phi_next - phi)
             b_done[t] = done
+            self._track_rewards(comp, done, winner, shaping, shaping * (c.gamma * phi_next - phi), b_rew[t], ticks)
             if done.any():
                 for i in np.flatnonzero(done):
                     self._record_episode(int(i), int(winner[i]), int(ticks[i]))
                     self._reset_env(int(i))
+                    self.ep_rew[i] = 0.0
+                    self.ep_minute[i] = 0
+                    self.ep_curve[i] = []
                 obs, mask = self.venv.observe()
             phi = self._potential(obs)
         self.env_steps += N * T

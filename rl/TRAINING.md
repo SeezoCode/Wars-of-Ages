@@ -209,6 +209,22 @@ a JSON file: `python -m wars_rl.train --config configs/ultimate.json` (flags ove
 | `--max-ticks` | 54000 | game length limit (15 min) before it counts as a draw |
 | `--seed` | 1 | change to get a different run with the same settings |
 
+### What is the AI actually rewarded with?
+
+The run page's **Reward signals** section shows the reward from finished games, split by source:
+win/loss/draw, base damage hint, kill money hint, position hints (front line and Trebuchets) and
+time cost, plus the total. Hints are shown at their faded strength, exactly as the AI received
+them. It has three parts, each filterable by opponent:
+
+* **Reward per game, over training:** is the outcome term moving up, or only the hints?
+* **Reward during a game:** the average running total by game minute. A long flat stretch with
+  only the time cost falling is a stalemate.
+* **Average per game by result:** the reward for a win, a draw and a loss. If a draw scores
+  about the same as a win, the AI has no reason to take risks.
+
+`python3 rl/parity/check_rewards.py` plays scripted games and prints each term per side, to check
+the reward code itself.
+
 ### Stalling: time cost
 
 `time_penalty` (dashboard: Rewards → *Time cost*, default 0.5) charges a small cost on every

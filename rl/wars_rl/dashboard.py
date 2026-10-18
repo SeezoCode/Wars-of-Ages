@@ -282,7 +282,7 @@ class Runs:
         c = self.cache.get(name)
         if c is None:
             c = self.cache[name] = {"log_pos": 0, "log": [], "ep_pos": 0, "scores": {}, "recent": deque(maxlen=200),
-                                    "last100": {}}
+                                    "last100": {}, "rew": [], "curves": {}}
         return c
 
     def _read_new(self, path: str, pos: int):
@@ -322,6 +322,11 @@ class Runs:
                 s["enemy_base"] += e.get("enemy_base", 0)
                 last = c["last100"].setdefault(opp, deque(maxlen=100))
                 last.append(e.get("result", "D"))
+                if "rewards" in e:  # runs trained before reward logging have none
+                    parts = [e["rewards"].get(k, 0.0) for k in REWARD_PARTS]
+                    c["rew"].append((e.get("env_steps", 0), opp, e.get("result", "D"), parts))
+                    c["curves"].setdefault(opp, deque(maxlen=200)).append(e.get("reward_curve") or [parts])
+                e = {k: v for k, v in e.items() if k != "reward_curve"}  # big; not needed in the table
                 c["recent"].append(e)
             log = c["log"]
             step = max(1, len(log) // 400)
@@ -334,6 +339,9 @@ class Runs:
                                "avg_enemy_base": s["enemy_base"] / max(1, s["games"]),
                                "last100": {k: last.count(k) for k in "WDL"}, "last100_n": len(last)}
             recent = list(c["recent"])[-60:][::-1]
+            if c.get("rew_n") != len(c["rew"]):  # only recompute when games finished
+                c["rew_n"], c["rew_summary"] = len(c["rew"]), reward_summary(c["rew"], c["curves"])
+            rewards = c["rew_summary"]
         config = {}
         try:
             with open(os.path.join(d, "config.json")) as fh:
@@ -369,7 +377,7 @@ class Runs:
                 "ended": None if pid else self._why_ended(name, sessions, output, config),
                 "resumes": [{"update": e.get("update"), "env_steps": e.get("env_steps"), "time": e.get("time")}
                             for e in sessions if e.get("event") == "start" and e.get("update")],
-                "changes": changes, "pending": pending, "restarting": self.restarting.get(name),
+                "changes": changes, "pending": pending, "rewards": rewards, "restarting": self.restarting.get(name),
                 "latest": log[-1] if log else None, "scores": scores, "recent": recent, "evals": evals,
                 "output": output,
                 "has_checkpoint": os.path.exists(os.path.join(d, "latest.pt"))}
@@ -506,6 +514,43 @@ class Runs:
 
         threading.Thread(target=work, daemon=True).start()
         return {"restarting": True}
+
+
+REWARD_PARTS = ("outcome", "base_damage", "kill_money", "position", "time")
+
+
+def reward_summary(rew: list, curves: dict) -> dict:
+    """Average reward per game by source: over training, during a game, and by opponent and result."""
+    def mean(rows):
+        n = len(rows)
+        return [sum(r[i] for r in rows) / n for i in range(len(REWARD_PARTS))] if n else None
+
+    groups = {"all": rew}
+    for r in rew:
+        groups.setdefault(r[1], []).append(r)
+    over_training, by_result = {}, {}
+    for g, rows in groups.items():
+        # ~60 equal-width bins over training; games finished in the same update share a bin
+        lo, hi = (rows[0][0], rows[-1][0]) if rows else (0, 0)
+        width = max(1.0, (hi - lo) / 60)
+        bins = {}
+        for r in rows:
+            bins.setdefault(int((r[0] - lo) / width), []).append(r)
+        over_training[g] = [[sum(r[0] for r in b) / len(b), mean([r[3] for r in b]), len(b)]
+                            for _, b in sorted(bins.items())]
+        last = rows[-300:]
+        by_result[g] = {res: {"n": len(sel), "parts": mean([r[3] for r in sel])}
+                        for res in "WDL" for sel in [[r for r in last if r[2] == res]] if sel}
+    during = {}
+    for g in ["all"] + list(curves):
+        cs = [cv for opp, q in curves.items() if g in ("all", opp) for cv in q][-200:]
+        if not cs:
+            continue
+        # cumulative reward at the end of each game minute; a finished game keeps its final total
+        length = max(len(cv) for cv in cs)
+        during[g] = {"games": len(cs), "minutes": [mean([cv[min(m, len(cv) - 1)] for cv in cs]) for m in range(length)],
+                     "still_playing": [sum(1 for cv in cs if len(cv) > m + 1) for m in range(length)]}
+    return {"parts": REWARD_PARTS, "over_training": over_training, "during": during, "by_result": by_result}
 
 
 def tail(path: str, n: int) -> list:

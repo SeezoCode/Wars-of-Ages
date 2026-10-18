@@ -10,7 +10,7 @@
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --accent: #2a78d6;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
   --good: #0ca30c; --critical: #d03b3b; --neutral: #a9a8a1; --good-text: #006300;
   --hover: rgba(11,11,11,0.04);
 }
@@ -19,7 +19,7 @@
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
     --neutral: #6b6a65; --good-text: #0ca30c; --hover: rgba(255,255,255,0.05);
   }
 }
@@ -27,7 +27,7 @@
   color-scheme: dark;
   --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
   --neutral: #6b6a65; --good-text: #0ca30c; --hover: rgba(255,255,255,0.05);
 }
 * { box-sizing: border-box }
@@ -212,11 +212,12 @@ function lineChart({title, subtitle, series, yMax, yMin, yFmt = v => v.toFixed(2
     const ends = []
     for (const se of live) {
       const d = se.points.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ')
-      svg.append(s('path', {d, fill: 'none', stroke: se.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'}))
+      svg.append(s('path', {d, fill: 'none', stroke: se.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-dasharray': se.dash || 'none'}))
       const last = se.points[se.points.length - 1]
       ends.push({se, y: Y(last[1]), v: last[1], x: X(last[0])})
     }
     // direct labels at line ends, nudged apart
+    ends.splice(0, ends.length, ...ends.filter(e => e.se.label !== false))  // unlabeled series: legend only
     ends.sort((a, b) => a.y - b.y)
     for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13
     for (const e of ends) {
@@ -294,7 +295,9 @@ async function refreshRun(force) {
   lastDetail = sig
   renderRun(d)
 }
+let lastRunData = null
 function renderRun(d) {
+  lastRunData = d
   const main = $('#main')
   const keepScroll = window.scrollY
   const last = d.latest || {}
@@ -344,6 +347,8 @@ function renderRun(d) {
     lineChart({marks, title: 'Waiting with money', subtitle: 'share of its decisions that were "wait" although it could afford a troop, research or upgrade', series: one('idle_wait'), yMax: 1, yFmt: pct})))
 
   // recent games
+  main.append(rewardSection(d))
+
   main.append(h('h2', {}, 'Recent games'))
   main.append(h('div', {class: 'card tablewrap'}, d.recent.length ? h('table', {},
     h('tr', {}, ['when', 'update', 'opponent', 'side', 'result', 'length', 'its base', 'enemy base'].map(x => h('th', {}, x))),
@@ -375,6 +380,47 @@ function settingsCard(d) {
     now.length ? h('div', {class: 'small'}, h('b', {}, 'Right now: '), now) : null,
     pend.length ? h('div', {class: 'small', style: 'margin-top:6px'}, h('b', {}, 'Waiting for the next update: '), pend.map(([k, v]) => `${k} = ${fmtV(v)}`).join(', ')) : null,
     hist.length ? h('div', {style: 'margin-top:6px'}, h('div', {class: 'small'}, h('b', {}, 'Changed during training'), h('span', {class: 'muted'}, ' (dashed lines on the charts)')), hist) : null)
+}
+const REWARD_SERIES = {
+  outcome: {name: 'Win / loss / draw', color: 'var(--s1)'},
+  base_damage: {name: 'Base damage hint', color: 'var(--s2)'},
+  kill_money: {name: 'Kill money hint', color: 'var(--s3)'},
+  position: {name: 'Position hints', color: 'var(--s4)'},
+  time: {name: 'Time cost', color: 'var(--s5)'},
+}
+let rewardFilter = 'all'
+function rewardSection(d) {
+  const R = d.rewards
+  const wrap = h('div', {}, h('h2', {}, 'Reward signals'))
+  if (!R || !R.over_training.all || !R.over_training.all.length) {
+    wrap.append(h('div', {class: 'card muted'}, 'No reward data yet: no game has finished since reward logging was added (runs trained with older code don\'t have it).'))
+    return wrap
+  }
+  const groups = ['all'].concat(OPP_ORDER.filter(k => R.over_training[k]))
+  if (!groups.includes(rewardFilter)) rewardFilter = 'all'
+  const sel = h('select', {onchange: () => { rewardFilter = sel.value; renderRun(lastRunData) }},
+    groups.map(g => h('option', {value: g, selected: g === rewardFilter}, g === 'all' ? 'all opponents' : oppLabel(g))))
+  wrap.append(h('div', {class: 'row', style: 'margin-bottom:8px'}, 'Games against ', sel,
+    h('span', {class: 'small muted'}, 'What the AI was actually rewarded with, split by source (hints are already scaled by how much they have faded). Positive = good for it.')))
+  // 6 lines: only the total gets an end label; the rest are in the legend, tooltip and table view
+  const series = (rowsToPoints) => R.parts.map((p, i) => ({...REWARD_SERIES[p], label: false, points: rowsToPoints(i)}))
+    .concat([{name: 'Total', short: 'total', color: 'var(--ink-2)', dash: '5 4', points: rowsToPoints(-1)}])
+  const sum = parts => parts.reduce((a, b) => a + b, 0)
+  const ot = R.over_training[rewardFilter] || []
+  const du = R.during[rewardFilter]
+  const fmt = v => (v > 0 ? '+' : '') + v.toFixed(2)
+  wrap.append(h('div', {class: 'charts'},
+    lineChart({marks: [], title: 'Reward per game, over training', subtitle: 'average total per finished game, by source',
+      series: series(i => ot.map(([x, parts]) => [x, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt}),
+    du ? lineChart({title: 'Reward during a game', subtitle: `running total by game minute, average of the last ${du.games} games (a finished game keeps its final total)`,
+      series: series(i => du.minutes.map((parts, m) => [m + 1, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt, xFmt: v => +v.toFixed(1) + ' min', xLabel: 'game minute'}) : null))
+  const br = R.by_result[rewardFilter] || {}
+  wrap.append(h('div', {class: 'card tablewrap', style: 'margin-top:12px'},
+    h('div', {class: 'small muted', style: 'margin-bottom:6px'}, 'Average reward per game in the last 300 games, by result'),
+    h('table', {}, h('tr', {}, h('th', {}, 'result'), h('th', {}, 'games'), R.parts.map(p => h('th', {}, REWARD_SERIES[p].name)), h('th', {}, 'Total')),
+      ['W', 'D', 'L'].filter(k => br[k]).map(k => h('tr', {}, h('td', {class: 'res-' + k}, {W: 'win', D: 'draw', L: 'loss'}[k]), h('td', {}, br[k].n),
+        br[k].parts.map(v => h('td', {}, fmt(v))), h('td', {}, h('b', {}, fmt(sum(br[k].parts)))))))))
+  return wrap
 }
 function scoreCard(k, sc) {
   const l = sc.last100, n = Math.max(1, sc.last100_n)
