@@ -323,12 +323,12 @@ class Runs:
                 last = c["last100"].setdefault(opp, deque(maxlen=100))
                 last.append(e.get("result", "D"))
                 if "rewards" in e:  # runs trained before reward logging have none
-                    parts = [e["rewards"].get(k, 0.0) for k in REWARD_PARTS]
+                    parts = parts_of(e["rewards"])
                     c["rew"].append((e.get("env_steps", 0), opp, e.get("result", "D"), parts))
-                    c["curves"].setdefault(opp, deque(maxlen=200)).append(e.get("reward_curve") or [parts])
+                    c["curves"].setdefault(opp, deque(maxlen=200)).append(curve_of(e.get("reward_curve") or [parts]))
                 c["ep_count"] += 1
-                if "reward_curve" in e:  # kept for the most recent games so one can be opened in the dashboard
-                    c["game_curves"][c["ep_count"]] = e["reward_curve"]
+                if "reward_curve" in e:  # minute-level fallback for games without a curves/<episode>.json
+                    c["game_curves"][c["ep_count"]] = (e.get("episode"), curve_of(e["reward_curve"]))
                     while len(c["game_curves"]) > 300:
                         c["game_curves"].popitem(last=False)
                 e = {k: v for k, v in e.items() if k != "reward_curve"}  # big; not needed in the table
@@ -422,11 +422,17 @@ class Runs:
         run_path(name)
         with self.lock:
             c = self._cached(name)
-            curve = c["game_curves"].get(idx)
+            entry = c["game_curves"].get(idx)
             info = next((e for e in c["recent"] if e.get("idx") == idx), None)
-        if curve is None or info is None:
+        if entry is None or info is None:
             raise ValueError("that game is no longer in the recent list")
-        return {"parts": REWARD_PARTS, "curve": curve, "game": info}
+        episode, curve = entry
+        try:  # the full history, sampled every 5 s of game time
+            with open(os.path.join(run_path(name), "curves", f"{episode}.json")) as fh:
+                fine = json.load(fh)
+            return {"parts": REWARD_PARTS, "every": fine["every"], "curve": curve_of(fine["curve"]), "game": info}
+        except (OSError, ValueError, KeyError, TypeError):
+            return {"parts": REWARD_PARTS, "every": 3600, "curve": curve, "game": info}
 
     def start(self, name: str, config: dict, resume: bool) -> dict:
         d = run_path(name)
@@ -534,7 +540,21 @@ class Runs:
         return {"restarting": True}
 
 
-REWARD_PARTS = ("outcome", "base_damage", "kill_money", "position", "time")
+REWARD_PARTS = ("outcome", "base_dealt", "base_taken", "kill_earned", "kill_given", "front", "trebuchet", "time")
+# games logged before the split had 5 net parts; shown as dealt / earned / front line
+OLD_PARTS = {"outcome": "outcome", "base_damage": "base_dealt", "kill_money": "kill_earned", "position": "front",
+             "time": "time"}
+OLD_ORDER = ("outcome", "base_damage", "kill_money", "position", "time")
+
+
+def parts_of(rewards: dict) -> list:
+    if "base_damage" in rewards:
+        rewards = {OLD_PARTS[k]: v for k, v in rewards.items() if k in OLD_PARTS}
+    return [rewards.get(k, 0.0) for k in REWARD_PARTS]
+
+
+def curve_of(curve: list) -> list:
+    return [parts_of(dict(zip(OLD_ORDER, row))) if len(row) == len(OLD_ORDER) else row for row in curve]
 
 
 def reward_summary(rew: list, curves: dict) -> dict:

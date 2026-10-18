@@ -10,7 +10,7 @@
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --accent: #2a78d6;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good: #0ca30c; --critical: #d03b3b; --neutral: #a9a8a1; --good-text: #006300;
   --hover: rgba(11,11,11,0.04);
 }
@@ -19,7 +19,7 @@
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
     --neutral: #6b6a65; --good-text: #0ca30c; --hover: rgba(255,255,255,0.05);
   }
 }
@@ -27,7 +27,7 @@
   color-scheme: dark;
   --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   --neutral: #6b6a65; --good-text: #0ca30c; --hover: rgba(255,255,255,0.05);
 }
 * { box-sizing: border-box }
@@ -387,11 +387,15 @@ function settingsCard(d) {
 }
 const REWARD_SERIES = {
   outcome: {name: 'Win / loss / draw', color: 'var(--s1)'},
-  base_damage: {name: 'Base damage hint', color: 'var(--s2)'},
-  kill_money: {name: 'Kill money hint', color: 'var(--s3)'},
-  position: {name: 'Position hints', color: 'var(--s4)'},
-  time: {name: 'Time cost', color: 'var(--s5)'},
+  base_dealt: {name: 'Base damage dealt', color: 'var(--s2)'},
+  base_taken: {name: 'Base damage taken', color: 'var(--s3)'},
+  kill_earned: {name: 'Kill money earned', color: 'var(--s4)'},
+  kill_given: {name: 'Kill money given', color: 'var(--s5)'},
+  front: {name: 'Front line', color: 'var(--s6)'},
+  trebuchet: {name: 'Trebuchets in range', color: 'var(--s7)'},
+  time: {name: 'Time cost', color: 'var(--s8)'},
 }
+const clock = v => { const sec = Math.round(v * 60); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` }
 let rewardFilter = 'all'
 function rewardSection(d) {
   const R = d.rewards
@@ -422,7 +426,7 @@ function rewardSection(d) {
   const br = R.by_result[rewardFilter] || {}
   wrap.append(h('div', {class: 'card tablewrap', style: 'margin-top:12px'},
     h('div', {class: 'small muted', style: 'margin-bottom:6px'}, 'Average reward per game in the last 300 games, by result. ' +
-      'Position hints pay out while a side pushes forward and are handed back when the game ends, so a winner\'s per-game sum is ' +
+      'Front line and Trebuchet hints pay out while a side pushes forward and are handed back when the game ends, so a winner\'s per-game sum is ' +
       'about zero or slightly negative; what matters to the AI is that it gets them early (see "Reward during a game").'),
     h('table', {}, h('tr', {}, h('th', {}, 'result'), h('th', {}, 'games'), R.parts.map(p => h('th', {}, REWARD_SERIES[p].name)), h('th', {}, 'Total')),
       ['W', 'D', 'L'].filter(k => br[k]).map(k => h('tr', {}, h('td', {class: 'res-' + k}, {W: 'win', D: 'draw', L: 'loss'}[k]), h('td', {}, br[k].n),
@@ -444,12 +448,12 @@ async function showGame(run, idx) {
   try { r = await api(`/api/game?name=${encodeURIComponent(run)}&idx=${idx}`) } catch (e) { toast(e.message); return }
   const g = r.game, sum = parts => parts.reduce((a, b) => a + b, 0)
   const n = r.curve.length
-  const x = m => m < n - 1 ? m + 1 : g.ticks / 3600  // minute marks, then the end of the game
+  const x = m => m < n - 1 ? (m + 1) * r.every / 3600 : g.ticks / 3600  // sample times (minutes), then the end
   const series = r.parts.map((p, i) => ({...REWARD_SERIES[p], label: false, points: r.curve.map((parts, m) => [x(m), parts[i]])}))
     .concat([{name: 'Total', color: 'var(--ink-2)', dash: '5 4', points: r.curve.map((parts, m) => [x(m), sum(parts)])}])
   const card = lineChart({title: `Game ${idx}: ${{W: 'win', D: 'draw', L: 'loss'}[g.result]} vs ${oppLabel(g.opponent)}${g.opponent_id ? ' #' + g.opponent_id : ''}`,
-    subtitle: `running total by game minute · played ${g.side}, update ${g.update}, ${(g.ticks / 3600).toFixed(1)} min, bases ${Math.max(0, g.own_base)} vs ${Math.max(0, g.enemy_base)}`,
-    series, yFmt: v => (v > 0 ? '+' : '') + v.toFixed(2), xFmt: v => +v.toFixed(1) + ' min', xLabel: 'game minute'})
+    subtitle: `running total, every ${r.every >= 3600 ? 'minute (older game)' : r.every / 60 + ' s'} · played ${g.side}, update ${g.update}, ${(g.ticks / 3600).toFixed(1)} min, bases ${Math.max(0, g.own_base)} vs ${Math.max(0, g.enemy_base)}`,
+    series, yFmt: v => (v > 0 ? '+' : '') + v.toFixed(2), xFmt: clock, xLabel: 'game time'})
   card.append(h('div', {class: 'row small', style: 'margin-top:6px'}, h('button', {class: 'linkbtn', onclick: () => {
     pinnedGame = null; const slot = $('#gameSlot'); if (slot) slot.replaceWith(gameSlot(run)); markShown() }}, 'clear')))
   pinnedGame = {run, idx, card}

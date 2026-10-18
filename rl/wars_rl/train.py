@@ -51,7 +51,8 @@ CTRL_LEARNER = 0
 CTRL_BUILTIN = -1
 CTRL_RANDOM = -2
 WAIT = wars_engine.NUM_ACTIONS - 1
-REWARD_PARTS = ("outcome", "base_damage", "kill_money", "position", "time")
+REWARD_PARTS = ("outcome", "base_dealt", "base_taken", "kill_earned", "kill_given", "front", "trebuchet", "time")
+CURVE_EVERY = 300  # ticks (5 s of game time) between samples of a game's reward history
 OPPONENT_KINDS = ["self", "past", "classic", "dqn", "random"]
 
 
@@ -210,8 +211,9 @@ class Trainer:
         # reward the learner actually received this game, by source (REWARD_PARTS), plus the running
         # total sampled at every minute of game time (for the dashboard's reward charts)
         self.ep_rew = np.zeros((self.N, 2, len(REWARD_PARTS)))
-        self.ep_minute = np.zeros(self.N, dtype=np.int64)
+        self.ep_sample = np.zeros(self.N, dtype=np.int64)
         self.ep_curve = [[] for _ in range(self.N)]
+        os.makedirs(os.path.join(cfg.run_dir, "curves"), exist_ok=True)
         self._maybe_resume()
         self.opp_probs = self._opponent_probs()
         for i in range(self.N):
@@ -331,8 +333,21 @@ class Trainer:
         self.episodes += 1
         side_ = 0 if self.kind[i] == "self" or self.ctrl[i, 0] == CTRL_LEARNER else 1
         parts = self.ep_rew[i, side_]
-        curve = [[round(float(x), 3) for x in row[side_]] for row in self.ep_curve[i]] + \
-                [[round(float(x), 3) for x in parts]]
+        fine = [[round(float(x), 4) for x in row[side_]] for row in self.ep_curve[i]] + \
+               [[round(float(x), 4) for x in parts]]
+        per_min = 3600 // CURVE_EVERY
+        curve = fine[per_min - 1:-1:per_min] + fine[-1:]  # per game minute, for the averages
+        # the full 5-second history goes to its own file; only the latest games are kept
+        cdir = os.path.join(self.cfg.run_dir, "curves")
+        try:
+            with open(os.path.join(cdir, f"{self.episodes}.json"), "w") as fh:
+                json.dump({"every": CURVE_EVERY, "ticks": ticks, "parts": REWARD_PARTS, "curve": fine}, fh,
+                          separators=(",", ":"))
+            old = os.path.join(cdir, f"{self.episodes - 300}.json")
+            if os.path.exists(old):
+                os.remove(old)
+        except OSError:
+            pass
         self.ep_ticks.append(ticks)
         kind = self.kind[i]
         info = self.venv.info(i)
@@ -341,7 +356,7 @@ class Trainer:
         rec = {"time": round(time.time(), 1), "update": self.update, "opponent": kind, "side": me,
                "ticks": ticks, "own_base": round(info[me]["base_health"]), "enemy_base": round(info[en]["base_health"]),
                "result": "W" if winner == side else ("L" if winner == 1 - side else "D"),
-               "env_steps": self.env_steps,
+               "env_steps": self.env_steps, "episode": self.episodes,
                "rewards": {k: round(float(v), 4) for k, v in zip(REWARD_PARTS, parts)},
                "reward_curve": curve}  # cumulative REWARD_PARTS at the end of each game minute, then at the end
         if kind == "past":
@@ -369,24 +384,30 @@ class Trainer:
         r -= c.time_penalty * c.decision_interval / c.max_ticks  # every decision costs a little time
         return r.astype(np.float32)
 
-    def _track_rewards(self, comp, done, winner, shaping, pot, total, ticks):
-        """Split this step's reward into REWARD_PARTS (only bookkeeping; training uses `total`)."""
+    def _track_rewards(self, comp, done, shaping, pot, total, ticks):
+        """Split this step's reward into REWARD_PARTS (only bookkeeping; training uses `total`).
+
+        pot: (N, 2, 2) shaped potential differences, [front, trebuchet]."""
         c = self.cfg
-        time_cost = c.time_penalty * c.decision_interval / c.max_ticks
         parts = np.zeros((self.N, 2, len(REWARD_PARTS)))
-        parts[..., 1] = shaping * c.shaping_base_damage * (comp[..., 0] - comp[..., 1])
-        parts[..., 2] = shaping * c.shaping_bounty * (comp[..., 2] - comp[..., 3])
-        parts[..., 3] = pot
-        parts[..., 4] = -time_cost
+        parts[..., 1] = shaping * c.shaping_base_damage * comp[..., 0]
+        parts[..., 2] = -shaping * c.shaping_base_damage * comp[..., 1]
+        parts[..., 3] = shaping * c.shaping_bounty * comp[..., 2]
+        parts[..., 4] = -shaping * c.shaping_bounty * comp[..., 3]
+        parts[..., 5:7] = pot
+        parts[..., 7] = -c.time_penalty * c.decision_interval / c.max_ticks
         parts[..., 0] = total - parts[..., 1:].sum(-1)  # what is left is the win / loss / draw reward
         self.ep_rew += parts
-        minute = np.asarray(ticks) // 3600
-        for i in np.flatnonzero((minute > self.ep_minute) & ~done):
+        sample = np.asarray(ticks) // CURVE_EVERY
+        for i in np.flatnonzero((sample > self.ep_sample) & ~done):
             self.ep_curve[i].append(self.ep_rew[i].copy())
-            self.ep_minute[i] = minute[i]
+            self.ep_sample[i] = sample[i]
 
     def _potential(self, obs: np.ndarray) -> np.ndarray:
-        """Potential for shaping (gamma*phi(s') - phi(s) keeps the optimal policy unchanged).
+        return self._potential_parts(obs).sum(-1)
+
+    def _potential_parts(self, obs: np.ndarray) -> np.ndarray:
+        """Potential for shaping, [..., 0] front line and [..., 1] Trebuchets, weighted (gamma*phi(s') - phi(s) keeps the optimal policy unchanged).
 
         front: how far my frontmost unit has pushed minus how far the enemy's has.
         siege: my Trebuchets moving up to the position where they can hit the enemy base
@@ -401,7 +422,7 @@ class Trainer:
         in_range_x = (700 - 55 - 210) / 700  # Trebuchet reaches the base from here
         ramp = np.clip((own[..., 14] - 0.3) / (in_range_x - 0.3), 0.0, 1.0)
         siege = np.minimum((ramp * treb).sum(-1) / 2.0, 1.5)
-        return self.cfg.shaping_front * (own_front - en_depth) + self.cfg.shaping_siege * siege
+        return np.stack([self.cfg.shaping_front * (own_front - en_depth), self.cfg.shaping_siege * siege], -1)
 
     # --------------------------------------------------------------- rollout
     def _opponent_actions(self, obs: np.ndarray, mask: np.ndarray, actions: np.ndarray):
@@ -443,7 +464,7 @@ class Trainer:
         b_done = np.zeros((T, N), dtype=np.float32)
         b_learn = np.zeros((T, N, 2), dtype=bool)
         obs, mask = self.venv.observe()
-        phi = self._potential(obs)
+        phi = self._potential_parts(obs)  # (N, 2, 2): front line, Trebuchets
         self.idle = [0, 0]  # learner decisions that waited although something was affordable / all decisions
         for t in range(T):
             learn = self.ctrl == CTRL_LEARNER
@@ -465,19 +486,20 @@ class Trainer:
 
             obs, mask, comp, done, winner, ticks = self.venv.step(actions)
             b_rew[t] = self._rewards(comp, done, winner, shaping)
-            phi_next = np.where(done[:, None], 0.0, self._potential(obs))
-            b_rew[t] += shaping * (c.gamma * phi_next - phi)
+            phi_next = np.where(done[:, None, None], 0.0, self._potential_parts(obs))
+            pot = shaping * (c.gamma * phi_next - phi)
+            b_rew[t] += pot.sum(-1)
             b_done[t] = done
-            self._track_rewards(comp, done, winner, shaping, shaping * (c.gamma * phi_next - phi), b_rew[t], ticks)
+            self._track_rewards(comp, done, shaping, pot, b_rew[t], ticks)
             if done.any():
                 for i in np.flatnonzero(done):
                     self._record_episode(int(i), int(winner[i]), int(ticks[i]))
                     self._reset_env(int(i))
                     self.ep_rew[i] = 0.0
-                    self.ep_minute[i] = 0
+                    self.ep_sample[i] = 0
                     self.ep_curve[i] = []
                 obs, mask = self.venv.observe()
-            phi = self._potential(obs)
+            phi = self._potential_parts(obs)
         self.env_steps += N * T
         with torch.no_grad():
             last_v = self.model.value(torch.from_numpy(obs)).numpy() * (self.ctrl == CTRL_LEARNER)
