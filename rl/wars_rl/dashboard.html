@@ -420,8 +420,8 @@ function rewardSection(d) {
   wrap.append(h('div', {class: 'charts three'},
     lineChart({marks: [], title: 'Reward per game, over training', subtitle: 'average total per finished game, by source',
       series: series(i => ot.map(([x, parts]) => [x, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt}),
-    du ? lineChart({title: 'Reward during a game', subtitle: `running total by game minute, average of the last ${du.games} games (a finished game keeps its final total)`,
-      series: series(i => du.minutes.map((parts, m) => [m + 1, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt, xFmt: v => +v.toFixed(1) + ' min', xLabel: 'game minute'}) : null,
+    du ? lineChart({title: 'Reward during a game', subtitle: `running total every ${du.every >= 3600 ? 'minute' : du.every / 60 + ' s'}, average of the last ${du.games} games (a finished game keeps its final total)`,
+      series: series(i => du.minutes.map((parts, m) => [(m + 1) * du.every / 3600, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt, xFmt: clock, xLabel: 'game time'}) : null,
     gameSlot(d.name)))
   const br = R.by_result[rewardFilter] || {}
   wrap.append(h('div', {class: 'card tablewrap', style: 'margin-top:12px'},

@@ -29,6 +29,8 @@ from collections import OrderedDict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+import numpy as np
+
 from . import model_index
 from .train import LIVE_FIELDS, TrainConfig
 
@@ -325,7 +327,9 @@ class Runs:
                 if "rewards" in e:  # runs trained before reward logging have none
                     parts = parts_of(e["rewards"])
                     c["rew"].append((e.get("env_steps", 0), opp, e.get("result", "D"), parts))
-                    c["curves"].setdefault(opp, deque(maxlen=200)).append(curve_of(e.get("reward_curve") or [parts]))
+                    entry = (e.get("episode"), curve_of(e.get("reward_curve") or [parts]))
+                    for key in ("all", opp):  # "all" keeps its own deque so it holds the 200 most recent games
+                        c["curves"].setdefault(key, deque(maxlen=200)).append(entry)
                 c["ep_count"] += 1
                 if "reward_curve" in e:  # minute-level fallback for games without a curves/<episode>.json
                     c["game_curves"][c["ep_count"]] = (e.get("episode"), curve_of(e["reward_curve"]))
@@ -347,7 +351,7 @@ class Runs:
                                "last100": {k: last.count(k) for k in "WDL"}, "last100_n": len(last)}
             recent = list(c["recent"])[-60:][::-1]
             if c.get("rew_n") != len(c["rew"]):  # only recompute when games finished
-                c["rew_n"], c["rew_summary"] = len(c["rew"]), reward_summary(c["rew"], c["curves"])
+                c["rew_n"], c["rew_summary"] = len(c["rew"]), reward_summary(c["rew"], c["curves"], d)
             rewards = c["rew_summary"]
         config = {}
         try:
@@ -558,7 +562,39 @@ def curve_of(curve: list) -> list:
     return [parts_of(dict(zip(OLD_ORDER, row))) if len(row) == len(OLD_ORDER) else row for row in curve]
 
 
-def reward_summary(rew: list, curves: dict) -> dict:
+FINE_CACHE: "OrderedDict[str, np.ndarray]" = OrderedDict()  # curves/<episode>.json already read
+
+
+def fine_curve(run_dir: str, episode) -> "np.ndarray | None":
+    """A game's 5-second reward history (samples x REWARD_PARTS), or None if its file is gone."""
+    if episode is None:
+        return None
+    key = os.path.join(run_dir, "curves", f"{episode}.json")
+    if key in FINE_CACHE:
+        FINE_CACHE.move_to_end(key)
+        return FINE_CACHE[key]
+    try:
+        with open(key) as fh:
+            arr = np.asarray(curve_of(json.load(fh)["curve"]), dtype=np.float32)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    FINE_CACHE[key] = arr
+    while len(FINE_CACHE) > 2000:
+        FINE_CACHE.popitem(last=False)
+    return arr
+
+
+def average_curve(cs: list) -> np.ndarray:
+    """Mean of running totals; a game that has ended keeps its final total."""
+    length = max(len(cv) for cv in cs)
+    out = np.empty((len(cs), length, len(REWARD_PARTS)), dtype=np.float32)
+    for i, cv in enumerate(cs):
+        out[i, :len(cv)] = cv
+        out[i, len(cv):] = cv[-1]
+    return out.mean(0)
+
+
+def reward_summary(rew: list, curves: dict, run_dir: str) -> dict:
     """Average reward per game by source: over training, during a game, and by opponent and result."""
     def mean(rows):
         n = len(rows)
@@ -581,14 +617,17 @@ def reward_summary(rew: list, curves: dict) -> dict:
         by_result[g] = {res: {"n": len(sel), "parts": mean([r[3] for r in sel])}
                         for res in "WDL" for sel in [[r for r in last if r[2] == res]] if sel}
     during = {}
-    for g in ["all"] + list(curves):
-        cs = [cv for opp, q in curves.items() if g in ("all", opp) for cv in q][-200:]
-        if not cs:
+    for g, q in curves.items():
+        if not q:
             continue
-        # cumulative reward at the end of each game minute; a finished game keeps its final total
-        length = max(len(cv) for cv in cs)
-        during[g] = {"games": len(cs), "minutes": [mean([cv[min(m, len(cv) - 1)] for cv in cs]) for m in range(length)],
-                     "still_playing": [sum(1 for cv in cs if len(cv) > m + 1) for m in range(length)]}
+        # every 5 s from the games' own history files; per minute (from the log) while too few files exist
+        fine = [f for f in (fine_curve(run_dir, ep) for ep, _ in q) if f is not None and len(f)]
+        if len(fine) >= len(q) / 2:
+            cs, every = fine, 300
+        else:
+            cs, every = [np.asarray(cv, dtype=np.float32) for _, cv in q], 3600
+        avg = average_curve(cs)
+        during[g] = {"games": len(cs), "every": every, "minutes": np.round(avg, 4).tolist()}
     return {"parts": REWARD_PARTS, "over_training": over_training, "during": during, "by_result": by_result}
 
 
