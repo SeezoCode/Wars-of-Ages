@@ -214,7 +214,10 @@ a JSON file: `python -m wars_rl.train --config configs/ultimate.json` (flags ove
 The run page's **Reward signals** section shows the reward from finished games, split by source:
 win/loss/draw, base damage dealt and taken, kill money earned and given, front line, Trebuchets
 in range and time cost, plus the total. **show** in Recent games opens one game's full history,
-sampled every 5 seconds of game time. The last 300 games are kept in `<run_dir>/curves/`. Hints are shown at their faded strength, exactly as the AI received
+sampled every 5 seconds of game time, plus the game's details for both sides. The details are
+what each side researched and when, troops bought and lost by type, upgrades, damage, kill
+money, the army at the end, and charts of each army's make-up, base health, money and upgrade
+multiplier over the game. The last 300 games are kept in `<run_dir>/curves/`. Hints are shown at their faded strength, exactly as the AI received
 them. It has three parts, each filterable by opponent:
 
 * **Reward per game, over training:** is the outcome term moving up, or only the hints?

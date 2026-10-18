@@ -213,6 +213,7 @@ class Trainer:
         self.ep_rew = np.zeros((self.N, 2, len(REWARD_PARTS)))
         self.ep_sample = np.zeros(self.N, dtype=np.int64)
         self.ep_curve = [[] for _ in range(self.N)]
+        self.ep_state = [[] for _ in range(self.N)]  # per 5 s: both sides' money, base, multiplier, army
         os.makedirs(os.path.join(cfg.run_dir, "curves"), exist_ok=True)
         self._maybe_resume()
         self.opp_probs = self._opponent_probs()
@@ -339,9 +340,24 @@ class Trainer:
         curve = fine[per_min - 1:-1:per_min] + fine[-1:]  # per game minute, for the averages
         # the full 5-second history goes to its own file; only the latest games are kept
         cdir = os.path.join(self.cfg.run_dir, "curves")
+        info = self.venv.info(i)
+        me_, en_ = ("left", "right") if side_ == 0 else ("right", "left")
+
+        def compact(snap):  # [money, base, multiplier, troop counts...] -> ints where possible
+            return [round(snap[0]), round(snap[1]), round(snap[2], 3)] + [int(x) for x in snap[3:]]
+
+        def details(pl):
+            return {k: pl[k] for k in ("spawned", "lost", "researched_at", "upgrade_times", "upgrades")} | {
+                "money": round(pl["money"]), "base": round(pl["base_health"]), "multiplier": round(pl["multiplier"], 3),
+                "damage_dealt": round(pl["damage_dealt"]), "kill_money": round(pl["bounty_earned"]),
+                "army": [u[0] for u in pl["units"]]}
         try:
             with open(os.path.join(cdir, f"{self.episodes}.json"), "w") as fh:
-                json.dump({"every": CURVE_EVERY, "ticks": ticks, "parts": REWARD_PARTS, "curve": fine}, fh,
+                json.dump({"every": CURVE_EVERY, "ticks": ticks, "parts": REWARD_PARTS, "curve": fine,
+                           "troops": wars_engine.TROOP_NAMES,
+                           # per sample: [AI side, opponent side], each [money, base, multiplier, troops alive by type]
+                           "state": [[compact(st[side_]), compact(st[1 - side_])] for st in self.ep_state[i]],
+                           "players": {"ai": details(info[me_]), "opponent": details(info[en_])}}, fh,
                           separators=(",", ":"))
             old = os.path.join(cdir, f"{self.episodes - 300}.json")
             if os.path.exists(old):
@@ -401,6 +417,7 @@ class Trainer:
         sample = np.asarray(ticks) // CURVE_EVERY
         for i in np.flatnonzero((sample > self.ep_sample) & ~done):
             self.ep_curve[i].append(self.ep_rew[i].copy())
+            self.ep_state[i].append(self.venv.snapshot(int(i)))
             self.ep_sample[i] = sample[i]
 
     def _potential(self, obs: np.ndarray) -> np.ndarray:
@@ -498,6 +515,7 @@ class Trainer:
                     self.ep_rew[i] = 0.0
                     self.ep_sample[i] = 0
                     self.ep_curve[i] = []
+                    self.ep_state[i] = []
                 obs, mask = self.venv.observe()
             phi = self._potential_parts(obs)
         self.env_steps += N * T

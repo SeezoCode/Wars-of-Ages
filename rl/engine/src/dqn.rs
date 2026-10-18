@@ -425,7 +425,7 @@ pub fn after_move_army(game: &mut Game, p: usize, st: &mut DqnState) {
                 me.money -= UPGRADE_COST;
                 me.base.level = js_or(me.base.level, 1.0) + 1.0;
                 me.spending += UPGRADE_COST;
-                me.upgrades += 1;
+                me.note_upgrade();
             }
         } else if chosen != WAIT_ACTION && me.unlocked[chosen] && !(chosen == ATOMIC_BOMB && fallout) {
             me.add_troop(chosen);

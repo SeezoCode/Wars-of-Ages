@@ -430,7 +430,8 @@ class Runs:
         try:  # the full history, sampled every 5 s of game time
             with open(os.path.join(run_path(name), "curves", f"{episode}.json")) as fh:
                 fine = json.load(fh)
-            return {"parts": REWARD_PARTS, "every": fine["every"], "curve": curve_of(fine["curve"]), "game": info}
+            return {"parts": REWARD_PARTS, "every": fine["every"], "curve": curve_of(fine["curve"]), "game": info,
+                    "troops": fine.get("troops"), "state": fine.get("state"), "players": fine.get("players")}
         except (OSError, ValueError, KeyError, TypeError):
             return {"parts": REWARD_PARTS, "every": 3600, "curve": curve, "game": info}
 

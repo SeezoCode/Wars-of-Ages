@@ -431,7 +431,115 @@ function rewardSection(d) {
     h('table', {}, h('tr', {}, h('th', {}, 'result'), h('th', {}, 'games'), R.parts.map(p => h('th', {}, REWARD_SERIES[p].name)), h('th', {}, 'Total')),
       ['W', 'D', 'L'].filter(k => br[k]).map(k => h('tr', {}, h('td', {class: 'res-' + k}, {W: 'win', D: 'draw', L: 'loss'}[k]), h('td', {}, br[k].n),
         br[k].parts.map(v => h('td', {}, fmt(v))), h('td', {}, h('b', {}, fmt(sum(br[k].parts)))))))))
+  wrap.append(detailsSlot(d.name))
   return wrap
+}
+function detailsSlot(run) {
+  const slot = h('div', {id: 'gameDetails'})
+  if (pinnedGame && pinnedGame.run === run && pinnedGame.details) slot.append(pinnedGame.details)
+  return slot
+}
+// stacked areas: troops alive by type over game time (one chart per side, same colors and scale)
+function stackChart({title, subtitle, times, layers, yMax}) {
+  const card = h('div', {class: 'card chart-card'})
+  const tableBtn = h('button', {class: 'linkbtn'}, 'table')
+  card.append(h('div', {class: 'chart-head'}, h('div', {}, h('h3', {}, title), subtitle ? h('div', {class: 'small muted'}, subtitle) : null), tableBtn))
+  card.append(h('div', {class: 'legend'}, layers.map(l => h('span', {}, h('i', {class: 'key', style: `background:${l.color}`}), l.name))))
+  const box = h('div', {class: 'chart'}); card.append(box)
+  const tip = h('div', {class: 'tip'}); box.append(tip)
+  if (!times.length) { box.append(h('div', {class: 'empty small'}, 'no samples')); return card }
+  const W = 640, H = 210, L = 46, R = 16, T = 10, B = 30
+  const xmin = 0, xmax = Math.max(times[times.length - 1], 1e-6)
+  const X = x => L + (x - xmin) / (xmax - xmin) * (W - L - R), Y = y => T + (1 - y / yMax) * (H - T - B)
+  let showTable = false
+  tableBtn.onclick = () => { showTable = !showTable; tableBtn.textContent = showTable ? 'chart' : 'table'; draw() }
+  function draw() {
+    box.querySelectorAll('svg, .tablewrap').forEach(e => e.remove())
+    if (showTable) {
+      const step = Math.max(1, Math.ceil(times.length / 30))
+      box.append(h('div', {class: 'tablewrap'}, h('table', {}, h('tr', {}, h('th', {}, 'time'), layers.map(l => h('th', {}, l.name))),
+        times.map((t, i) => i % step ? null : h('tr', {}, h('td', {}, clock(t)), layers.map(l => h('td', {}, l.values[i]))))))); return
+    }
+    const svg = s('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': title})
+    for (let i = 0; i <= 4; i++) {
+      const v = yMax * i / 4, y = Y(v)
+      svg.append(s('line', {x1: L, x2: W - R, y1: y, y2: y, stroke: i === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1}))
+      svg.append(s('text', {x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)'}, +v.toFixed(1)))
+    }
+    for (let i = 0; i <= 4; i++) {
+      const v = xmax * i / 4
+      svg.append(s('text', {x: X(v), y: H - 10, 'text-anchor': i === 0 ? 'start' : i === 4 ? 'end' : 'middle', 'font-size': 11, fill: 'var(--muted)'}, clock(v)))
+    }
+    const base = times.map(() => 0)
+    for (const l of layers) {
+      const top = base.map((b, i) => b + l.values[i])
+      const d = 'M' + times.map((t, i) => `${X(t).toFixed(1)} ${Y(top[i]).toFixed(1)}`).join(' L') + ' L' +
+        times.map((t, i) => `${X(t).toFixed(1)} ${Y(base[i]).toFixed(1)}`).reverse().join(' L') + ' Z'
+      svg.append(s('path', {d, fill: l.color, stroke: 'var(--surface)', 'stroke-width': 1}))
+      top.forEach((v, i) => base[i] = v)
+    }
+    const cross = s('line', {y1: T, y2: H - B, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden'})
+    const hit = s('rect', {x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent'})
+    svg.append(cross, hit)
+    hit.addEventListener('pointermove', ev => {
+      const r = svg.getBoundingClientRect(), xv = ((ev.clientX - r.left) / r.width * W - L) / (W - L - R) * (xmax - xmin)
+      let bi = 0; times.forEach((t, i) => { if (Math.abs(t - xv) < Math.abs(times[bi] - xv)) bi = i })
+      cross.setAttribute('x1', X(times[bi])); cross.setAttribute('x2', X(times[bi])); cross.setAttribute('visibility', 'visible')
+      tip.replaceChildren(h('div', {class: 'n'}, clock(times[bi])), ...layers.filter(l => l.values[bi]).reverse().map(l =>
+        h('div', {}, h('i', {class: 'key', style: `background:${l.color};margin-right:6px;vertical-align:middle`}), h('span', {class: 'v'}, l.values[bi]), ' ', h('span', {class: 'n'}, l.name))))
+      tip.style.display = 'block'
+      tip.style.left = Math.min(X(times[bi]) / W * r.width + 12, box.getBoundingClientRect().width - tip.offsetWidth - 4) + 'px'; tip.style.top = '8px'
+    })
+    hit.addEventListener('pointerleave', () => { tip.style.display = 'none'; cross.setAttribute('visibility', 'hidden') })
+    box.prepend(svg)
+  }
+  draw()
+  return card
+}
+function gameDetails(r) {
+  const g = r.game, P = r.players, names = r.troops || [], every = r.every / 3600
+  if (!P || !r.state) return h('div', {class: 'card muted', style: 'margin-top:12px'}, 'This game was logged before game details were recorded.')
+  const times = r.state.map((_, i) => (i + 1) * every)
+  // the 7 most-used troop types get their own color (same in both charts); the rest fold into "Other"
+  const used = names.map((_, k) => r.state.reduce((a, st) => a + st[0][3 + k] + st[1][3 + k], 0))
+  const top = names.map((_, k) => k).filter(k => used[k] > 0).sort((a, b) => used[b] - used[a])
+  const shown = top.slice(0, top.length > 8 ? 7 : 8), other = top.slice(shown.length)
+  const layersFor = side => shown.map((k, j) => ({name: names[k], color: `var(--s${j + 1})`, values: r.state.map(st => st[side][3 + k])}))
+    .concat(other.length ? [{name: 'Other', color: 'var(--neutral)', values: r.state.map(st => other.reduce((a, k) => a + st[side][3 + k], 0))}] : [])
+  const yMax = Math.max(1, ...r.state.map(st => Math.max(...[0, 1].map(sd => st[sd].slice(3).reduce((a, b) => a + b, 0)))))
+  const sides = [['AI', 'var(--s1)'], ['Opponent', 'var(--s2)']]
+  const line = (field, label) => sides.map(([nm, color], sd) => ({name: `${nm} ${label}`, short: nm, color, points: r.state.map((st, i) => [times[i], st[sd][field]])}))
+  const ai = P.ai, op = P.opponent
+  const t = v => v < 0 ? '–' : clock(v / 3600)
+  const wrapStyle = 'white-space: normal; min-width: 120px'
+  const row = (label, a, b) => h('tr', {}, h('td', {}, label), h('td', {style: wrapStyle}, a), h('td', {style: wrapStyle}, b))
+  const armyText = army => { if (!army.length) return '–'; const c = {}; army.forEach(n => c[n] = (c[n] || 0) + 1)
+    return Object.entries(c).sort((a, b) => b[1] - a[1]).map(([n, k]) => k > 1 ? `${n} ×${k}` : n).join(', ') }
+  const summary = h('div', {class: 'card tablewrap'}, h('h3', {}, 'Summary'), h('table', {},
+    h('tr', {}, h('th', {}, ''), h('th', {}, `AI (${g.side})`), h('th', {}, `${oppLabel(g.opponent)}${g.opponent_id ? ' #' + g.opponent_id : ''}`)),
+    row('result', {W: 'win', D: 'draw', L: 'loss'}[g.result], {W: 'loss', D: 'draw', L: 'win'}[g.result]),
+    row('base left', Math.max(0, ai.base), Math.max(0, op.base)),
+    row('damage dealt (troops + base)', ai.damage_dealt, op.damage_dealt),
+    row('kill money earned', ai.kill_money, op.kill_money),
+    row('troops bought / lost', `${ai.spawned.reduce((a, b) => a + b, 0)} / ${ai.lost.reduce((a, b) => a + b, 0)}`, `${op.spawned.reduce((a, b) => a + b, 0)} / ${op.lost.reduce((a, b) => a + b, 0)}`),
+    row('upgrades (+20%)', ai.upgrades ? `${ai.upgrades} at ${ai.upgrade_times.map(x => t(x)).join(', ')}` : '0', op.upgrades ? `${op.upgrades} at ${op.upgrade_times.map(x => t(x)).join(', ')}` : '0'),
+    row('money left', ai.money, op.money),
+    row('army at the end', armyText(ai.army), armyText(op.army))))
+  const troops = h('div', {class: 'card tablewrap'}, h('h3', {}, 'Troops'), h('table', {},
+    h('tr', {}, h('th', {}, 'troop'), h('th', {}, 'AI researched'), h('th', {}, 'AI bought'), h('th', {}, 'AI lost'),
+      h('th', {}, 'opp. researched'), h('th', {}, 'opp. bought'), h('th', {}, 'opp. lost')),
+    names.map((nm, k) => (ai.researched_at[k] >= 0 || op.researched_at[k] >= 0 || ai.spawned[k] || op.spawned[k]) ? h('tr', {},
+      h('td', {}, nm), h('td', {}, k === 0 ? 'start' : t(ai.researched_at[k])), h('td', {}, ai.spawned[k]), h('td', {}, ai.lost[k]),
+      h('td', {}, k === 0 ? 'start' : t(op.researched_at[k])), h('td', {}, op.spawned[k]), h('td', {}, op.lost[k])) : null)))
+  return h('div', {style: 'margin-top:12px'},
+    h('h3', {style: 'margin: 4px 0 8px'}, `Game ${pinnedGame ? pinnedGame.idx : ''} details`),
+    h('div', {class: 'charts three'}, summary, troops),
+    h('div', {class: 'charts three', style: 'margin-top:12px'},
+      stackChart({title: 'AI army', subtitle: 'troops alive by type, every 5 s', times, layers: layersFor(0), yMax}),
+      stackChart({title: 'Opponent army', subtitle: 'troops alive by type, every 5 s', times, layers: layersFor(1), yMax}),
+      lineChart({title: 'Base health', subtitle: 'both bases (800 = full)', series: line(1, 'base'), yMin: 0, yMax: 800, yFmt: v => Math.round(v), xFmt: clock, xLabel: 'game time'}),
+      lineChart({title: 'Money', subtitle: 'money in the bank', series: line(0, 'money'), yFmt: v => Math.round(v), xFmt: clock, xLabel: 'game time'}),
+      lineChart({title: 'Upgrade multiplier', subtitle: 'troop stats ×1.2 per upgrade', series: line(2, 'multiplier'), yMin: 1, yFmt: v => '×' + v.toFixed(2), xFmt: clock, xLabel: 'game time'})))
 }
 // one game's reward history, chosen with the "show" buttons in Recent games. The card is built once
 // per click and the same element is re-attached on every refresh, so it never redraws on its own.
@@ -455,9 +563,12 @@ async function showGame(run, idx) {
     subtitle: `running total, every ${r.every >= 3600 ? 'minute (older game)' : r.every / 60 + ' s'} · played ${g.side}, update ${g.update}, ${(g.ticks / 3600).toFixed(1)} min, bases ${Math.max(0, g.own_base)} vs ${Math.max(0, g.enemy_base)}`,
     series, yFmt: v => (v > 0 ? '+' : '') + v.toFixed(2), xFmt: clock, xLabel: 'game time'})
   card.append(h('div', {class: 'row small', style: 'margin-top:6px'}, h('button', {class: 'linkbtn', onclick: () => {
-    pinnedGame = null; const slot = $('#gameSlot'); if (slot) slot.replaceWith(gameSlot(run)); markShown() }}, 'clear')))
+    pinnedGame = null; const slot = $('#gameSlot'); if (slot) slot.replaceWith(gameSlot(run))
+    const ds = $('#gameDetails'); if (ds) ds.replaceChildren(); markShown() }}, 'clear')))
   pinnedGame = {run, idx, card}
+  pinnedGame.details = gameDetails(r)
   const slot = $('#gameSlot'); if (slot) slot.replaceChildren(card)
+  const ds = $('#gameDetails'); if (ds) ds.replaceChildren(pinnedGame.details)
   markShown()
 }
 function markShown() {

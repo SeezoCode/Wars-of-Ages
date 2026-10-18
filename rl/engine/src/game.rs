@@ -132,6 +132,10 @@ pub struct Player {
     /// Base upgrades bought so far and the cap (training option; u32::MAX = unlimited like the game).
     pub upgrades: u32,
     pub max_upgrades: u32,
+    /// Game time, kept in sync by `Game` so bookkeeping can timestamp events.
+    pub clock: i64,
+    /// What this player did during the game (for logs; never affects play).
+    pub stats: PlayerStats,
     pub financial_aid: [bool; 3],
     /// `stats.damageDealt`
     pub damage_dealt: f64,
@@ -140,6 +144,24 @@ pub struct Player {
     /// Money received for killing enemy units (not in the original; used for reward shaping).
     pub bounty_earned: f64,
     pub controller: Controller,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlayerStats {
+    /// Troops bought / lost, by troop type.
+    pub spawned: [u32; NUM_TROOPS],
+    pub lost: [u32; NUM_TROOPS],
+    /// Game time each troop was researched (-1 = never; Basic starts unlocked at 0).
+    pub researched_at: [i64; NUM_TROOPS],
+    pub upgrade_times: Vec<i64>,
+}
+
+impl PlayerStats {
+    pub fn new() -> PlayerStats {
+        let mut researched_at = [-1; NUM_TROOPS];
+        researched_at[0] = 0;
+        PlayerStats { spawned: [0; NUM_TROOPS], lost: [0; NUM_TROOPS], researched_at, upgrade_times: Vec::new() }
+    }
 }
 
 impl Player {
@@ -157,6 +179,8 @@ impl Player {
             multiplier: 1.0,
             upgrades: 0,
             max_upgrades: u32::MAX,
+            clock: 0,
+            stats: PlayerStats::new(),
             financial_aid: [true; 3],
             damage_dealt: 0.0,
             spending: 0.0,
@@ -166,6 +190,18 @@ impl Player {
     }
 
     #[inline]
+    /// Unlock troop `i` (the caller has paid).
+    pub fn unlock(&mut self, i: usize) {
+        self.unlocked[i] = true;
+        self.stats.researched_at[i] = self.clock;
+    }
+
+    /// Bookkeeping for a bought +20% upgrade (the caller applies it).
+    pub fn note_upgrade(&mut self) {
+        self.upgrades += 1;
+        self.stats.upgrade_times.push(self.clock);
+    }
+
     #[inline]
     pub fn can_upgrade(&self) -> bool {
         self.upgrades < self.max_upgrades
@@ -187,6 +223,7 @@ impl Player {
             let n = self.units.len();
             let puppy = kind == DOGGO && n >= 2 && self.units[n - 1].kind == DOGGO && self.units[n - 2].kind == DOGGO;
             self.units.push(Unit::new(kind, self.side, self.multiplier, puppy));
+            self.stats.spawned[kind] += 1;
         }
     }
 
@@ -437,6 +474,9 @@ impl Game {
     /// Work that happens between animation frames: fallout expiry and worker
     /// replies. Call once before each `tick` (the env and the parity harness do).
     pub fn pre_tick(&mut self) {
+        for pl in self.players.iter_mut() {
+            pl.clock = self.time;
+        }
         self.expire_fallout();
         for p in 0..2 {
             if let Controller::Classic(_) = self.players[p].controller {
@@ -449,6 +489,9 @@ impl Game {
     pub fn tick(&mut self) {
         self.expire_fallout(); // start of Game.move (also covers worker simulations, which skip pre_tick)
         self.time += 1;
+        for pl in self.players.iter_mut() {
+            pl.clock = self.time;
+        }
         self.move_army(0);
         self.move_army(1);
 
@@ -602,6 +645,7 @@ impl Game {
             while i < me.units.len() {
                 if me.units[i].health <= 0.0 {
                     let u = me.units.remove(i);
+                    me.stats.lost[u.kind] += 1;
                     if u.kind == ATOMIC_BOMB {
                         bombs_died += 1;
                     } else {

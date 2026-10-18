@@ -19,7 +19,7 @@ use pyo3::types::PyDict;
 use crate::dqn::DqnNet;
 use crate::env::{EnvConfig, Kind, VecEnv, NUM_REWARD_COMPONENTS};
 use crate::obs::{NUM_ACTIONS, OBS_SIZE};
-use crate::troops::TROOPS;
+use crate::troops::{NUM_TROOPS, TROOPS};
 
 type Arrays<'py> = (Bound<'py, PyAny>, Bound<'py, PyAny>);
 
@@ -130,6 +130,24 @@ impl PyVecEnv {
         Ok((obs, mask, rew, reshape(py, &done, &[n])?, reshape(py, &winner, &[n])?, reshape(py, &time, &[n])?))
     }
 
+    /// Compact state of env `i` for logging: per side [money, base_health, multiplier, count of each troop type].
+    fn snapshot(&self, i: usize) -> PyResult<Vec<Vec<f64>>> {
+        let e = self.inner.envs.get(i).ok_or_else(|| PyValueError::new_err("env index out of range"))?;
+        Ok(e.game
+            .players
+            .iter()
+            .map(|pl| {
+                let mut v = vec![pl.money, pl.base.health, pl.multiplier];
+                let mut counts = [0f64; NUM_TROOPS];
+                for u in &pl.units {
+                    counts[u.kind] += 1.0;
+                }
+                v.extend_from_slice(&counts);
+                v
+            })
+            .collect())
+    }
+
     /// Human-readable state of env `i` (for debugging / logging).
     fn info<'py>(&self, py: Python<'py>, i: usize) -> PyResult<Bound<'py, PyDict>> {
         let e = self.inner.envs.get(i).ok_or_else(|| PyValueError::new_err("env index out of range"))?;
@@ -148,6 +166,14 @@ impl PyVecEnv {
             let units: Vec<(String, f64, f64)> =
                 pl.units.iter().map(|u| (TROOPS[u.kind].name.to_string(), u.position, u.health)).collect();
             pd.set_item("units", units)?;
+            pd.set_item("upgrades", pl.upgrades)?;
+            pd.set_item("spawned", pl.stats.spawned.to_vec())?;
+            pd.set_item("lost", pl.stats.lost.to_vec())?;
+            pd.set_item("researched_at", pl.stats.researched_at.to_vec())?;
+            pd.set_item("upgrade_times", pl.stats.upgrade_times.clone())?;
+            pd.set_item("damage_dealt", pl.damage_dealt)?;
+            pd.set_item("spending", pl.spending)?;
+            pd.set_item("bounty_earned", pl.bounty_earned)?;
             d.set_item(name, pd)?;
         }
         Ok(d)
@@ -169,6 +195,7 @@ fn wars_engine(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("NUM_ACTIONS", NUM_ACTIONS)?;
     m.add("NUM_REWARD_COMPONENTS", NUM_REWARD_COMPONENTS)?;
     m.add("ACTION_NAMES", action_names())?;
+    m.add("TROOP_NAMES", TROOPS.iter().map(|t| t.name.to_string()).collect::<Vec<_>>())?;
     m.add("REWARD_COMPONENTS", vec!["enemy_base_damage", "own_base_damage", "bounty_earned", "bounty_given"])?;
     Ok(())
 }

@@ -79,7 +79,7 @@ pub fn try_to_unlock(to_unlock: &mut usize, me: &mut Player) {
         let rp = TROOPS[*to_unlock].research_price;
         if me.is_enough_money(rp) {
             me.money -= rp;
-            me.unlocked[*to_unlock] = true;
+            me.unlock(*to_unlock);
         }
         *to_unlock += 1;
     }
@@ -123,7 +123,7 @@ pub fn after_move_army(game: &mut Game, p: usize, st: &mut ClassicState) {
     if me.money > 1800.0 && me.can_upgrade() {
         me.multiplier *= UPGRADE_FACTOR;
         me.money -= UPGRADE_COST;
-        me.upgrades += 1;
+        me.note_upgrade();
     }
     let enc = encouragement(me, en);
     if enc > 50.0 && me.units.len() <= 1 {

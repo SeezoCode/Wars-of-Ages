@@ -49,11 +49,11 @@ pub fn apply_action(game: &mut Game, p: usize, action: usize) {
     } else if action < ACTION_UPGRADE {
         let i = action - ACTION_RESEARCH0;
         me.money -= TROOPS[i].research_price;
-        me.unlocked[i] = true;
+        me.unlock(i);
     } else if action == ACTION_UPGRADE {
         me.multiplier *= UPGRADE_FACTOR;
         me.money -= UPGRADE_COST;
-        me.upgrades += 1;
+        me.note_upgrade();
     }
 }
 
