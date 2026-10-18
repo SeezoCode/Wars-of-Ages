@@ -25,7 +25,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -282,7 +282,7 @@ class Runs:
         c = self.cache.get(name)
         if c is None:
             c = self.cache[name] = {"log_pos": 0, "log": [], "ep_pos": 0, "scores": {}, "recent": deque(maxlen=200),
-                                    "last100": {}, "rew": [], "curves": {}}
+                                    "last100": {}, "rew": [], "curves": {}, "ep_count": 0, "game_curves": OrderedDict()}
         return c
 
     def _read_new(self, path: str, pos: int):
@@ -326,7 +326,14 @@ class Runs:
                     parts = [e["rewards"].get(k, 0.0) for k in REWARD_PARTS]
                     c["rew"].append((e.get("env_steps", 0), opp, e.get("result", "D"), parts))
                     c["curves"].setdefault(opp, deque(maxlen=200)).append(e.get("reward_curve") or [parts])
+                c["ep_count"] += 1
+                if "reward_curve" in e:  # kept for the most recent games so one can be opened in the dashboard
+                    c["game_curves"][c["ep_count"]] = e["reward_curve"]
+                    while len(c["game_curves"]) > 300:
+                        c["game_curves"].popitem(last=False)
                 e = {k: v for k, v in e.items() if k != "reward_curve"}  # big; not needed in the table
+                e["idx"] = c["ep_count"]
+                e["has_curve"] = c["ep_count"] in c["game_curves"]
                 c["recent"].append(e)
             log = c["log"]
             step = max(1, len(log) // 400)
@@ -409,6 +416,17 @@ class Runs:
         if output:
             return {"state": "killed", "reason": killed}
         return None
+
+    def game(self, name: str, idx: int) -> dict:
+        """One recent game's reward history (cumulative REWARD_PARTS per game minute)."""
+        run_path(name)
+        with self.lock:
+            c = self._cached(name)
+            curve = c["game_curves"].get(idx)
+            info = next((e for e in c["recent"] if e.get("idx") == idx), None)
+        if curve is None or info is None:
+            raise ValueError("that game is no longer in the recent list")
+        return {"parts": REWARD_PARTS, "curve": curve, "game": info}
 
     def start(self, name: str, config: dict, resume: bool) -> dict:
         d = run_path(name)
@@ -762,6 +780,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, RUNS_STATE.list())
             if url.path == "/api/run":
                 return self._send(200, RUNS_STATE.detail(q.get("name", "")))
+            if url.path == "/api/game":
+                return self._send(200, RUNS_STATE.game(q.get("name", ""), int(q.get("idx", 0))))
             if url.path == "/api/system":
                 return self._send(200, system_usage(RUNS_STATE))
             if url.path == "/api/jobs":

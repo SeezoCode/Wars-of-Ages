@@ -62,6 +62,7 @@ input[type=number] { width: 120px } input[type=text] { width: 180px }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)) }
 .charts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)) }
+.charts.three { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)) }
 @media (max-width: 520px) { .charts { grid-template-columns: 1fr } }
 .score-big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: .5px }
 .score-title { font-weight: 600; display: flex; align-items: center; gap: 7px }
@@ -281,6 +282,7 @@ async function refreshJobs() {
 
 // ---------- run view ----------
 async function openRun(name) {
+  if (pinnedGame && pinnedGame.run !== name) pinnedGame = null
   selected = name; view = 'run'; lastDetail = null
   $('#main').replaceChildren(h('div', {class: 'empty'}, 'loading…'))
   await refreshRun(true)
@@ -351,11 +353,12 @@ function renderRun(d) {
 
   main.append(h('h2', {}, 'Recent games'))
   main.append(h('div', {class: 'card tablewrap'}, d.recent.length ? h('table', {},
-    h('tr', {}, ['when', 'update', 'opponent', 'side', 'result', 'length', 'its base', 'enemy base'].map(x => h('th', {}, x))),
+    h('tr', {}, ['when', 'update', 'opponent', 'side', 'result', 'length', 'its base', 'enemy base', 'rewards'].map(x => h('th', {}, x))),
     d.recent.map(g => h('tr', {},
       h('td', {}, ago(g.time)), h('td', {}, g.update), h('td', {}, oppLabel(g.opponent) + (g.opponent_id ? ` #${g.opponent_id}` : '') + (g.activity != null ? ` (acts ${Math.round(g.activity * 100)}%)` : '')),
       h('td', {}, g.side), h('td', {class: 'res-' + g.result}, {W: 'win', D: 'draw', L: 'loss'}[g.result]),
-      h('td', {}, (g.ticks / 3600).toFixed(1) + ' min'), h('td', {}, Math.max(0, g.own_base)), h('td', {}, Math.max(0, g.enemy_base))))) :
+      h('td', {}, (g.ticks / 3600).toFixed(1) + ' min'), h('td', {}, Math.max(0, g.own_base)), h('td', {}, Math.max(0, g.enemy_base)),
+      h('td', {}, g.has_curve ? h('button', {class: 'linkbtn', 'data-game': g.idx, onclick: () => showGame(d.name, g.idx)}, 'show') : '–')))) :
     h('div', {class: 'muted'}, 'none yet')))
 
   // evaluation
@@ -365,6 +368,7 @@ function renderRun(d) {
   main.append(h('h2', {}, 'Trainer output'))
   const pre = h('pre', {}, d.output.join('\n') || '(no output yet)')
   main.append(pre)
+  markShown()
   requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; window.scrollTo(0, keepScroll) })
 }
 function fmtV(v) { return typeof v === 'number' && v !== 0 && (Math.abs(v) < 1e-2 || Math.abs(v) >= 1e6) ? v.toExponential(2) : String(+(+v).toPrecision(6)) }
@@ -409,11 +413,12 @@ function rewardSection(d) {
   const ot = R.over_training[rewardFilter] || []
   const du = R.during[rewardFilter]
   const fmt = v => (v > 0 ? '+' : '') + v.toFixed(2)
-  wrap.append(h('div', {class: 'charts'},
+  wrap.append(h('div', {class: 'charts three'},
     lineChart({marks: [], title: 'Reward per game, over training', subtitle: 'average total per finished game, by source',
       series: series(i => ot.map(([x, parts]) => [x, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt}),
     du ? lineChart({title: 'Reward during a game', subtitle: `running total by game minute, average of the last ${du.games} games (a finished game keeps its final total)`,
-      series: series(i => du.minutes.map((parts, m) => [m + 1, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt, xFmt: v => +v.toFixed(1) + ' min', xLabel: 'game minute'}) : null))
+      series: series(i => du.minutes.map((parts, m) => [m + 1, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt, xFmt: v => +v.toFixed(1) + ' min', xLabel: 'game minute'}) : null,
+    gameSlot(d.name)))
   const br = R.by_result[rewardFilter] || {}
   wrap.append(h('div', {class: 'card tablewrap', style: 'margin-top:12px'},
     h('div', {class: 'small muted', style: 'margin-bottom:6px'}, 'Average reward per game in the last 300 games, by result. ' +
@@ -423,6 +428,39 @@ function rewardSection(d) {
       ['W', 'D', 'L'].filter(k => br[k]).map(k => h('tr', {}, h('td', {class: 'res-' + k}, {W: 'win', D: 'draw', L: 'loss'}[k]), h('td', {}, br[k].n),
         br[k].parts.map(v => h('td', {}, fmt(v))), h('td', {}, h('b', {}, fmt(sum(br[k].parts)))))))))
   return wrap
+}
+// one game's reward history, chosen with the "show" buttons in Recent games. The card is built once
+// per click and the same element is re-attached on every refresh, so it never redraws on its own.
+let pinnedGame = null  // {run, idx, card}
+function gameSlot(run) {
+  const slot = h('div', {id: 'gameSlot'})
+  if (pinnedGame && pinnedGame.run === run) slot.append(pinnedGame.card)
+  else slot.append(h('div', {class: 'card chart-card'}, h('h3', {}, 'One game'),
+    h('div', {class: 'empty small'}, 'Press “show” next to a game in Recent games to see its whole reward history here.')))
+  return slot
+}
+async function showGame(run, idx) {
+  let r
+  try { r = await api(`/api/game?name=${encodeURIComponent(run)}&idx=${idx}`) } catch (e) { toast(e.message); return }
+  const g = r.game, sum = parts => parts.reduce((a, b) => a + b, 0)
+  const n = r.curve.length
+  const x = m => m < n - 1 ? m + 1 : g.ticks / 3600  // minute marks, then the end of the game
+  const series = r.parts.map((p, i) => ({...REWARD_SERIES[p], label: false, points: r.curve.map((parts, m) => [x(m), parts[i]])}))
+    .concat([{name: 'Total', color: 'var(--ink-2)', dash: '5 4', points: r.curve.map((parts, m) => [x(m), sum(parts)])}])
+  const card = lineChart({title: `Game ${idx}: ${{W: 'win', D: 'draw', L: 'loss'}[g.result]} vs ${oppLabel(g.opponent)}${g.opponent_id ? ' #' + g.opponent_id : ''}`,
+    subtitle: `running total by game minute · played ${g.side}, update ${g.update}, ${(g.ticks / 3600).toFixed(1)} min, bases ${Math.max(0, g.own_base)} vs ${Math.max(0, g.enemy_base)}`,
+    series, yFmt: v => (v > 0 ? '+' : '') + v.toFixed(2), xFmt: v => +v.toFixed(1) + ' min', xLabel: 'game minute'})
+  card.append(h('div', {class: 'row small', style: 'margin-top:6px'}, h('button', {class: 'linkbtn', onclick: () => {
+    pinnedGame = null; const slot = $('#gameSlot'); if (slot) slot.replaceWith(gameSlot(run)); markShown() }}, 'clear')))
+  pinnedGame = {run, idx, card}
+  const slot = $('#gameSlot'); if (slot) slot.replaceChildren(card)
+  markShown()
+}
+function markShown() {
+  document.querySelectorAll('button[data-game]').forEach(b => {
+    const on = pinnedGame && +b.dataset.game === pinnedGame.idx
+    b.textContent = on ? 'showing' : 'show'; b.disabled = on
+  })
 }
 function scoreCard(k, sc) {
   const l = sc.last100, n = Math.max(1, sc.last100_n)
