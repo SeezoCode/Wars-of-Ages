@@ -107,6 +107,7 @@ class TrainConfig:
 
     # rewards: outcome + annealed shaping
     win_reward: float = 1.0
+    loss_reward: float = -1.0           # if a config sets only win_reward, this becomes -win_reward
     draw_reward: float = -0.5
     time_penalty: float = 0.5           # total cost of a game that lasts the full max_ticks, spread evenly
                                         # over its decisions (not annealed): makes stalling cost something
@@ -143,7 +144,7 @@ class TrainConfig:
 # the new start/end values and total_env_steps.
 LIVE_FIELDS = {
     "total_env_steps", "lr", "lr_final", "gamma", "gae_lambda", "clip", "epochs", "minibatch_size", "ent_coef",
-    "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward",
+    "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward", "loss_reward",
     "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_siege_progress",
     "shaping_anneal_frac",
     "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "max_snapshots",
@@ -167,16 +168,21 @@ def parse_config() -> TrainConfig:
             ap.add_argument(name, dest=f.name, type=typ, default=None)
     args = ap.parse_args()
     cfg = TrainConfig()
+    given = set()
     if args.config:
         with open(args.config) as fh:
             for k, v in json.load(fh).items():
                 if not hasattr(cfg, k):
                     raise SystemExit(f"unknown config key: {k}")
                 setattr(cfg, k, v)
+                given.add(k)
     for f in dataclasses.fields(TrainConfig):
         v = getattr(args, f.name)
         if v is not None:
             setattr(cfg, f.name, v)
+            given.add(f.name)
+    if "loss_reward" not in given:  # older configs had one symmetric win/loss reward
+        cfg.loss_reward = -cfg.win_reward
     return cfg
 
 
@@ -397,7 +403,7 @@ class Trainer:
         r = shaping * (c.shaping_base_damage * (comp[..., 0] - comp[..., 1]) +
                        c.shaping_bounty * (comp[..., 2] - comp[..., 3]))
         for s in range(2):
-            out = np.where(winner == s, c.win_reward, np.where(winner == 1 - s, -c.win_reward,
+            out = np.where(winner == s, c.win_reward, np.where(winner == 1 - s, c.loss_reward,
                                                                 np.where(winner == 2, c.draw_reward, 0.0)))
             r[:, s] += np.where(done, out, 0.0)
         r -= c.time_penalty * c.decision_interval / c.max_ticks  # every decision costs a little time

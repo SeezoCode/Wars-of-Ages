@@ -151,7 +151,11 @@ FIELDS = {
     "explore_anneal_frac": ("Exploration", "Random moves fade over",
                             "Fraction of training over which the random-move chance fades to zero."),
 
-    "win_reward": ("Rewards", "Win / loss reward", "+this for a win, -this for a loss."),
+    "win_reward": ("Rewards", "Win reward", "Reward for winning a game."),
+    "loss_reward": ("Rewards", "Loss reward",
+                    "Reward for losing (usually negative). What drives learning is the gap between win, draw and "
+                    "loss: a much harsher loss than draw makes it play safe and stall; a draw close to a loss makes it "
+                    "take risks to win."),
     "draw_reward": ("Rewards", "Draw reward", "Usually negative so stalling isn't a safe option."),
     "time_penalty": ("Rewards", "Time cost",
                      "Total penalty for a game that lasts the whole time limit, charged a little on every decision "

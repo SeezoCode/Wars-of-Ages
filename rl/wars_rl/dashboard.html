@@ -676,6 +676,8 @@ function openForm(resumeName, baseConfig, liveNow) {
   for (const sec of SCHEMA.sections) for (const f of sec.fields) defaults[f.name] = f.default
   const values = {...defaults}
   if (baseConfig) for (const k of Object.keys(defaults)) if (baseConfig[k] !== undefined) values[k] = baseConfig[k]
+  // runs from before the split had one symmetric win/loss reward
+  if (baseConfig && baseConfig.loss_reward === undefined && baseConfig.win_reward !== undefined) values.loss_reward = -baseConfig.win_reward
   for (const k of ['init_from', 'dqn_model']) if (values[k] && values[k].includes('/rl/')) values[k] = values[k].split('/rl/').pop()
   formState = {values, inputs: {}, defaults: isLive ? {...values} : defaults, live: isLive, now: liveNow}
   const main = $('#main')
