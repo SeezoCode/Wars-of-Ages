@@ -416,7 +416,9 @@ function rewardSection(d) {
       series: series(i => du.minutes.map((parts, m) => [m + 1, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt, xFmt: v => +v.toFixed(1) + ' min', xLabel: 'game minute'}) : null))
   const br = R.by_result[rewardFilter] || {}
   wrap.append(h('div', {class: 'card tablewrap', style: 'margin-top:12px'},
-    h('div', {class: 'small muted', style: 'margin-bottom:6px'}, 'Average reward per game in the last 300 games, by result'),
+    h('div', {class: 'small muted', style: 'margin-bottom:6px'}, 'Average reward per game in the last 300 games, by result. ' +
+      'Position hints pay out while a side pushes forward and are handed back when the game ends, so a winner\'s per-game sum is ' +
+      'about zero or slightly negative; what matters to the AI is that it gets them early (see "Reward during a game").'),
     h('table', {}, h('tr', {}, h('th', {}, 'result'), h('th', {}, 'games'), R.parts.map(p => h('th', {}, REWARD_SERIES[p].name)), h('th', {}, 'Total')),
       ['W', 'D', 'L'].filter(k => br[k]).map(k => h('tr', {}, h('td', {class: 'res-' + k}, {W: 'win', D: 'draw', L: 'loss'}[k]), h('td', {}, br[k].n),
         br[k].parts.map(v => h('td', {}, fmt(v))), h('td', {}, h('b', {}, fmt(sum(br[k].parts)))))))))
