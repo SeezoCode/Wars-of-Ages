@@ -160,9 +160,14 @@ FIELDS = {
     "shaping_base_damage": ("Rewards", "Hint: base damage", "x (damage dealt - damage taken) / 800 base HP."),
     "shaping_bounty": ("Rewards", "Hint: kill money", "x (money earned from kills - money given) / 100."),
     "shaping_front": ("Rewards", "Hint: front line", "Reward for pushing the front line forward."),
-    "shaping_siege": ("Rewards", "Hint: Trebuchets in range",
-                      "Reward for moving Trebuchets to where they can hit the enemy base. Game-specific knowledge; "
-                      "set 0 for a purer learner."),
+    "shaping_siege": ("Rewards", "Hint: Trebuchets in range (classic)",
+                      "Potential-style Trebuchet hint: pays while Trebuchets move towards base-hitting range and takes "
+                      "it all back in one hit when one dies. Neutral in theory, but in practice those sudden "
+                      "penalties teach the AI to avoid Trebuchets, so it is off (0) by default."),
+    "shaping_siege_progress": ("Rewards", "Hint: Trebuchets advancing",
+                               "Pays for Trebuchets moving towards the spot where they can hit the enemy base (they are "
+                               "the only troops that hurt a defended base), and never takes it back when one dies. "
+                               "Game-specific knowledge; set 0 for a purer learner."),
     "shaping_anneal_frac": ("Rewards", "Hints fade over", "Fraction of training over which all hints fade to zero."),
 
     "snapshot_every": ("League & saving", "Snapshot every (updates)", "How often a frozen copy joins the league."),

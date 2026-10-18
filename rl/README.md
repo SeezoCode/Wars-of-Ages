@@ -119,9 +119,12 @@ Troops instead of keeping a short line with Trebuchets close behind it in range.
   Behaviour-cloning the actor on its games before PPO is the classic fix for hard exploration.
 * **Bigger/longer:** `--actor-hidden 1024,1024,512`, more envs, a longer `--total-env-steps`.
 
-Shaping terms are annealed (`shaping_anneal_frac`) and potential-based, so they can't change the
-optimal policy in theory. The siege term is still game-specific knowledge: turn it off with
-`--shaping-siege 0` if you prefer a purer learner.
+Shaping terms are annealed (`shaping_anneal_frac`). The front-line term is potential-based, so it
+can't change the optimal policy in theory. The Trebuchet term (`shaping_siege_progress`) pays for
+Trebuchets advancing towards base-hitting range and never takes it back when one dies. The older
+potential-style version (`shaping_siege`, now 0 by default) took everything back in one sudden hit
+on every Trebuchet death, which in practice taught the AI to avoid Trebuchets. Both are
+game-specific knowledge: set them to 0 for a purer learner.
 
 ## Use it in the game
 

@@ -113,7 +113,9 @@ class TrainConfig:
     shaping_base_damage: float = 2.0   # x (enemy base damage - own base damage) / 800
     shaping_bounty: float = 0.03       # x (bounty earned - bounty given) / 100
     shaping_front: float = 1.0         # potential-based: gamma*phi(s') - phi(s), phi = own front - enemy front
-    shaping_siege: float = 1.0         # potential-based: own Trebuchets advancing into base-hitting range
+    shaping_siege: float = 0.0         # potential-based: own Trebuchets advancing into base-hitting range
+                                       # (taken back in one hit when one dies; in practice that teaches "Trebuchets are bad")
+    shaping_siege_progress: float = 1.0  # pays for Trebuchets advancing towards range, never taken back
     shaping_anneal_frac: float = 0.8   # shaping fades to 0 over this fraction of training
 
     # opponent mix (normalized)
@@ -142,7 +144,8 @@ class TrainConfig:
 LIVE_FIELDS = {
     "total_env_steps", "lr", "lr_final", "gamma", "gae_lambda", "clip", "epochs", "minibatch_size", "ent_coef",
     "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward",
-    "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_anneal_frac",
+    "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_siege_progress",
+    "shaping_anneal_frac",
     "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "max_snapshots",
     "save_every", "export_every", "torch_threads", "rollout_torch_threads",
 }
@@ -421,10 +424,10 @@ class Trainer:
             self.ep_sample[i] = sample[i]
 
     def _potential(self, obs: np.ndarray) -> np.ndarray:
-        return self._potential_parts(obs).sum(-1)
+        return self._potential_parts(obs)[..., :2].sum(-1)
 
     def _potential_parts(self, obs: np.ndarray) -> np.ndarray:
-        """Potential for shaping, [..., 0] front line and [..., 1] Trebuchets, weighted (gamma*phi(s') - phi(s) keeps the optimal policy unchanged).
+        """Potential for shaping, [..., 0] front line and [..., 1] Trebuchets (weighted), [..., 2] raw Trebuchet score (gamma*phi(s') - phi(s) keeps the optimal policy unchanged).
 
         front: how far my frontmost unit has pushed minus how far the enemy's has.
         siege: my Trebuchets moving up to the position where they can hit the enemy base
@@ -439,7 +442,7 @@ class Trainer:
         in_range_x = (700 - 55 - 210) / 700  # Trebuchet reaches the base from here
         ramp = np.clip((own[..., 14] - 0.3) / (in_range_x - 0.3), 0.0, 1.0)
         siege = np.minimum((ramp * treb).sum(-1) / 2.0, 1.5)
-        return np.stack([self.cfg.shaping_front * (own_front - en_depth), self.cfg.shaping_siege * siege], -1)
+        return np.stack([self.cfg.shaping_front * (own_front - en_depth), self.cfg.shaping_siege * siege, siege], -1)
 
     # --------------------------------------------------------------- rollout
     def _opponent_actions(self, obs: np.ndarray, mask: np.ndarray, actions: np.ndarray):
@@ -481,7 +484,7 @@ class Trainer:
         b_done = np.zeros((T, N), dtype=np.float32)
         b_learn = np.zeros((T, N, 2), dtype=bool)
         obs, mask = self.venv.observe()
-        phi = self._potential_parts(obs)  # (N, 2, 2): front line, Trebuchets
+        phi = self._potential_parts(obs)  # (N, 2, 3): front line, Trebuchets, raw Trebuchet score
         self.idle = [0, 0]  # learner decisions that waited although something was affordable / all decisions
         for t in range(T):
             learn = self.ctrl == CTRL_LEARNER
@@ -503,8 +506,12 @@ class Trainer:
 
             obs, mask, comp, done, winner, ticks = self.venv.step(actions)
             b_rew[t] = self._rewards(comp, done, winner, shaping)
-            phi_next = np.where(done[:, None, None], 0.0, self._potential_parts(obs))
-            pot = shaping * (c.gamma * phi_next - phi)
+            parts_next = self._potential_parts(obs)
+            phi_next = np.where(done[:, None, None], 0.0, parts_next[..., :2])
+            pot = shaping * (c.gamma * phi_next - phi[..., :2])
+            # Trebuchet progress: pay for any increase of the raw score, never charge for decreases (deaths)
+            pot[..., 1] += np.where(done[:, None], 0.0, shaping * c.shaping_siege_progress *
+                                    np.maximum(0.0, parts_next[..., 2] - phi[..., 2]))
             b_rew[t] += pot.sum(-1)
             b_done[t] = done
             self._track_rewards(comp, done, shaping, pot, b_rew[t], ticks)
