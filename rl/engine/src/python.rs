@@ -101,6 +101,35 @@ impl PyVecEnv {
         Ok(())
     }
 
+    /// Copy games: env `dst[k]` becomes a copy of `src` env `src_idx[k]` (another VecEnv), then
+    /// optionally reseeded (`seeds[k]` >= 0) and with sides handed to the agent (`agent_sides[k]`:
+    /// 0 none, 1 left, 2 right, 3 both). Used by the search: the copies are played out and thrown away.
+    fn copy_from(&mut self, dst: Vec<usize>, src: PyRef<'_, PyVecEnv>, src_idx: Vec<usize>, seeds: Vec<i64>,
+                 agent_sides: Vec<u8>) -> PyResult<()> {
+        let n = self.inner.envs.len();
+        if dst.len() != src_idx.len() || dst.len() != seeds.len() || dst.len() != agent_sides.len() {
+            return Err(PyValueError::new_err("dst, src_idx, seeds and agent_sides must have the same length"));
+        }
+        for k in 0..dst.len() {
+            let (d, s) = (dst[k], src_idx[k]);
+            if d >= n || s >= src.inner.envs.len() {
+                return Err(PyValueError::new_err("env index out of range"));
+            }
+            let mut e = src.inner.envs[s].clone();
+            if seeds[k] >= 0 {
+                e.reseed(seeds[k] as u64);
+            }
+            for p in 0..2 {
+                if agent_sides[k] & (1 << p) != 0 {
+                    e.make_agent(p);
+                }
+            }
+            self.inner.envs[d] = e;
+        }
+        self.inner.observe_all();
+        Ok(())
+    }
+
     /// Current observations and action masks: ((N,2,OBS) float32, (N,2,A) bool).
     fn observe<'py>(&self, py: Python<'py>) -> PyResult<Arrays<'py>> {
         self.arrays(py)

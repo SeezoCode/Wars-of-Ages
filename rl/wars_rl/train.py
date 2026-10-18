@@ -41,6 +41,7 @@ import torch.nn as nn  # noqa: E402
 import wars_engine
 
 from .export import export
+from .search import search as search_moves
 from .league import League
 from .model import ActorCritic, ModelConfig, save_checkpoint
 
@@ -131,7 +132,16 @@ class TrainConfig:
 
     # league / bookkeeping
     snapshot_every: int = 20
-    milestone_every: int = 50           # keep a small permanent copy of the actor (milestones/) for strength tests
+    milestone_every: int = 50
+    # AlphaZero-style search (wars_rl/search.py): on this fraction of the learner's decisions, try the most
+    # likely moves in copies of the game and train the policy towards the moves that did better. 0 = off.
+    search_frac: float = 0.0
+    search_candidates: int = 6          # moves tried per searched decision ("wait" + the 5 most likely)
+    search_rollouts: int = 2            # copies per move (different luck)
+    search_horizon: int = 40            # decisions each copy plays ahead (40 = 10 s at 4 per second)
+    search_strength: float = 2.0        # how far the target moves from the network's policy towards better moves
+    search_coef: float = 1.0            # weight of "copy the search" in the training loss
+    search_every: int = 16              # search in batches every this many rollout steps (efficiency)           # keep a small permanent copy of the actor (milestones/) for strength tests
     max_snapshots: int = 40
     save_every: int = 10
     export_every: int = 20
@@ -149,10 +159,13 @@ LIVE_FIELDS = {
     "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_siege_progress",
     "shaping_anneal_frac",
     "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "milestone_every",
+    "search_frac", "search_candidates", "search_rollouts", "search_horizon", "search_strength", "search_coef",
+    "search_every",
     "max_snapshots",
     "save_every", "export_every", "torch_threads", "rollout_torch_threads",
 }
-POSITIVE_INT = {"total_env_steps", "epochs", "minibatch_size", "snapshot_every", "milestone_every", "max_snapshots", "save_every",
+POSITIVE_INT = {"total_env_steps", "epochs", "minibatch_size", "snapshot_every", "milestone_every", "max_snapshots",
+                "search_candidates", "search_rollouts", "search_horizon", "search_every", "save_every",
                 "export_every", "torch_threads", "rollout_torch_threads"}
 
 
@@ -431,6 +444,38 @@ class Trainer:
             self.ep_state[i].append(self.venv.snapshot(int(i)))
             self.ep_sample[i] = sample[i]
 
+    def _search_some(self, li, obs, mask, shaping):
+        """Search a random share of the learner's current decisions; keep (obs, mask, target) for the update."""
+        c = self.cfg
+        n = min(len(li[0]), max(1, int(round(c.search_frac * len(li[0]) * c.search_every))), 256)
+        pick = self.rng.choice(len(li[0]), size=n, replace=False)
+        roots, sides = li[0][pick], li[1][pick]
+        t0 = time.time()
+        torch.set_num_threads(c.torch_threads)
+        target, stats = search_moves(self, roots, sides, obs[roots, sides], mask[roots, sides], shaping, self.rng)
+        torch.set_num_threads(c.rollout_torch_threads)
+        stats["search_s"] = time.time() - t0
+        self.search_data.append((obs[roots, sides].copy(), mask[roots, sides].copy(), target))
+        self.search_stats.append(stats)
+
+    def _shaped_reward(self, comp, done, winner, shaping, phi, obs_next):
+        """Full per-step reward (outcome, hints, time cost, potential terms) for both sides.
+
+        phi: _potential_parts of the previous observation. Returns (reward (N, 2), parts of obs_next)."""
+        r, pot, parts_next = self._shaped_parts(comp, done, winner, shaping, phi, obs_next)
+        return r + pot.sum(-1), parts_next
+
+    def _shaped_parts(self, comp, done, winner, shaping, phi, obs_next):
+        c = self.cfg
+        r = self._rewards(comp, done, winner, shaping)
+        parts_next = self._potential_parts(obs_next)
+        phi_next = np.where(done[:, None, None], 0.0, parts_next[..., :2])
+        pot = shaping * (c.gamma * phi_next - phi[..., :2])
+        # Trebuchet progress: pay for any increase of the raw score, never charge for decreases (deaths)
+        pot[..., 1] += np.where(done[:, None], 0.0, shaping * c.shaping_siege_progress *
+                                np.maximum(0.0, parts_next[..., 2] - phi[..., 2]))
+        return r, pot, parts_next
+
     def _potential(self, obs: np.ndarray) -> np.ndarray:
         return self._potential_parts(obs)[..., :2].sum(-1)
 
@@ -494,9 +539,12 @@ class Trainer:
         obs, mask = self.venv.observe()
         phi = self._potential_parts(obs)  # (N, 2, 3): front line, Trebuchets, raw Trebuchet score
         self.idle = [0, 0]  # learner decisions that waited although something was affordable / all decisions
+        self.search_data, self.search_stats = [], []
         for t in range(T):
             learn = self.ctrl == CTRL_LEARNER
             li = np.nonzero(learn)
+            if c.search_frac > 0 and t % c.search_every == 0 and len(li[0]):
+                self._search_some(li, obs, mask, shaping)
             lt = tuple(torch.from_numpy(x) for x in li)
             actions = np.full((N, 2), WAIT, dtype=np.int64)
             o_t, m_t = torch.from_numpy(obs), torch.from_numpy(mask)
@@ -513,13 +561,7 @@ class Trainer:
             b_learn[t] = learn
 
             obs, mask, comp, done, winner, ticks = self.venv.step(actions)
-            b_rew[t] = self._rewards(comp, done, winner, shaping)
-            parts_next = self._potential_parts(obs)
-            phi_next = np.where(done[:, None, None], 0.0, parts_next[..., :2])
-            pot = shaping * (c.gamma * phi_next - phi[..., :2])
-            # Trebuchet progress: pay for any increase of the raw score, never charge for decreases (deaths)
-            pot[..., 1] += np.where(done[:, None], 0.0, shaping * c.shaping_siege_progress *
-                                    np.maximum(0.0, parts_next[..., 2] - phi[..., 2]))
+            b_rew[t], pot, _ = self._shaped_parts(comp, done, winner, shaping, phi, obs)
             b_rew[t] += pot.sum(-1)
             b_done[t] = done
             self._track_rewards(comp, done, shaping, pot, b_rew[t], ticks)
@@ -565,9 +607,17 @@ class Trainer:
         stop = False
         n_mb = max(1, round(n / c.minibatch_size))
         skipped = 0
+        # AlphaZero-style targets from the search: spread over the minibatches, once per epoch
+        sd = getattr(self, "search_data", []) if c.search_coef > 0 else []
+        if sd:
+            s_obs = torch.from_numpy(np.concatenate([x[0] for x in sd]))
+            s_mask = torch.from_numpy(np.concatenate([x[1] for x in sd]))
+            s_tgt = torch.from_numpy(np.concatenate([x[2] for x in sd]))
+            t_ent = float(-(s_tgt * torch.log(s_tgt.clamp_min(1e-12))).sum(-1).mean())
         for _ in range(c.epochs):
+            s_chunks = torch.randperm(len(s_obs)).tensor_split(n_mb) if sd else [None] * n_mb
             # near-equal minibatches: a 1-sample remainder would make adv.std() NaN
-            for mb in torch.randperm(n).tensor_split(n_mb):
+            for mb, sc in zip(torch.randperm(n).tensor_split(n_mb), s_chunks):
                 logp, ent, v = self.model.evaluate(batch["obs"][mb], batch["mask"][mb], batch["act"][mb])
                 ratio = (logp - batch["logp"][mb]).exp()
                 adv = batch["adv"][mb]
@@ -575,6 +625,11 @@ class Trainer:
                 pg = -torch.min(ratio * adv, ratio.clamp(1 - c.clip, 1 + c.clip) * adv).mean()
                 vf = 0.5 * (v - batch["ret"][mb]).pow(2).mean()
                 loss = pg + c.vf_coef * vf - ent_coef * ent.mean()
+                if sc is not None and len(sc):
+                    lp_all = torch.log_softmax(self.model.logits(s_obs[sc], s_mask[sc]), -1).masked_fill(~s_mask[sc], 0.0)
+                    ce = -(s_tgt[sc] * lp_all).sum(-1).mean()
+                    loss = loss + c.search_coef * ce
+                    stats["search_kl"].append(ce.item() - t_ent)  # KL(search target || policy)
                 self.opt.zero_grad()
                 loss.backward()
                 grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), c.max_grad_norm)
@@ -598,6 +653,12 @@ class Trainer:
         y, p = batch["ret"].numpy(), batch["val"].numpy()
         out["explained_var"] = float(1 - np.var(y - p) / (np.var(y) + 1e-8))
         out.update(lr=lr, ent_coef=ent_coef, samples=n, early_stop=stop, skipped_minibatches=skipped)
+        for k in ("search_roots", "search_copies", "search_s"):
+            if getattr(self, "search_stats", None):
+                out[k] = float(sum(s[k] for s in self.search_stats))
+        for k in ("search_agree", "search_q_spread"):
+            if getattr(self, "search_stats", None):
+                out[k] = float(np.mean([s[k] for s in self.search_stats]))
         return out
 
     # ------------------------------------------------------------------ main

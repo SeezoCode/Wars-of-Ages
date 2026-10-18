@@ -138,6 +138,7 @@ pub struct Snapshot {
     fallout: bool,
 }
 
+#[derive(Clone)]
 pub struct DqnState {
     pub net: Arc<DqnNet>,
     pub cooldown: i64,

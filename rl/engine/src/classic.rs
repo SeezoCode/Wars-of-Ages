@@ -7,6 +7,7 @@ use crate::game::{Controller, Game, Player, Side};
 use crate::rng::Rng;
 use crate::troops::*;
 
+#[derive(Clone)]
 pub struct PendingReply {
     pub deliver_at: i64,
     pub troops: Vec<usize>,
@@ -14,6 +15,7 @@ pub struct PendingReply {
     pub enc: f64,
 }
 
+#[derive(Clone)]
 pub struct ClassicState {
     pub cooldown: i64,
     pub to_unlock: usize,

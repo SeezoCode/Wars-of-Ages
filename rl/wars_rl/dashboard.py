@@ -67,6 +67,12 @@ SECTIONS = [
                       "\"hints\" give small extra rewards for progress (damaging the base, pushing the front, getting "
                       "Trebuchets in range, earning kill money) so it learns faster early on. They fade out over "
                       "training so the final AI optimises for winning only."),
+    ("Search (AlphaZero-style)", True, "On a share of its decisions the AI thinks ahead: it copies the game, tries "
+                                       "several moves, plays each copy about 10 seconds forward with its own network and "
+                                       "scores the result with its critic. The network is then trained towards the moves "
+                                       "that did better (on top of PPO). The search gets sharper as the network improves. "
+                                       "It costs time: 1-2% of decisions searched makes training about 40% slower. "
+                                       "0 = off."),
     ("League & saving", True, "The league is a pool of frozen past versions of the AI. Playing against them keeps it "
                               "from forgetting how to beat old strategies."),
 ]
@@ -174,6 +180,24 @@ FIELDS = {
                                "Game-specific knowledge; set 0 for a purer learner."),
     "shaping_anneal_frac": ("Rewards", "Hints fade over", "Fraction of training over which all hints fade to zero."),
 
+    "search_frac": ("Search (AlphaZero-style)", "Share of decisions searched",
+                    "0.01-0.02 is a good start. 0 turns the search off."),
+    "search_candidates": ("Search (AlphaZero-style)", "Moves tried",
+                          "Per searched decision: 'wait' plus this many minus one moves, picked at random in proportion "
+                          "to how likely the AI already thinks they are."),
+    "search_rollouts": ("Search (AlphaZero-style)", "Copies per move",
+                        "Each move is played out this many times with different luck; more = less noisy, slower."),
+    "search_horizon": ("Search (AlphaZero-style)", "Look-ahead (decisions)",
+                       "How far each copy plays before the critic judges it. 40 = 10 s of game time at 4 decisions/s."),
+    "search_strength": ("Search (AlphaZero-style)", "Search strength",
+                        "How strongly the training target leans towards the moves that scored best. Higher = trusts "
+                        "the (noisy) search more."),
+    "search_coef": ("Search (AlphaZero-style)", "Search loss weight",
+                    "How much 'copy the search' counts in training compared with PPO's own update."),
+    "search_every": ("Search (AlphaZero-style)", "Search batch interval",
+                     "Searches are done in batches every this many steps of a rollout (bigger batches run faster)."),
+    "milestone_every": ("League & saving", "Strength copy every (updates)",
+                        "How often a small permanent copy is saved for the Real strength chart."),
     "snapshot_every": ("League & saving", "Snapshot every (updates)", "How often a frozen copy joins the league."),
     "max_snapshots": ("League & saving", "League size", "Most snapshots kept; the easiest ones are dropped first."),
     "save_every": ("League & saving", "Save every (updates)", "How often latest.pt is written."),
@@ -321,7 +345,8 @@ class Runs:
             c = self._cached(name)
             c["log_pos"], rows = self._read_new(os.path.join(d, "log.jsonl"), c["log_pos"])
             keep = ("update", "env_steps", "episodes", "sps", "win", "draw", "games", "entropy", "explained_var",
-                    "approx_kl", "ep_ticks", "lr", "ent_coef", "hints_now", "explore_now", "idle_wait", "rollout_s", "update_s")
+                    "approx_kl", "ep_ticks", "lr", "ent_coef", "hints_now", "explore_now", "idle_wait",
+                    "search_agree", "search_kl", "search_q_spread", "search_roots", "search_s", "rollout_s", "update_s")
             c["log"].extend({k: r.get(k) for k in keep} for r in rows)
             c["ep_pos"], eps = self._read_new(os.path.join(d, "episodes.jsonl"), c["ep_pos"])
             for e in eps:

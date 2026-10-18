@@ -80,6 +80,7 @@ pub const NUM_REWARD_COMPONENTS: usize = 4;
 pub const WINNER_NONE: i8 = -1;
 pub const WINNER_DRAW: i8 = 2;
 
+#[derive(Clone)]
 pub struct Env {
     pub game: Game,
     pub kinds: [Kind; 2],
@@ -139,6 +140,19 @@ impl Env {
         self.winner = WINNER_NONE;
         self.advance();
         Ok(())
+    }
+
+    /// Hand side `p` to the actions passed to `step` from now on (search rollouts use this so a
+    /// copied game doesn't run the classic bot's expensive worker search).
+    pub fn make_agent(&mut self, p: usize) {
+        self.kinds[p] = Kind::Agent;
+        self.game.players[p].controller = Controller::Plain;
+    }
+
+    /// New random streams (attack rolls etc.), so copies of one game can play out differently.
+    pub fn reseed(&mut self, seed: u64) {
+        self.game.rng = Rng::new(derive_seed(seed, 0));
+        self.game.worker_rng = Rng::new(derive_seed(seed, 1));
     }
 
     fn has_agent(&self) -> bool {

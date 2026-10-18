@@ -110,6 +110,7 @@ impl Default for Base {
 }
 
 /// What runs in `afterMoveArmy` for a player.
+#[derive(Clone)]
 pub enum Controller {
     /// Plain `Player` (human, worker-simulation players). Also used for the RL agent:
     /// its decisions are applied *between* ticks (see `Game.move` hook in index.ts).
@@ -120,6 +121,7 @@ pub enum Controller {
     Dqn(Box<DqnState>),
 }
 
+#[derive(Clone)]
 pub struct Player {
     pub side: Side,
     pub money: f64,
@@ -244,6 +246,7 @@ impl Player {
     }
 }
 
+#[derive(Clone)]
 pub struct Game {
     pub players: [Player; 2],
     pub time: i64,

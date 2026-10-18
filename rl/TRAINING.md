@@ -209,6 +209,22 @@ a JSON file: `python -m wars_rl.train --config configs/ultimate.json` (flags ove
 | `--max-ticks` | 54000 | game length limit (15 min) before it counts as a draw |
 | `--seed` | 1 | change to get a different run with the same settings |
 
+### AlphaZero-style search
+
+Settings → **Search (AlphaZero-style)**, or `--search-frac 0.02`. On that share of the AI's
+decisions, the trainer copies the game (`VecEnv.copy_from`) and tries "wait" plus a few moves
+drawn from the policy. Each copy plays about 10 seconds forward with the current network (a
+classic-bot opponent is played by the network inside the copies, because its own search is too
+slow), and the critic judges where it ended up. The policy is then trained towards the moves
+that did better (Gumbel AlphaZero's improved policy), on top of PPO. The **Search agrees with
+the network** chart shows how often the search's best move was already the network's favourite.
+
+* It costs time: 1-2% of decisions searched makes training about 40% slower.
+* Early in a run the copies are played by a weak network, so the search is noisy. It gets
+  sharper as the network improves. More copies per move (`search_rollouts`) reduce the noise.
+* All settings are live. Try it on a run that already plays reasonably, and compare with
+  **Real strength**.
+
 ### Is it really getting better?
 
 The "past versions" win rate is relative: those opponents improve too, so the number can fall while

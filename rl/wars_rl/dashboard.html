@@ -346,6 +346,9 @@ function renderRun(d) {
     lineChart({marks, title: 'Training speed', subtitle: 'decisions per second', series: one('sps'), yFmt: fmtN}),
     lineChart({marks, title: 'Entropy', subtitle: 'how varied its choices are; near 0 = it stopped exploring', series: one('entropy'), yFmt: v => v.toFixed(2)}),
     lineChart({marks, title: 'Explained variance', subtitle: 'how well the critic predicts outcomes (1 = perfect, below 0 = worse than guessing; clipped at -1)', series: one('explained_var', v => Math.max(-1, v)), yMax: 1, yFmt: v => v.toFixed(2)}),
+    ...(S.some(r => r.search_agree != null) ? [lineChart({marks, title: 'Search agrees with the network',
+      subtitle: 'share of searched decisions where the best move found was also the network\'s favourite; rising = the network has absorbed the search',
+      series: one('search_agree'), yMax: 1, yMin: 0, yFmt: pct})] : []),
     lineChart({marks, title: 'Waiting with money', subtitle: 'share of its decisions that were "wait" although it could afford a troop, research or upgrade', series: one('idle_wait'), yMax: 1, yFmt: pct})))
 
   // recent games
