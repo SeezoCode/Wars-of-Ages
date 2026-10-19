@@ -158,6 +158,14 @@ FIELDS = {
                             "Fraction of training over which the random-move chance fades to zero."),
 
     "win_reward": ("Rewards", "Win reward", "Reward for winning a game."),
+    "timeout_tiebreak": ("Rewards", "Timeout tie-break",
+                         "When the time limit ends a game, the draw reward is adjusted by who is ahead: plus this "
+                         "times (own base - enemy base) / 800, at most +-this. A draw at 800 vs 400 base health then "
+                         "scores half of it better than an even draw, so every bit of base damage (Trebuchets!) "
+                         "counts. 0 = all draws are equal."),
+    "tiebreak_army": ("Rewards", "Tie-break: army weight",
+                      "Also count the difference in the troops' total health at the end (per 3000 HP). Small values "
+                      "only: a big weight teaches it to hoard troops for the final second."),
     "loss_reward": ("Rewards", "Loss reward",
                     "Reward for losing (usually negative). What drives learning is the gap between win, draw and "
                     "loss: a much harsher loss than draw makes it play safe and stall; a draw close to a loss makes it "

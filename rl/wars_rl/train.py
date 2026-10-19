@@ -109,6 +109,10 @@ class TrainConfig:
     # rewards: outcome + annealed shaping
     win_reward: float = 1.0
     loss_reward: float = -1.0           # if a config sets only win_reward, this becomes -win_reward
+    # games that hit the time limit: draw_reward + timeout_tiebreak x (own base - enemy base) / 800 (+ army term),
+    # clipped to +-timeout_tiebreak, so a draw where it is ahead is better than one where it is behind
+    timeout_tiebreak: float = 1.0
+    tiebreak_army: float = 0.0          # also count the troops' total health (own - enemy, /3000) in the tie-break
     draw_reward: float = -0.5
     time_penalty: float = 0.5           # total cost of a game that lasts the full max_ticks, spread evenly
                                         # over its decisions (not annealed): makes stalling cost something
@@ -155,7 +159,7 @@ class TrainConfig:
 # the new start/end values and total_env_steps.
 LIVE_FIELDS = {
     "total_env_steps", "lr", "lr_final", "gamma", "gae_lambda", "clip", "epochs", "minibatch_size", "ent_coef",
-    "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward", "loss_reward",
+    "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward", "loss_reward", "timeout_tiebreak", "tiebreak_army",
     "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_siege_progress",
     "shaping_anneal_frac",
     "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "milestone_every",
@@ -413,13 +417,20 @@ class Trainer:
             self.league.record(int(self.ctrl[i, 1 - side]), score)
 
     # --------------------------------------------------------------- rewards
-    def _rewards(self, comp: np.ndarray, done: np.ndarray, winner: np.ndarray, shaping: float) -> np.ndarray:
+    def _rewards(self, comp: np.ndarray, done: np.ndarray, winner: np.ndarray, shaping: float,
+                 obs: np.ndarray | None = None) -> np.ndarray:
+        """obs: the observation after this step (needed for the timeout tie-break)."""
         c = self.cfg
         r = shaping * (c.shaping_base_damage * (comp[..., 0] - comp[..., 1]) +
                        c.shaping_bounty * (comp[..., 2] - comp[..., 3]))
+        tb = np.zeros(r.shape)
+        if obs is not None and c.timeout_tiebreak:
+            # obs.rs global features: [4] own base / 800, [5] enemy base / 800, [70]/[71] troops' health / 1000
+            ahead = obs[..., 4] - obs[..., 5] + c.tiebreak_army * (obs[..., 70] - obs[..., 71]) / 3.0
+            tb = c.timeout_tiebreak * np.clip(ahead, -1.0, 1.0)
         for s in range(2):
             out = np.where(winner == s, c.win_reward, np.where(winner == 1 - s, c.loss_reward,
-                                                                np.where(winner == 2, c.draw_reward, 0.0)))
+                                                                np.where(winner == 2, c.draw_reward + tb[:, s], 0.0)))
             r[:, s] += np.where(done, out, 0.0)
         r -= c.time_penalty * c.decision_interval / c.max_ticks  # every decision costs a little time
         return r.astype(np.float32)
@@ -467,7 +478,7 @@ class Trainer:
 
     def _shaped_parts(self, comp, done, winner, shaping, phi, obs_next):
         c = self.cfg
-        r = self._rewards(comp, done, winner, shaping)
+        r = self._rewards(comp, done, winner, shaping, obs_next)
         parts_next = self._potential_parts(obs_next)
         phi_next = np.where(done[:, None, None], 0.0, parts_next[..., :2])
         pot = shaping * (c.gamma * phi_next - phi[..., :2])
