@@ -67,7 +67,7 @@ SECTIONS = [
                       "\"hints\" give small extra rewards for progress (damaging the base, pushing the front, getting "
                       "Trebuchets in range, earning kill money) so it learns faster early on. They fade out over "
                       "training so the final AI optimises for winning only."),
-    ("Search (AlphaZero-style)", True, "On a share of its decisions the AI thinks ahead: it copies the game, tries "
+    ("Search & mistake review", True, "On a share of its decisions the AI thinks ahead: it copies the game, tries "
                                        "several moves, plays each copy about 10 seconds forward with its own network and "
                                        "scores the result with its critic. The network is then trained towards the moves "
                                        "that did better (on top of PPO). The search gets sharper as the network improves. "
@@ -191,26 +191,26 @@ FIELDS = {
                                "Game-specific knowledge; set 0 for a purer learner."),
     "shaping_anneal_frac": ("Rewards", "Hints fade over", "Fraction of training over which all hints fade to zero."),
 
-    "search_frac": ("Search (AlphaZero-style)", "Share of decisions searched",
+    "search_frac": ("Search & mistake review", "Share of decisions searched",
                     "0.01-0.02 is a good start. 0 turns the search off."),
-    "search_candidates": ("Search (AlphaZero-style)", "Moves tried",
+    "search_candidates": ("Search & mistake review", "Moves tried",
                           "Per searched decision: 'wait' plus this many minus one moves, picked at random in proportion "
                           "to how likely the AI already thinks they are."),
-    "search_rollouts": ("Search (AlphaZero-style)", "Copies per move",
+    "search_rollouts": ("Search & mistake review", "Copies per move",
                         "Each move is played out this many times with different luck; more = less noisy, slower."),
-    "search_horizon": ("Search (AlphaZero-style)", "Look-ahead (decisions)",
+    "search_horizon": ("Search & mistake review", "Look-ahead (decisions)",
                        "How far each copy plays before the critic judges it. 40 = 10 s of game time at 4 decisions/s."),
-    "search_strength": ("Search (AlphaZero-style)", "Search strength",
+    "search_strength": ("Search & mistake review", "Search strength",
                         "How strongly the training target leans towards the moves that scored best. Higher = trusts "
                         "the (noisy) search more."),
-    "search_coef": ("Search (AlphaZero-style)", "Search loss weight",
+    "search_coef": ("Search & mistake review", "Search loss weight",
                     "How much 'copy the search' counts in training compared with PPO's own update."),
-    "review_frac": ("Search (AlphaZero-style)", "Review mistakes (share)",
+    "review_frac": ("Search & mistake review", "Review mistakes (share)",
                     "After each batch the AI looks back at its decisions that turned out worst compared with what it "
                     "expected, replays those exact moments with other moves (same search settings) and learns the "
                     "move that would have done better. 0.005-0.01 is a good start; 0 = off. Uses extra memory: one "
                     "saved game per decision of a batch."),
-    "search_every": ("Search (AlphaZero-style)", "Search batch interval",
+    "search_every": ("Search & mistake review", "Search batch interval",
                      "Searches are done in batches every this many steps of a rollout (bigger batches run faster)."),
     "milestone_every": ("League & saving", "Strength copy every (updates)",
                         "How often a small permanent copy is saved for the Real strength chart."),
