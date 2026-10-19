@@ -41,6 +41,7 @@ import torch.nn as nn  # noqa: E402
 import wars_engine
 
 from .export import export
+from .scripted import shield_push
 from .search import search as search_moves
 from .league import League
 from .model import ActorCritic, ModelConfig, save_checkpoint
@@ -51,10 +52,11 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 CTRL_LEARNER = 0
 CTRL_BUILTIN = -1
 CTRL_RANDOM = -2
+CTRL_SCRIPT = -3
 WAIT = wars_engine.NUM_ACTIONS - 1
 REWARD_PARTS = ("outcome", "base_dealt", "base_taken", "kill_earned", "kill_given", "front", "trebuchet", "time")
 CURVE_EVERY = 300  # ticks (5 s of game time) between samples of a game's reward history
-OPPONENT_KINDS = ["self", "past", "classic", "dqn", "random"]
+OPPONENT_KINDS = ["self", "past", "classic", "dqn", "random", "script"]
 
 
 @dataclass
@@ -130,6 +132,7 @@ class TrainConfig:
     p_classic: float = 0.05   # expensive (brute-force worker search)
     p_dqn: float = 0.15
     p_random: float = 0.15
+    p_script: float = 0.1               # scripted Shield push (wars_rl/scripted.py)
     # random opponents act on only a fraction of their decisions, drawn per episode as
     # U(0,1)**random_activity_power: a curriculum from near-idle to full spam
     random_activity_power: float = 2.0
@@ -145,7 +148,10 @@ class TrainConfig:
     search_horizon: int = 40            # decisions each copy plays ahead (40 = 10 s at 4 per second)
     search_strength: float = 2.0        # how far the target moves from the network's policy towards better moves
     search_coef: float = 1.0            # weight of "copy the search" in the training loss
-    search_every: int = 16              # search in batches every this many rollout steps (efficiency)           # keep a small permanent copy of the actor (milestones/) for strength tests
+    search_every: int = 16              # search in batches every this many rollout steps (efficiency)
+    # review: after each batch, go back to the decisions that turned out worst compared with what the critic
+    # expected, try other moves there in copies of that exact moment (same search settings) and learn from it
+    review_frac: float = 0.0           # keep a small permanent copy of the actor (milestones/) for strength tests
     max_snapshots: int = 40
     save_every: int = 10
     export_every: int = 20
@@ -162,9 +168,9 @@ LIVE_FIELDS = {
     "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward", "loss_reward", "timeout_tiebreak", "tiebreak_army",
     "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_siege_progress",
     "shaping_anneal_frac",
-    "p_self", "p_past", "p_classic", "p_dqn", "p_random", "random_activity_power", "snapshot_every", "milestone_every",
+    "p_self", "p_past", "p_classic", "p_dqn", "p_random", "p_script", "random_activity_power", "snapshot_every", "milestone_every",
     "search_frac", "search_candidates", "search_rollouts", "search_horizon", "search_strength", "search_coef",
-    "search_every",
+    "search_every", "review_frac",
     "max_snapshots",
     "save_every", "export_every", "torch_threads", "rollout_torch_threads",
 }
@@ -236,6 +242,7 @@ class Trainer:
         self.ctrl = np.zeros((self.N, 2), dtype=np.int64)
         self.activity = np.ones(self.N)
         self.kind = [""] * self.N
+        self.script_state = [{} for _ in range(self.N)]
         # reward the learner actually received this game, by source (REWARD_PARTS), plus the running
         # total sampled at every minute of game time (for the dashboard's reward charts)
         self.ep_rew = np.zeros((self.N, 2, len(REWARD_PARTS)))
@@ -256,7 +263,8 @@ class Trainer:
 
     def _opponent_probs(self) -> np.ndarray:
         c = self.cfg
-        p = np.array([c.p_self, c.p_past, c.p_classic, c.p_dqn if self.has_dqn else 0.0, c.p_random], dtype=float)
+        p = np.array([c.p_self, c.p_past, c.p_classic, c.p_dqn if self.has_dqn else 0.0, c.p_random, c.p_script],
+                     dtype=float)
         if not (np.all(p >= 0) and p.sum() > 0):
             raise ValueError("opponent weights must be >= 0 and not all zero")
         return p / p.sum()
@@ -354,6 +362,9 @@ class Trainer:
         elif kind == "random":
             ctrl[1 - side] = CTRL_RANDOM
             self.activity[i] = self.rng.random() ** self.cfg.random_activity_power
+        elif kind == "script":
+            ctrl[1 - side] = CTRL_SCRIPT
+            self.script_state[i] = {}
         self.venv.reset(i, kinds[0], kinds[1], self._next_seed())
         self.ctrl[i] = ctrl
         self.kind[i] = kind
@@ -455,6 +466,28 @@ class Trainer:
             self.ep_state[i].append(self.venv.snapshot(int(i)))
             self.ep_sample[i] = sample[i]
 
+    def _review(self, adv, learn, b_obs, b_mask, b_act, hist_kinds, shaping):
+        """Hindsight: search again at the learner's decisions with the most negative advantage."""
+        c = self.cfg
+        T, N = adv.shape[:2]
+        t_idx, e_idx, s_idx = np.nonzero(learn)
+        n = min(len(t_idx), max(1, int(round(c.review_frac * len(t_idx)))), 512)
+        worst = np.argsort(adv[t_idx, e_idx, s_idx])[:n]
+        t_idx, e_idx, s_idx = t_idx[worst], e_idx[worst], s_idx[worst]
+        obs = b_obs.numpy()[t_idx, e_idx, s_idx]
+        mask = b_mask.numpy()[t_idx, e_idx, s_idx]
+        t0 = time.time()
+        torch.set_num_threads(c.torch_threads)
+        target, stats = search_moves(self, t_idx * N + e_idx, s_idx, obs, mask, shaping, self.rng,
+                                     src=self.hist, kinds=[hist_kinds[t][e] for t, e in zip(t_idx, e_idx)])
+        torch.set_num_threads(c.rollout_torch_threads)
+        played = b_act.numpy()[t_idx, e_idx, s_idx]
+        best = stats["_cand"][np.arange(n), np.nan_to_num(stats["_q"], nan=-np.inf).argmax(1)]
+        self.review_stats = dict(review_n=n, review_s=time.time() - t0,
+                                 review_changed=float(np.mean(best != played)),  # a better move was found
+                                 review_adv=float(adv[t_idx, e_idx, s_idx].mean()))
+        self.search_data.append((obs, mask, target))
+
     def _search_some(self, li, obs, mask, shaping):
         """Search a random share of the learner's current decisions; keep (obs, mask, target) for the update."""
         c = self.cfg
@@ -515,6 +548,8 @@ class Trainer:
             a, _, _ = self.league.model(int(sid)).act(torch.from_numpy(obs[idx]), torch.from_numpy(mask[idx]),
                                                       with_value=False)
             actions[idx] = a.numpy()
+        for e, s in zip(*np.nonzero(self.ctrl == CTRL_SCRIPT)):
+            actions[e, s] = shield_push(obs[e, s], mask[e, s], self.script_state[e])
         ridx = np.nonzero(self.ctrl == CTRL_RANDOM)
         for e, s in zip(*ridx):
             if self.rng.random() < self.activity[e]:
@@ -550,10 +585,17 @@ class Trainer:
         obs, mask = self.venv.observe()
         phi = self._potential_parts(obs)  # (N, 2, 3): front line, Trebuchets, raw Trebuchet score
         self.idle = [0, 0]  # learner decisions that waited although something was affordable / all decisions
-        self.search_data, self.search_stats = [], []
+        self.search_data, self.search_stats, self.review_stats = [], [], {}
+        review = c.review_frac > 0
+        if review and (getattr(self, "hist", None) is None or self.hist.num_envs != N * T):
+            self.hist = wars_engine.VecEnv(N * T, threads=c.env_threads)  # every decision's game state
+        hist_kinds = []
         for t in range(T):
             learn = self.ctrl == CTRL_LEARNER
             li = np.nonzero(learn)
+            if review:
+                self.hist.copy_from(list(range(t * N, (t + 1) * N)), self.venv, list(range(N)), [-1] * N, [0] * N)
+                hist_kinds.append(list(self.kind))
             if c.search_frac > 0 and t % c.search_every == 0 and len(li[0]):
                 self._search_some(li, obs, mask, shaping)
             lt = tuple(torch.from_numpy(x) for x in li)
@@ -601,6 +643,8 @@ class Trainer:
             gae = delta + c.gamma * c.gae_lambda * nonterm * gae
             adv[t] = gae
         ret = adv + vals
+        if review:
+            self._review(adv, b_learn, b_obs, b_mask, b_act, hist_kinds, shaping)
         sel = torch.from_numpy(b_learn.reshape(-1))
         flat = lambda x, *shape: x.reshape(T * N * 2, *shape)[sel]
         return dict(obs=flat(b_obs, O), mask=flat(b_mask, A), act=flat(b_act), logp=flat(b_logp),
@@ -667,6 +711,7 @@ class Trainer:
         for k in ("search_roots", "search_copies", "search_s"):
             if getattr(self, "search_stats", None):
                 out[k] = float(sum(s[k] for s in self.search_stats))
+        out.update(getattr(self, "review_stats", {}))
         for k in ("search_agree", "search_q_spread"):
             if getattr(self, "search_stats", None):
                 out[k] = float(np.mean([s[k] for s in self.search_stats]))

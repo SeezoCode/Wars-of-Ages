@@ -83,6 +83,23 @@ class JsonPolicy:
         return np.where(mask, x, -1e9)
 
 
+class ScriptPolicy:
+    """A scripted player from wars_rl/scripted.py, wrapped as one-hot logits."""
+    decision_interval = None
+
+    def __init__(self, fn):
+        self.fn, self.state = fn, {}
+
+    def reset(self, i):
+        self.state[i] = {}
+
+    def logits(self, obs, mask):
+        out = np.full(mask.shape, MASK_VALUE, dtype=np.float32)
+        for i in range(len(obs)):
+            out[i, self.fn(obs[i], mask[i], self.state.setdefault(i, {}))] = 0.0
+        return out
+
+
 class RandomPolicy:
     decision_interval = None
 
@@ -93,6 +110,9 @@ class RandomPolicy:
 def load_policy(spec: str):
     if spec == "random":
         return RandomPolicy()
+    if spec == "shield_push":
+        from .scripted import shield_push
+        return ScriptPolicy(shield_push)
     if spec.endswith(".json"):
         return JsonPolicy(spec)
     return TorchPolicy(spec)
@@ -121,6 +141,8 @@ def wilson(wins: float, n: int, z: float = 1.96):
 def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: int, dqn_model: str | None,
              threads: int = 4, **env_kwargs):
     builtin = opponent in ("classic", "dqn")
+    if opponent == "script":
+        opponent = "shield_push"
     opp_policy = None if builtin else load_policy(opponent)
     di = env_kwargs.pop("decision_interval", None) or getattr(policy, "decision_interval", None) or 10
     opp_di = getattr(opp_policy, "decision_interval", None)
@@ -143,6 +165,8 @@ def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: i
         if builtin:
             kinds[1 - s] = opponent
         venv.reset(i, kinds[0], kinds[1], seed * 100_003 + started)
+        if hasattr(opp_policy, "reset"):
+            opp_policy.reset(i)
         side[i] = s
         active[i] = True
         started += 1

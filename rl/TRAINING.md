@@ -225,6 +225,21 @@ the network** chart shows how often the search's best move was already the netwo
 * All settings are live. Try it on a run that already plays reasonably, and compare with
   **Real strength**.
 
+### Scripted Shield push and mistake review
+
+**Shield push** (opponent weight `p_script`, default 0.1) is a scripted player with a known strong
+plan: Shield, Range, Catapult in turns. Once the front is past the middle, it stacks Shields and
+then fills the army with Trebuchets (`wars_rl/scripted.py`). It beats basic-troop walls 12-0, so
+an AI that only learned to stall loses to it until it learns a real defence. It is also a fixed
+opponent for **Measure strength**, and `wars_rl.evaluate --opponents script` plays it too.
+
+**Review mistakes** (`review_frac`, Search section) keeps a copy of every game state of a batch.
+After the batch, it goes back to the decisions that turned out worst compared with what the
+critic expected (most negative advantage), replays those exact moments with other moves, and
+trains the network towards the move that would have done better. The **Mistakes reviewed**
+chart shows how often a better move was found. 0.01 costs about 25% of training speed and uses
+memory for one saved game per decision of a batch.
+
 ### Is it really getting better?
 
 The "past versions" win rate is relative: those opponents improve too, so the number can fall while

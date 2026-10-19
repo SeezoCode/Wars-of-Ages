@@ -156,8 +156,9 @@ const OPP = {
   past: {label: 'Past versions', color: 'var(--s3)'},
   random: {label: 'Random', color: 'var(--s4)'},
   self: {label: 'Itself (mirror)', color: 'var(--neutral)'},
+  script: {label: 'Shield push (scripted)', color: 'var(--s5)'},
 }
-const OPP_ORDER = ['classic', 'dqn', 'past', 'random', 'self']
+const OPP_ORDER = ['classic', 'dqn', 'past', 'random', 'script', 'self']
 const oppLabel = k => (OPP[k] || {label: k}).label
 
 const ENDED = {finished: 'finished', stopped: 'stopped', crashed: 'crashed', killed: 'killed'}
@@ -335,7 +336,7 @@ function renderRun(d) {
   main.append(h('h2', {}, 'Progress'))
   const S = d.series.filter(r => r.update)
   const bySeries = (field, opp) => S.filter(r => r[field] && r[field][opp] != null).map(r => [r.env_steps, r[field][opp]])
-  const oppSeries = field => ['classic', 'dqn', 'past', 'random'].map(k => ({name: oppLabel(k), short: k, color: OPP[k].color, points: bySeries(field, k)}))
+  const oppSeries = field => ['classic', 'dqn', 'past', 'random', 'script'].map(k => ({name: oppLabel(k), short: k, color: OPP[k].color, points: bySeries(field, k)}))
   const marks = d.changes.filter(c => Object.keys(c.applied).length).map(c => ({x: c.env_steps, label: `update ${c.update}: ` + Object.entries(c.applied).map(([k, [a, b]]) => `${k} ${fmtV(a)} → ${fmtV(b)}`).join(', ')}))
   for (const r of d.resumes || []) marks.push({x: r.env_steps, label: `resumed at update ${r.update}: the games restart from the beginning, so the first results after this are mostly short games`})
   const one = (field, map = v => v) => [{name: field, color: 'var(--s1)', points: S.filter(r => r[field] != null).map(r => [r.env_steps, map(r[field])])}]
@@ -346,6 +347,9 @@ function renderRun(d) {
     lineChart({marks, title: 'Training speed', subtitle: 'decisions per second', series: one('sps'), yFmt: fmtN}),
     lineChart({marks, title: 'Entropy', subtitle: 'how varied its choices are; near 0 = it stopped exploring', series: one('entropy'), yFmt: v => v.toFixed(2)}),
     lineChart({marks, title: 'Explained variance', subtitle: 'how well the critic predicts outcomes (1 = perfect, below 0 = worse than guessing; clipped at -1)', series: one('explained_var', v => Math.max(-1, v)), yMax: 1, yFmt: v => v.toFixed(2)}),
+    ...(S.some(r => r.review_changed != null) ? [lineChart({marks, title: 'Mistakes reviewed',
+      subtitle: 'share of reviewed bad moments where replaying them found a better move than the one played; falling = fewer avoidable mistakes',
+      series: one('review_changed'), yMax: 1, yMin: 0, yFmt: pct})] : []),
     ...(S.some(r => r.search_agree != null) ? [lineChart({marks, title: 'Search agrees with the network',
       subtitle: 'share of searched decisions where the best move found was also the network\'s favourite; rising = the network has absorbed the search',
       series: one('search_agree'), yMax: 1, yMin: 0, yFmt: pct})] : []),
@@ -445,7 +449,7 @@ const TROOP_COLORS = {'Basic Troop': 'limegreen', 'Fast Troop': 'lightpink', 'Ra
 const swatch = l => l.hatch ? `background: repeating-linear-gradient(45deg, ${l.color} 0 2px, transparent 2px 4px)` : `background:${l.color}`
 let patternSeq = 0
 // strength over the run: saved milestones played against fixed opponents (absolute, unlike "past versions")
-const strengthForm = {opps: {dqn: true, classic: false}, games: 40, points: 8, minutes: 15}
+const strengthForm = {opps: {dqn: true, classic: false, script: true}, games: 40, points: 8, minutes: 15}
 function strengthSection(d) {
   const wrap = h('div', {}, h('h2', {}, 'Real strength (fixed opponents)'))
   const agg = {}
@@ -455,11 +459,11 @@ function strengthSection(d) {
     a.w += r.wins; a.dr += r.draws; a.n += r.games
   }
   const rows = Object.values(agg).sort((a, b) => a.x - b.x)
-  const opps = ['dqn', 'classic'].filter(o => rows.some(r => r.opp === o))
+  const opps = ['dqn', 'classic', 'script'].filter(o => rows.some(r => r.opp === o))
   const series = opps.flatMap(o => [
     {name: `wins vs ${oppLabel(o)}`, short: `wins ${o}`, color: OPP[o].color, points: rows.filter(r => r.opp === o).map(r => [r.x, r.w / r.n])},
     {name: `draws vs ${oppLabel(o)}`, short: `draws ${o}`, color: OPP[o].color, dash: '4 4', points: rows.filter(r => r.opp === o).map(r => [r.x, r.dr / r.n])}])
-  const boxes = ['dqn', 'classic'].map(o => h('label', {style: 'margin-right:12px'}, h('input', {type: 'checkbox', checked: strengthForm.opps[o],
+  const boxes = ['dqn', 'classic', 'script'].map(o => h('label', {style: 'margin-right:12px'}, h('input', {type: 'checkbox', checked: strengthForm.opps[o],
     onchange: e => strengthForm.opps[o] = e.target.checked}), ' ', oppLabel(o)))
   const num = (k, attrs) => h('input', {type: 'number', value: strengthForm[k], style: 'width:64px', ...attrs, oninput: e => strengthForm[k] = +e.target.value})
   const msg = h('span', {class: 'note'})
@@ -641,7 +645,7 @@ function scoreCard(k, sc) {
 function evalPanel(d) {
   const own = POLICIES.find(p => p.path === `runs/${d.name}/latest.pt`)
   const pol = h('select', {}, POLICIES.map(p => h('option', {value: p.path, selected: own && p === own}, p.label)))
-  const boxes = [['classic', 'Classic AI', true], ['dqn', 'Old RL AI (DQN)', true], ['random', 'Random', false]].map(([v, label, on]) =>
+  const boxes = [['classic', 'Classic AI', true], ['dqn', 'Old RL AI (DQN)', true], ['random', 'Random', false], ['script', 'Shield push (scripted)', true]].map(([v, label, on]) =>
     h('label', {style: 'margin-right:12px'}, h('input', {type: 'checkbox', value: v, checked: on}), ' ', label))
   const vsModel = h('select', {}, h('option', {value: ''}, '— also vs a model —'), POLICIES.map(p => h('option', {value: p.path}, p.label)))
   const games = h('input', {type: 'number', value: 100, min: 2, max: 2000})

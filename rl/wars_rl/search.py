@@ -34,10 +34,12 @@ def _sample(logits: np.ndarray, u: np.ndarray) -> np.ndarray:
 
 @torch.no_grad()
 def search(trainer, roots: np.ndarray, sides: np.ndarray, obs: np.ndarray, mask: np.ndarray, shaping: float,
-           rng: np.random.Generator) -> tuple[np.ndarray, dict]:
-    """Improved policies for the learner at `trainer.venv` envs `roots`, sides `sides`.
+           rng: np.random.Generator, src=None, kinds=None) -> tuple[np.ndarray, dict]:
+    """Improved policies for the learner at envs `roots` of `src` (default: the trainer's own games).
 
-    obs, mask: (n, OBS) / (n, A) of those roots. Returns ((n, A) target probabilities, stats)."""
+    obs, mask: (n, OBS) / (n, A) of those roots; kinds: opponent kind per root (default: the
+    trainer's current ones). Returns ((n, A) target probabilities, stats)."""
+    src = trainer.venv if src is None else src
     c = trainer.cfg
     model = trainer.model
     n, A = len(roots), mask.shape[-1]
@@ -61,17 +63,18 @@ def search(trainer, roots: np.ndarray, sides: np.ndarray, obs: np.ndarray, mask:
     S = len(ri)
     sv = wars_engine.VecEnv(S, threads=c.env_threads)
     base = int(rng.integers(1 << 40))
-    kinds = [trainer.kind[r] for r in roots]
+    kinds = [trainer.kind[r] for r in roots] if kinds is None else list(kinds)
     # hand the classic bot to the network inside the copies; keep cheap built-ins (dqn) as they are
     agent_sides = [3 if kinds[i] == "classic" else 0 for i in ri]
-    sv.copy_from([int(x) for x in range(S)], trainer.venv, [int(roots[i]) for i in ri],
+    sv.copy_from([int(x) for x in range(S)], src, [int(roots[i]) for i in ri],
                  [base + int(roots[i]) * 1000 + int(r) for i, r in zip(ri, rr)], agent_sides)
     me = sides[ri]
     net_side = np.zeros((S, 2), dtype=bool)  # sides whose moves come from the network in the copies
     for s in range(S):
         k = kinds[ri[s]]
         net_side[s, me[s]] = True
-        net_side[s, 1 - me[s]] = k in ("self", "past", "classic")
+        # past versions, the classic bot and the scripted/random players are all played by the current network
+        net_side[s, 1 - me[s]] = k in ("self", "past", "classic", "script", "random")
     # the same uniforms for every candidate of a (root, rollout): differences come from the move only
     u = rng.random((n, R, H + 1, 2))
     so, sm = sv.observe()

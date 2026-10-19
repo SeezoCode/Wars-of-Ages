@@ -126,7 +126,11 @@ impl PyVecEnv {
             }
             self.inner.envs[d] = e;
         }
-        self.inner.observe_all();
+        for &d in &dst {  // only the copied envs: the review's history buffer holds thousands
+            let o = &mut self.inner.obs[d * 2 * OBS_SIZE..(d + 1) * 2 * OBS_SIZE];
+            let m = &mut self.inner.mask[d * 2 * NUM_ACTIONS..(d + 1) * 2 * NUM_ACTIONS];
+            self.inner.envs[d].observe(o, m);
+        }
         Ok(())
     }
 

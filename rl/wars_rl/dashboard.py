@@ -92,6 +92,9 @@ FIELDS = {
                   "The original brute-force bot. The slowest opponent to simulate, but the hardest one."),
     "p_dqn": ("Opponents", "Old reinforcement AI (DQN)", "Your previous model, ultimate_dqn_model.json."),
     "p_random": ("Opponents", "Random player", "Random moves; a warm-up curriculum from nearly idle to full spam."),
+    "p_script": ("Opponents", "Shield push (scripted)",
+                 "A fixed plan: Shield, Range, Catapult in turns; once the front is past the middle, Shields then "
+                 "Trebuchets up to the limit. Beats basic-troop walls, so the AI has to learn to stop it."),
     "random_activity_power": ("Opponents", "Random player laziness",
                               "Each game the random player acts on a fraction U^power of its turns. Higher = lazier "
                               "(easier) random opponents on average."),
@@ -202,6 +205,11 @@ FIELDS = {
                         "the (noisy) search more."),
     "search_coef": ("Search (AlphaZero-style)", "Search loss weight",
                     "How much 'copy the search' counts in training compared with PPO's own update."),
+    "review_frac": ("Search (AlphaZero-style)", "Review mistakes (share)",
+                    "After each batch the AI looks back at its decisions that turned out worst compared with what it "
+                    "expected, replays those exact moments with other moves (same search settings) and learns the "
+                    "move that would have done better. 0.005-0.01 is a good start; 0 = off. Uses extra memory: one "
+                    "saved game per decision of a batch."),
     "search_every": ("Search (AlphaZero-style)", "Search batch interval",
                      "Searches are done in batches every this many steps of a rollout (bigger batches run faster)."),
     "milestone_every": ("League & saving", "Strength copy every (updates)",
@@ -354,7 +362,8 @@ class Runs:
             c["log_pos"], rows = self._read_new(os.path.join(d, "log.jsonl"), c["log_pos"])
             keep = ("update", "env_steps", "episodes", "sps", "win", "draw", "games", "entropy", "explained_var",
                     "approx_kl", "ep_ticks", "lr", "ent_coef", "hints_now", "explore_now", "idle_wait",
-                    "search_agree", "search_kl", "search_q_spread", "search_roots", "search_s", "rollout_s", "update_s")
+                    "search_agree", "search_kl", "search_q_spread", "search_roots", "search_s",
+                    "review_changed", "review_n", "review_s", "rollout_s", "update_s")
             c["log"].extend({k: r.get(k) for k in keep} for r in rows)
             c["ep_pos"], eps = self._read_new(os.path.join(d, "episodes.jsonl"), c["ep_pos"])
             for e in eps:
@@ -815,7 +824,7 @@ def evaluate_job(body: dict) -> dict:
     policy = safe_policy(body["policy"])
     opps = []
     for o in body.get("opponents", []):
-        opps.append(o if o in ("classic", "dqn", "random") else safe_policy(o))
+        opps.append(o if o in ("classic", "dqn", "random", "script") else safe_policy(o))
     if not opps:
         raise ValueError("pick at least one opponent")
     games = max(2, min(2000, int(body.get("games", 100))))
@@ -848,7 +857,7 @@ def strength_job(body: dict) -> dict:
     files = sorted(f for f in os.listdir(mdir) if f.endswith(".pt")) if os.path.isdir(mdir) else []
     if not files:
         raise ValueError("no milestones yet: the trainer saves one every milestone_every updates (default 50)")
-    opps = [o for o in body.get("opponents", ["dqn"]) if o in ("classic", "dqn")]
+    opps = [o for o in body.get("opponents", ["dqn"]) if o in ("classic", "dqn", "script")]
     if not opps:
         raise ValueError("pick at least one opponent")
     games = max(4, min(1000, int(body.get("games", 40))))
