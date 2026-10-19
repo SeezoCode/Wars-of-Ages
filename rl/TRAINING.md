@@ -225,6 +225,25 @@ the network** chart shows how often the search's best move was already the netwo
 * All settings are live. Try it on a run that already plays reasonably, and compare with
   **Real strength**.
 
+### Fixed opponent pool (and automatic peaks)
+
+Settings → **Fixed opponent pool**. Tick any saved network as a pool member: exported models,
+checkpoints, a run's current weights, peaks, or copies made with **Freeze to pool** (a button on
+every run that saves the AI as it is now to `rl/pool/`). Set the **Pool weight** for the share of
+games. Everything in this section can be changed while training.
+
+* The run page shows a **Fixed opponent pool** table: recent wins, draws and losses against
+  each member. A member counts as **mastered** once the AI wins at least **Mastered at** (95%)
+  of the last **Games measured** (100) games against it. Members it struggles with get more
+  games; mastered ones keep a small share so a regression would show up.
+* **Manual ladder:** when everything is mastered, press **Freeze to pool**. The dashboard
+  offers to add the frozen copy to the running pool straight away.
+* **Automatic peaks** (on/off): once every member is mastered and stays so for **Marinate**
+  updates, the trainer freezes the AI into `<run_dir>/peaks/` and adds it to the pool itself.
+  It then has to learn to beat its own best version, and so on.
+* Against peak copies of itself most games are draws, so switch on **Count draws as half**
+  (score instead of wins) or lower the target for those stages.
+
 ### Scripted Shield push and mistake review
 
 **Shield push** (opponent weight `p_script`, default 0.1) is a scripted player with a known strong

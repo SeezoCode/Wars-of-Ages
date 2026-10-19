@@ -74,7 +74,7 @@ def search(trainer, roots: np.ndarray, sides: np.ndarray, obs: np.ndarray, mask:
         k = kinds[ri[s]]
         net_side[s, me[s]] = True
         # past versions, the classic bot and the scripted/random players are all played by the current network
-        net_side[s, 1 - me[s]] = k in ("self", "past", "classic", "script", "random")
+        net_side[s, 1 - me[s]] = k in ("self", "past", "classic", "script", "random", "pool")
     # the same uniforms for every candidate of a (root, rollout): differences come from the move only
     u = rng.random((n, R, H + 1, 2))
     so, sm = sv.observe()

@@ -41,6 +41,7 @@ import torch.nn as nn  # noqa: E402
 import wars_engine
 
 from .export import export
+from .pool import Pool
 from .scripted import shield_push
 from .search import search as search_moves
 from .league import League
@@ -53,10 +54,11 @@ CTRL_LEARNER = 0
 CTRL_BUILTIN = -1
 CTRL_RANDOM = -2
 CTRL_SCRIPT = -3
+CTRL_POOL = -100  # pool member k plays as CTRL_POOL - k
 WAIT = wars_engine.NUM_ACTIONS - 1
 REWARD_PARTS = ("outcome", "base_dealt", "base_taken", "kill_earned", "kill_given", "front", "trebuchet", "time")
 CURVE_EVERY = 300  # ticks (5 s of game time) between samples of a game's reward history
-OPPONENT_KINDS = ["self", "past", "classic", "dqn", "random", "script"]
+OPPONENT_KINDS = ["self", "past", "classic", "dqn", "random", "script", "pool"]
 
 
 @dataclass
@@ -133,6 +135,15 @@ class TrainConfig:
     p_dqn: float = 0.15
     p_random: float = 0.15
     p_script: float = 0.1               # scripted Shield push (wars_rl/scripted.py)
+    # fixed opponent pool (wars_rl/pool.py): trained networks that never change
+    p_pool: float = 0.0                 # share of games against the pool (ignored while it is empty)
+    pool_models: List[str] = field(default_factory=list)  # .pt / .json paths, relative to rl/ or absolute
+    pool_target: float = 0.95           # a member counts as mastered at this win rate (or score)
+    pool_window: int = 100              # games per member the rate is measured over
+    pool_min_games: int = 50            # games against a member before it can count as mastered
+    pool_use_score: bool = False        # count draws as half a win (useful against peak copies of itself)
+    pool_auto: bool = False             # add the learner as a new peak when every member is mastered
+    pool_marinate: int = 50             # ...after staying ahead of all of them for this many more updates
     # random opponents act on only a fraction of their decisions, drawn per episode as
     # U(0,1)**random_activity_power: a curriculum from near-idle to full spam
     random_activity_power: float = 2.0
@@ -168,7 +179,8 @@ LIVE_FIELDS = {
     "ent_coef_final", "vf_coef", "max_grad_norm", "target_kl", "explore_eps", "explore_anneal_frac", "win_reward", "loss_reward", "timeout_tiebreak", "tiebreak_army",
     "draw_reward", "time_penalty", "shaping_base_damage", "shaping_bounty", "shaping_front", "shaping_siege", "shaping_siege_progress",
     "shaping_anneal_frac",
-    "p_self", "p_past", "p_classic", "p_dqn", "p_random", "p_script", "random_activity_power", "snapshot_every", "milestone_every",
+    "p_self", "p_past", "p_classic", "p_dqn", "p_random", "p_script", "p_pool", "pool_models", "pool_target", "pool_window",
+    "pool_min_games", "pool_use_score", "pool_auto", "pool_marinate", "random_activity_power", "snapshot_every", "milestone_every",
     "search_frac", "search_candidates", "search_rollouts", "search_horizon", "search_strength", "search_coef",
     "search_every", "review_frac",
     "max_snapshots",
@@ -186,6 +198,8 @@ def parse_config() -> TrainConfig:
         name = "--" + f.name.replace("_", "-")
         if f.type in ("bool", bool):
             ap.add_argument(name, dest=f.name, action=argparse.BooleanOptionalAction, default=None)
+        elif "List[str]" in str(f.type):
+            ap.add_argument(name, dest=f.name, type=lambda s: [x for x in s.split(",") if x], default=None)
         elif "List" in str(f.type):
             ap.add_argument(name, dest=f.name, type=lambda s: [int(x) for x in s.split(",")], default=None)
         else:
@@ -232,6 +246,9 @@ class Trainer:
         self.model = ActorCritic(mcfg)
         self.opt = torch.optim.Adam(self.model.parameters(), lr=cfg.lr, eps=1e-5)
         self.league = League(os.path.join(cfg.run_dir, "league"), mcfg, cfg.max_snapshots)
+        self.pool = Pool(cfg, cfg.run_dir)
+        for p in set(cfg.pool_models) - {m.path for m in self.pool.active()}:
+            print(f"pool: could not load {p}")
         self.update = 0
         self.env_steps = 0
         self.episodes = 0
@@ -263,8 +280,8 @@ class Trainer:
 
     def _opponent_probs(self) -> np.ndarray:
         c = self.cfg
-        p = np.array([c.p_self, c.p_past, c.p_classic, c.p_dqn if self.has_dqn else 0.0, c.p_random, c.p_script],
-                     dtype=float)
+        p = np.array([c.p_self, c.p_past, c.p_classic, c.p_dqn if self.has_dqn else 0.0, c.p_random, c.p_script,
+                      c.p_pool if self.pool.active() else 0.0], dtype=float)
         if not (np.all(p >= 0) and p.sum() > 0):
             raise ValueError("opponent weights must be >= 0 and not all zero")
         return p / p.sum()
@@ -286,6 +303,23 @@ class Trainer:
             old = getattr(self.cfg, k, None)
             if k not in LIVE_FIELDS:
                 rejected[k] = "needs a restart"
+                continue
+            if k == "pool_models":
+                if not (isinstance(v, list) and all(isinstance(x, str) for x in v)):
+                    rejected[k] = "expected a list of model paths"
+                    continue
+                errors = self.pool.set_models(v)
+                ok = [p for p in v if not any(e.startswith(p + ":") for e in errors)]
+                if errors:
+                    rejected[k] = "; ".join(errors)
+                if ok != list(old):
+                    self.cfg.pool_models = ok
+                    applied[k] = [old, ok]
+                continue
+            if isinstance(old, bool):
+                if bool(v) != old:
+                    setattr(self.cfg, k, bool(v))
+                    applied[k] = [old, bool(v)]
                 continue
             try:
                 new = int(v) if isinstance(old, int) else float(v)
@@ -365,6 +399,8 @@ class Trainer:
         elif kind == "script":
             ctrl[1 - side] = CTRL_SCRIPT
             self.script_state[i] = {}
+        elif kind == "pool":
+            ctrl[1 - side] = CTRL_POOL - self.pool.sample(self.rng).id
         self.venv.reset(i, kinds[0], kinds[1], self._next_seed())
         self.ctrl[i] = ctrl
         self.kind[i] = kind
@@ -416,6 +452,11 @@ class Trainer:
                "reward_curve": curve}  # cumulative REWARD_PARTS at the end of each game minute, then at the end
         if kind == "past":
             rec["opponent_id"] = int(self.ctrl[i, 1 - side])
+        if kind == "pool":
+            member = self.pool.members[int(CTRL_POOL - self.ctrl[i, 1 - side])]
+            rec["opponent_id"] = member.name
+            member.results.append(rec["result"])
+            member.games += 1
         if kind == "random":
             rec["activity"] = round(float(self.activity[i]), 3)
         self.episode_log.write(json.dumps(rec) + "\n")
@@ -488,6 +529,40 @@ class Trainer:
                                  review_adv=float(adv[t_idx, e_idx, s_idx].mean()))
         self.search_data.append((obs, mask, target))
 
+    def _pool_step(self):
+        """Automatic peaks: once every pool member has been mastered for pool_marinate updates, freeze the
+        learner into <run_dir>/peaks/ and add it to the pool. Always writes pool.json for the dashboard."""
+        c, pool = self.cfg, self.pool
+        if c.pool_auto and pool.all_mastered():
+            if pool.mastered_since is None:
+                pool.mastered_since = self.update
+                print(f"[pool] every member mastered at update {self.update}; adding a peak after "
+                      f"{c.pool_marinate} more updates", flush=True)
+            elif self.update - pool.mastered_since >= c.pool_marinate:
+                d = os.path.join(c.run_dir, "peaks")
+                os.makedirs(d, exist_ok=True)
+                path = os.path.join(d, f"peak{pool.peaks_added + 1}_u{self.update}.pt")
+                torch.save({"model_config": self.model.cfg.to_dict(), "actor": self.model.actor.state_dict(),
+                            "update": self.update, "env_steps": self.env_steps,
+                            "train_config": {"decision_interval": c.decision_interval}}, path)
+                rl_dir = os.path.join(REPO, "rl")  # pool paths are relative to rl/ when the run lives there
+                rel = os.path.relpath(path, rl_dir) if os.path.abspath(path).startswith(rl_dir + os.sep) else path
+                c.pool_models = list(c.pool_models) + [rel]
+                pool.set_models(c.pool_models)
+                pool.peaks_added += 1
+                pool.mastered_since = None
+                self.opp_probs = self._opponent_probs()
+                with open(os.path.join(c.run_dir, "config.json"), "w") as fh:
+                    json.dump(dataclasses.asdict(c), fh, indent=2)
+                with open(os.path.join(c.run_dir, "changes.jsonl"), "a") as fh:
+                    fh.write(json.dumps({"time": round(time.time(), 1), "update": self.update,
+                                         "env_steps": self.env_steps, "applied": {"pool peak added": [None, rel]},
+                                         "rejected": {}}) + "\n")
+                print(f"[pool] added peak {rel}", flush=True)
+        else:
+            pool.mastered_since = None
+        pool.save(self.update)
+
     def _search_some(self, li, obs, mask, shaping):
         """Search a random share of the learner's current decisions; keep (obs, mask, target) for the update."""
         c = self.cfg
@@ -548,6 +623,9 @@ class Trainer:
             a, _, _ = self.league.model(int(sid)).act(torch.from_numpy(obs[idx]), torch.from_numpy(mask[idx]),
                                                       with_value=False)
             actions[idx] = a.numpy()
+        for code in np.unique(self.ctrl[self.ctrl <= CTRL_POOL]):
+            idx = np.nonzero(self.ctrl == code)
+            actions[idx] = self.pool.members[int(CTRL_POOL - code)].act(obs[idx], mask[idx])
         for e, s in zip(*np.nonzero(self.ctrl == CTRL_SCRIPT)):
             actions[e, s] = shield_push(obs[e, s], mask[e, s], self.script_state[e])
         ridx = np.nonzero(self.ctrl == CTRL_RANDOM)
@@ -771,6 +849,7 @@ class Trainer:
                        idle_wait=round(self.idle[0] / max(1, self.idle[1]), 4),
                        explore_now=round(c.explore_eps * max(0.0, 1.0 - progress / max(c.explore_anneal_frac, 1e-9)), 5),
                        **stats)
+            self._pool_step()
             with open(os.path.join(c.run_dir, "log.jsonl"), "a") as fh:
                 fh.write(json.dumps(rec) + "\n")
             print(f"[u{self.update} {self.env_steps / 1e6:.2f}M] sps {rec['sps']} ({rec['rollout_s']}s+{rec['update_s']}s) "

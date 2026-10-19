@@ -83,7 +83,7 @@ details.section .body { padding: 0 14px 12px }
 .field { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); gap: 4px 14px; padding: 7px 0; border-top: 1px solid var(--grid) }
 .field label { font-weight: 550 }
 .field .help { grid-column: 2; color: var(--muted); font-size: 12px; max-width: 640px }
-.field.changed label::after { content: " •"; color: var(--accent) }
+.field.changed > label::after { content: " •"; color: var(--accent) }
 @media (max-width: 600px) { .field { grid-template-columns: 1fr } .field .help { grid-column: 1 } }
 .chart-card h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600 }
 .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px }
@@ -157,8 +157,9 @@ const OPP = {
   random: {label: 'Random', color: 'var(--s4)'},
   self: {label: 'Itself (mirror)', color: 'var(--neutral)'},
   script: {label: 'Shield push (scripted)', color: 'var(--s5)'},
+  pool: {label: 'Fixed pool', color: 'var(--s6)'},
 }
-const OPP_ORDER = ['classic', 'dqn', 'past', 'random', 'script', 'self']
+const OPP_ORDER = ['classic', 'dqn', 'pool', 'past', 'random', 'script', 'self']
 const oppLabel = k => (OPP[k] || {label: k}).label
 
 const ENDED = {finished: 'finished', stopped: 'stopped', crashed: 'crashed', killed: 'killed'}
@@ -313,6 +314,16 @@ function renderRun(d) {
       d.running ? h('button', {class: 'danger', onclick: () => act('/api/stop', {name: d.name}, 'Stopping (saves first)…')}, 'Stop (saves)') :
         h('button', {class: 'primary', disabled: !!(d.restarting && d.restarting.endsWith('…')), onclick: () => openForm(d.name, d.config)}, d.has_checkpoint ? 'Resume…' : 'Start…'),
       h('button', {onclick: () => openForm(null, d.config)}, 'Copy settings to new run'),
+      h('button', {disabled: !d.has_checkpoint, title: 'Save the AI as it is now as a fixed opponent (rl/pool/)', onclick: async () => {
+        try {
+          const r = await api('/api/freeze', {run: d.name})
+          POLICIES = await api('/api/policies')
+          if (d.running && confirm(`Saved ${r.path}.\n\nAdd it to this run's opponent pool now?`)) {
+            await api('/api/live', {name: d.name, changes: {pool_models: [...(d.config.pool_models || []), r.path]}})
+            toast('Added to the pool before the next update')
+          } else toast(`Saved ${r.path}: pick it under Fixed opponent pool in the settings of any run`)
+        } catch (e) { alert(e.message) }
+      }}, 'Freeze to pool'),
       h('button', {disabled: !d.has_checkpoint, onclick: () => exportDialog(d.name)}, 'Export model')))
   main.replaceChildren(head)
   if (d.ended && ['crashed', 'killed'].includes(d.ended.state)) main.append(h('div', {class: 'card', style: 'margin-bottom:12px; border-color: var(--critical)'},
@@ -332,11 +343,13 @@ function renderRun(d) {
   else main.append(h('div', {class: 'grid'}, opps.map(k => scoreCard(k, d.scores[k]))))
   main.append(h('div', {class: 'small muted', style: 'margin-top:6px'}, 'W–D–L counted from the AI\'s point of view. "Itself (mirror)" games are shown from the left side. Bars show the last 100 games.'))
 
+  if (d.pool && d.pool.members && d.pool.members.some(m => m.active)) main.append(poolPanel(d))
+
   // charts
   main.append(h('h2', {}, 'Progress'))
   const S = d.series.filter(r => r.update)
   const bySeries = (field, opp) => S.filter(r => r[field] && r[field][opp] != null).map(r => [r.env_steps, r[field][opp]])
-  const oppSeries = field => ['classic', 'dqn', 'past', 'random', 'script'].map(k => ({name: oppLabel(k), short: k, color: OPP[k].color, points: bySeries(field, k)}))
+  const oppSeries = field => ['classic', 'dqn', 'pool', 'past', 'random', 'script'].map(k => ({name: oppLabel(k), short: k, color: OPP[k].color, points: bySeries(field, k)}))
   const marks = d.changes.filter(c => Object.keys(c.applied).length).map(c => ({x: c.env_steps, label: `update ${c.update}: ` + Object.entries(c.applied).map(([k, [a, b]]) => `${k} ${fmtV(a)} → ${fmtV(b)}`).join(', ')}))
   for (const r of d.resumes || []) marks.push({x: r.env_steps, label: `resumed at update ${r.update}: the games restart from the beginning, so the first results after this are mostly short games`})
   const one = (field, map = v => v) => [{name: field, color: 'var(--s1)', points: S.filter(r => r[field] != null).map(r => [r.env_steps, map(r[field])])}]
@@ -631,6 +644,24 @@ function markShown() {
     b.textContent = on ? 'showing' : 'show'; b.disabled = on
   })
 }
+function poolPanel(d) {
+  const P = d.pool, act = P.members.filter(m => m.active)
+  const n = act.filter(m => m.mastered).length
+  let status
+  if (P.auto) status = P.mastered_since != null
+    ? `Every member is mastered (since update ${P.mastered_since}); the AI is added as a new peak after ${P.marinate} updates of that (${Math.max(0, P.marinate - (P.update - P.mastered_since))} to go).`
+    : `Automatic peaks are on: the AI is added to the pool once all ${act.length} members are mastered (${n} so far).`
+  else status = n === act.length ? 'Every member is mastered. Automatic peaks are off: press Freeze to pool and add the frozen copy as the next member when you are happy with it.'
+    : `${n} of ${act.length} members mastered.`
+  return h('div', {}, h('h2', {}, 'Fixed opponent pool'),
+    h('div', {class: 'card tablewrap'},
+      h('div', {class: 'note', style: 'margin-bottom:8px'}, status + (P.peaks_added ? ` Peaks added so far: ${P.peaks_added}.` : '')),
+      h('table', {}, h('tr', {}, ['member', 'recent games', 'won', 'drawn', 'lost', P.use_score ? 'score' : 'win rate', '', 'games in total'].map(x => h('th', {}, x))),
+        act.map(m => h('tr', {}, h('td', {}, m.name), h('td', {}, m.recent),
+          h('td', {class: 'res-W'}, m.W), h('td', {class: 'res-D'}, m.D), h('td', {class: 'res-L'}, m.L),
+          h('td', {}, pct(m.rate ?? m.perf)), h('td', {}, m.mastered ? h('b', {class: 'res-W'}, '✓ mastered') : h('span', {class: 'muted'}, `target ${pct(P.target)}`)),
+          h('td', {}, m.games))))))
+}
 function scoreCard(k, sc) {
   const l = sc.last100, n = Math.max(1, sc.last100_n)
   const seg = (v, color, label) => v ? h('span', {title: `${label}: ${v}`, style: `width:${v / n * 100}%;background:${color}`}) : null
@@ -798,6 +829,14 @@ function fieldRow(f, values, resuming) {
   else if (f.name === 'activation') input = h('select', {}, ['relu', 'tanh', 'silu'].map(a => h('option', {value: a, selected: a === v}, a)))
   else if (f.name === 'init_from') input = h('select', {}, h('option', {value: ''}, '(random network: train from scratch)'),
     POLICIES.filter(p => p.path.endsWith('.pt')).map(p => h('option', {value: p.path, selected: p.path === v}, p.label)))
+  else if (f.type === 'models') {
+    // checkbox list of every saved model, plus members that are not in the list (e.g. typed by hand)
+    const chosen = new Set(v || [])
+    const opts = POLICIES.map(p => p.path).concat([...chosen].filter(p => !POLICIES.some(q => q.path === p)))
+    input = h('div', {class: 'models', style: 'max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px'},
+      opts.length ? opts.map(p => h('label', {style: 'display:block'}, h('input', {type: 'checkbox', value: p, checked: chosen.has(p)}), ' ',
+        (POLICIES.find(q => q.path === p) || {label: p}).label)) : h('span', {class: 'muted small'}, 'No saved models yet: use Freeze to pool or Export model on a run.'))
+  }
   else if (f.type === 'list') input = h('input', {type: 'text', value: (v || []).join(',')})
   else if (f.type === 'str') input = h('input', {type: 'text', value: v ?? '', style: 'width: 320px'})
   else input = h('input', {type: 'number', value: v, step: 'any'})
@@ -828,6 +867,7 @@ function extraHint(f, input) {
   return null
 }
 function read(f, input) {
+  if (f.type === 'models') return [...input.querySelectorAll('input[type=checkbox]')].filter(b => b.checked).map(b => b.value)
   if (f.type === 'bool') return input.checked
   if (f.type === 'list') return input.value.split(',').map(x => parseInt(x.trim())).filter(x => x > 0)
   if (f.type === 'int') return Math.round(+input.value)

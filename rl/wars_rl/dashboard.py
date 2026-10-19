@@ -38,6 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RL_DIR = os.path.abspath(os.path.join(HERE, ".."))
 REPO = os.path.abspath(os.path.join(RL_DIR, ".."))
 RUNS = os.path.join(RL_DIR, "runs")
+POOL_DIR = os.path.join(RL_DIR, "pool")  # networks frozen with "Freeze to pool"
 NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 try:
@@ -51,6 +52,11 @@ SECTIONS = [
     ("Run", False, ""),
     ("Opponents", False, "Who the AI plays against during training. The numbers are relative weights "
                          "(they don't need to add up to 1). Give more weight to whatever it is weakest against."),
+    ("Fixed opponent pool", False, "Trained networks that never change. The AI plays them until it reliably beats "
+                                   "each one (mastered); members it struggles with get more games. Tick any saved "
+                                   "model below, or use 'Freeze to pool' on a run. With automatic peaks on, the AI "
+                                   "adds a frozen copy of itself once it has mastered every member, so it climbs a "
+                                   "ladder of ever stronger opponents. All settings here can be changed live."),
     ("Game", False, "The rules of the training games. Most match the browser game; change them to experiment."),
     ("Computer", False, "How much of your machine training uses. Set the thread counts to your number of CPU cores."),
     ("Network", True, "The neural network. The actor chooses actions and is what runs in the browser; the critic "
@@ -92,6 +98,29 @@ FIELDS = {
                   "The original brute-force bot. The slowest opponent to simulate, but the hardest one."),
     "p_dqn": ("Opponents", "Old reinforcement AI (DQN)", "Your previous model, ultimate_dqn_model.json."),
     "p_random": ("Opponents", "Random player", "Random moves; a warm-up curriculum from nearly idle to full spam."),
+    "p_pool": ("Fixed opponent pool", "Pool weight",
+               "Share of games against the pool (relative, like the other opponent weights). Ignored while the pool "
+               "is empty."),
+    "pool_models": ("Fixed opponent pool", "Pool members",
+                    "Trained networks to play against; you can add or remove members while training. 'run: ...' "
+                    "uses that run's weights as they are when loaded (they change if it keeps training); for a copy "
+                    "that never changes use 'Freeze to pool' on the run."),
+    "pool_target": ("Fixed opponent pool", "Mastered at",
+                    "Win rate (0.95 = 95%) over the last games against a member at which it counts as mastered and "
+                    "gets only a small share of games."),
+    "pool_window": ("Fixed opponent pool", "Games measured",
+                    "How many recent games per member the rate is measured over."),
+    "pool_min_games": ("Fixed opponent pool", "Minimum games",
+                       "Games against a member before it can count as mastered."),
+    "pool_use_score": ("Fixed opponent pool", "Count draws as half",
+                       "Measure a score (win 1, draw 0.5) instead of wins only. Useful once the pool holds peak "
+                       "copies of the AI itself, which tend to draw."),
+    "pool_auto": ("Fixed opponent pool", "Automatic peaks",
+                  "When every member is mastered (and stays so for the marinate time), freeze the AI and add it to "
+                  "the pool by itself. Off = you decide when to add a peak."),
+    "pool_marinate": ("Fixed opponent pool", "Marinate (updates)",
+                      "How long it keeps training after mastering everyone before it is added as a peak, so it can "
+                      "learn to win faster and more reliably."),
     "p_script": ("Opponents", "Shield push (scripted)",
                  "A fixed plan: Shield, Range, Catapult in turns; once the front is past the middle, Shields then "
                  "Trebuchets up to the limit. Beats basic-troop walls, so the AI has to learn to stop it."),
@@ -243,7 +272,7 @@ def schema() -> dict:
             continue
         section, label, help_ = FIELDS.get(f.name, ("Other", f.name, ""))
         v = getattr(defaults, f.name)
-        typ = "bool" if isinstance(v, bool) else "list" if isinstance(v, list) else \
+        typ = "models" if f.name == "pool_models" else "bool" if isinstance(v, bool) else "list" if isinstance(v, list) else \
             "int" if isinstance(v, int) else "float" if isinstance(v, float) else "str"
         if f.name == "dqn_model":
             v = os.path.relpath(v, RL_DIR)
@@ -451,7 +480,7 @@ class Runs:
                 "milestones": n_milestones, "restarting": self.restarting.get(name),
                 "latest": log[-1] if log else None, "scores": scores, "recent": recent, "evals": evals,
                 "output": output,
-                "has_checkpoint": os.path.exists(os.path.join(d, "latest.pt"))}
+                "has_checkpoint": os.path.exists(os.path.join(d, "latest.pt")), "pool": read_json(os.path.join(d, "pool.json"))}
 
     def _why_ended(self, name: str, sessions: list, output: list, config: dict) -> dict | None:
         """Why the last training session ended, from sessions.jsonl (or train.out for older runs)."""
@@ -559,8 +588,15 @@ class Runs:
         if bad:
             raise ValueError(f"these settings need a restart: {', '.join(bad)}")
         clean = {}
+        bools = {f.name for f in dataclasses.fields(TrainConfig) if f.type in ("bool", bool)}
         for k, v in changes.items():
-            if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+            if k == "pool_models":
+                if not (isinstance(v, list) and all(isinstance(x, str) for x in v)):
+                    raise ValueError("pool_models: expected a list of model paths")
+            elif k in bools:
+                if not isinstance(v, bool):
+                    raise ValueError(f"{k}: expected true or false")
+            elif isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
                 raise ValueError(f"{k}: expected a number, got {v!r}")
             clean[k] = v
         path = os.path.join(d, "live.json")
@@ -750,10 +786,47 @@ def policies() -> list:
     for f in sorted(os.listdir(ck)) if os.path.isdir(ck) else []:
         if f.endswith(".pt"):
             out.append({"label": f"checkpoint: {f}", "path": os.path.join("checkpoints", f)})
+    for f in sorted(os.listdir(POOL_DIR)) if os.path.isdir(POOL_DIR) else []:
+        if f.endswith(".pt"):
+            out.append({"label": f"frozen: {f}", "path": os.path.join("pool", f)})
+    for name in sorted(os.listdir(RUNS)) if os.path.isdir(RUNS) else []:
+        pk = os.path.join(RUNS, name, "peaks")
+        for f in sorted(os.listdir(pk)) if os.path.isdir(pk) else []:
+            if f.endswith(".pt"):
+                out.append({"label": f"peak: {name}/{f}", "path": os.path.relpath(os.path.join(pk, f), RL_DIR)})
+    md = os.path.join(REPO, "models")
+    for f in sorted(os.listdir(md)) if os.path.isdir(md) else []:
+        if f.endswith(".json") and f != "index.json":
+            out.append({"label": f"model: models/{f}", "path": os.path.relpath(os.path.join(md, f), RL_DIR)})
     if os.path.exists(os.path.join(REPO, "ultimate_model.json")):
         out.append({"label": "game model: ultimate_model.json", "path": os.path.relpath(
             os.path.join(REPO, "ultimate_model.json"), RL_DIR)})
     return out
+
+
+def read_json(path: str):
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def freeze(body: dict) -> dict:
+    """Copy a run's current actor into rl/pool/ as a fixed opponent that never changes."""
+    import torch
+    name = body["run"]
+    src = os.path.join(run_path(name), "latest.pt")
+    if not os.path.exists(src):
+        raise ValueError("this run has no checkpoint yet")
+    ck = torch.load(src, map_location="cpu", weights_only=False)
+    actor = {k[len("actor."):]: v for k, v in ck["state_dict"].items() if k.startswith("actor.")}
+    os.makedirs(POOL_DIR, exist_ok=True)
+    out = os.path.join(POOL_DIR, f"{name}-u{ck.get('update', 0)}.pt")
+    torch.save({"model_config": ck["model_config"], "actor": actor, "update": ck.get("update"),
+                "env_steps": ck.get("env_steps"), "train_config": {"decision_interval": ck.get(
+                    "train_config", {}).get("decision_interval")}}, out)
+    return {"path": os.path.relpath(out, RL_DIR)}
 
 
 def safe_policy(path: str) -> str:
@@ -971,6 +1044,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, RUNS_STATE.restart(body["name"], body.get("config", {})))
             if url.path == "/api/evaluate":
                 return self._send(200, evaluate_job(body))
+            if url.path == "/api/freeze":
+                return self._send(200, freeze(body))
             if url.path == "/api/strength":
                 return self._send(200, strength_job(body))
             if url.path == "/api/export":
