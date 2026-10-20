@@ -67,16 +67,21 @@ class League:
         os.replace(tmp, self._index_path())
 
     # ---- snapshots ---------------------------------------------------------
-    def add(self, model: ActorCritic, update: int) -> int:
+    def add(self, model: ActorCritic, update: int, in_use=()) -> int:
+        """Add a snapshot. `in_use`: ids that games are still playing against; those are never evicted."""
         sid = self.next_id
         self.next_id += 1
         path = os.path.join(self.dir, f"snapshot_{sid:05d}.pt")
         torch.save({"model_config": model.cfg.to_dict(), "actor": model.actor.state_dict(), "update": update}, path)
         self.snapshots[sid] = Snapshot(sid, path, update)
+        busy = {int(x) for x in in_use}
         while len(self.snapshots) > self.max_snapshots:
-            # drop the snapshot we beat most reliably (keep the newest one always)
+            # drop the snapshot we beat most reliably (keep the newest one, and any a game is still using)
             newest = max(self.snapshots)
-            victim = max((s for s in self.snapshots.values() if s.id != newest), key=lambda s: s.win_rate())
+            candidates = [s for s in self.snapshots.values() if s.id != newest and s.id not in busy]
+            if not candidates:
+                break  # over the limit for now; trimmed on a later add once those games end
+            victim = max(candidates, key=lambda s: s.win_rate())
             self.snapshots.pop(victim.id)
             self._cache.pop(victim.id, None)
             try:

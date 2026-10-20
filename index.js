@@ -923,6 +923,8 @@ var Player = /** @class */ (function () {
         if (money === void 0) { money = 0; }
         this.financialAid = [true, true, true];
         this.multiplier = 1;
+        this.upgrades = 0; // +20% base upgrades bought
+        this.maxUpgrades = Infinity; // match option (0 = no upgrades)
         this.money = money;
         this.side = side;
         this.score = 0;
@@ -949,6 +951,9 @@ var Player = /** @class */ (function () {
             }
         };
     }
+    Player.prototype.canUpgrade = function () {
+        return this.upgrades < this.maxUpgrades;
+    };
     Player.prototype.map = function (enemy, visualize, DOMAccess, playerUnits, startingPlayerUnits, enemyUnits, enemyBase, playerBase, game) {
         var _this = this;
         this.enemy = enemy;
@@ -1177,8 +1182,9 @@ var Player = /** @class */ (function () {
             button_1.id = 'incMult';
             if (bindEventListeners) {
                 button_1.addEventListener('click', function () {
-                    if (_this.isEnoughMoney(1500)) {
+                    if (_this.isEnoughMoney(1500) && _this.canUpgrade()) {
                         _this.multiplier *= 1.2;
+                        _this.upgrades++;
                         _this.addFunds(-1500);
                         // console.log(this.multiplier)
                     }
@@ -1321,8 +1327,9 @@ var SimulatingBot = /** @class */ (function (_super) {
     SimulatingBot.prototype.afterMoveArmy = function () {
         var _this = this;
         _super.prototype.afterMoveArmy.call(this);
-        if (this.money > 1800) {
+        if (this.money > 1800 && this.canUpgrade()) {
             this.multiplier *= 1.2;
+            this.upgrades++;
             this.addFunds(-1500);
         }
         var enc = this.encouragement();
@@ -1588,7 +1595,7 @@ var HttpBot = /** @class */ (function (_super) {
                 .map(function (t, index) { return ({ index: index, name: t.name, price: t.price }); })
                 .filter(function (t, index) { return _this.unlockedUnits[index] && _this.money >= t.price; });
         }
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableUnits.push({ index: 12, name: "Upgrade Base", price: upgCost });
         }
         // Only ask the server if there are valid choices available
@@ -1621,8 +1628,9 @@ var HttpBot = /** @class */ (function (_super) {
                 var _a, _b;
                 var choice = (_b = (_a = data === null || data === void 0 ? void 0 : data.unit) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.unit_to_send) !== null && _b !== void 0 ? _b : (Array.isArray(data) ? data[0] : data);
                 if (choice === "Upgrade Base") {
-                    if (_this.money >= 1500) {
+                    if (_this.money >= 1500 && _this.canUpgrade()) {
                         _this.multiplier *= 1.2;
+                        _this.upgrades++;
                         _this.addFunds(-1500);
                         _this.playerBase.level = (_this.playerBase.level || 1) + 1;
                         _this.stats.spending += upgCost;
@@ -1989,7 +1997,7 @@ var LocalRLBot = /** @class */ (function (_super) {
                 }
             });
         }
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableNames.push("Upgrade Base");
             allowedIndices.push(12);
         }
@@ -2066,7 +2074,7 @@ var LocalRLBot = /** @class */ (function (_super) {
                 this.probHistory.shift();
             }
             var html = "<div style=\"font-family: monospace;\"><strong>" + this.side.toUpperCase() + " AI Brain:</strong><br/>";
-            var _loop_2 = function (i) {
+            var _loop_3 = function (i) {
                 // Check if it is unlocked (0-11 are troops, 12 is Base, 13 is wait)
                 var isUnlocked = i < 12 ? this_1.unlockedUnits[i] : true;
                 if (isUnlocked) {
@@ -2086,7 +2094,7 @@ var LocalRLBot = /** @class */ (function (_super) {
             var this_1 = this;
             // Loop through ALL actions in their strict default order so the rows never jump around
             for (var i = 0; i < this.ACTIONS.length; i++) {
-                _loop_2(i);
+                _loop_3(i);
             }
             html += "</div>";
             // Target your existing HTML element
@@ -2109,8 +2117,9 @@ var LocalRLBot = /** @class */ (function (_super) {
             }
             var choice_1 = this.ACTIONS[chosenIdx];
             if (choice_1 === "Upgrade Base") {
-                if (this.money >= 1500 && Math.random() > 0.5) {
+                if (this.money >= 1500 && Math.random() > 0.5 && this.canUpgrade()) {
                     this.multiplier *= 1.2;
+                    this.upgrades++;
                     this.addFunds(-1500);
                     // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
                     // this.playerBase.health += 400;
@@ -2168,6 +2177,9 @@ var UltimateBot = /** @class */ (function (_super) {
         _this.decisionInterval = 10;
         _this.layers = null;
         _this.lastProbs = null;
+        _this.modelMaxUpgrades = -1;
+        // memory of a model with a gru layer: starts at zeros each game (a new bot per match), updated every decision
+        _this.memory = null;
         _this.computeMs = [];
         _this.brainHistory = [];
         _this.greedy = greedy;
@@ -2215,11 +2227,16 @@ var UltimateBot = /** @class */ (function (_super) {
             throw new Error("model expects obs " + json.obs_size + "/actions " + json.num_actions + ", game has " + ULT_OBS_SIZE + "/" + ULT_NUM_ACTIONS);
         }
         this.decisionInterval = json.decision_interval || 10;
+        var mu = json.meta && json.meta.max_upgrades;
+        this.modelMaxUpgrades = typeof mu === 'number' && mu >= 0 ? mu : -1;
+        var dec = function (s) { return s ? UltimateBot.decodeFloats(s) : undefined; };
         this.layers = json.layers.map(function (l) { return ({
             type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
-            weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
-            bias: l.bias ? UltimateBot.decodeFloats(l.bias) : undefined,
+            weight: dec(l.weight), bias: dec(l.bias),
+            weightIh: dec(l.weight_ih), weightHh: dec(l.weight_hh), biasIh: dec(l.bias_ih), biasHh: dec(l.bias_hh),
         }); });
+        var gru = this.layers.find(function (l) { return l.type === 'gru'; });
+        this.memory = gru ? new Float32Array(gru.size) : null;
     };
     UltimateBot.prototype.unlockUnits = function (bindEventListeners) {
         if (bindEventListeners === void 0) { bindEventListeners = true; }
@@ -2235,7 +2252,8 @@ var UltimateBot = /** @class */ (function (_super) {
             mask[i] = this.unlockedUnits[i] && this.money >= troopArr[i].price && room && !(i === 10 && this.game.atomicDoomPending);
             mask[ULT_RESEARCH0 + i] = !this.unlockedUnits[i] && this.money >= troopArr[i].researchPrice;
         }
-        mask[ULT_UPGRADE] = this.money >= 1500;
+        // the model's own training limit applies too (meta.max_upgrades: -1 = unlimited)
+        mask[ULT_UPGRADE] = this.money >= 1500 && this.canUpgrade() && (this.modelMaxUpgrades < 0 || this.upgrades < this.modelMaxUpgrades);
         mask[ULT_WAIT] = true;
         return mask;
     };
@@ -2253,6 +2271,7 @@ var UltimateBot = /** @class */ (function (_super) {
         }
         else if (action === ULT_UPGRADE) {
             this.multiplier *= 1.2;
+            this.upgrades++;
             this.addFunds(-1500);
         }
     };
@@ -2292,7 +2311,7 @@ var UltimateBot = /** @class */ (function (_super) {
             out[i] = g[i];
         var egoX = function (pos) { return _this.side === 'left' ? pos / canvasWidth : (canvasWidth - pos) / canvasWidth; };
         var writeUnits = function (units, base) {
-            var _loop_3 = function (s) {
+            var _loop_4 = function (s) {
                 var u = units[s];
                 var off = base + s * ULT_UNIT;
                 var kind = troopArr.findIndex(function (t) { return t.name === u.name; });
@@ -2309,18 +2328,44 @@ var UltimateBot = /** @class */ (function (_super) {
                 out[off + 19] = Math.log(1 + Math.max(u.damage, 0)) / 5;
             };
             for (var s = 0; s < Math.min(units.length, ULT_MAX_SLOTS); s++) {
-                _loop_3(s);
+                _loop_4(s);
             }
         };
         writeUnits(me.playerUnits, ULT_GLOBAL);
         writeUnits(en.playerUnits, ULT_GLOBAL + ULT_MAX_SLOTS * ULT_UNIT);
         return out;
     };
+    /** Logits for this observation from the current memory (does not change the memory). */
     UltimateBot.prototype.forward = function (obs) {
+        return this.forwardStep(obs).logits;
+    };
+    /** Logits and the memory after this observation (for models with a gru layer). */
+    UltimateBot.prototype.forwardStep = function (obs) {
         var x = obs;
+        var memory = null;
         for (var _i = 0, _a = this.layers; _i < _a.length; _i++) {
             var l = _a[_i];
-            if (l.type === 'linear') {
+            if (l.type === 'gru') {
+                var n = l.size, h = this.memory;
+                var y = new Float32Array(n);
+                var dot = function (w, row, len, v) {
+                    var sum = 0;
+                    var off = row * len;
+                    for (var i = 0; i < len; i++)
+                        sum += w[off + i] * v[i];
+                    return sum;
+                };
+                var sig = function (v) { return 1 / (1 + Math.exp(-v)); };
+                for (var j = 0; j < n; j++) {
+                    var r = sig(dot(l.weightIh, j, l.in, x) + l.biasIh[j] + dot(l.weightHh, j, n, h) + l.biasHh[j]);
+                    var z = sig(dot(l.weightIh, n + j, l.in, x) + l.biasIh[n + j] + dot(l.weightHh, n + j, n, h) + l.biasHh[n + j]);
+                    var c = Math.tanh(dot(l.weightIh, 2 * n + j, l.in, x) + l.biasIh[2 * n + j] +
+                        r * (dot(l.weightHh, 2 * n + j, n, h) + l.biasHh[2 * n + j]));
+                    y[j] = (1 - z) * c + z * h[j];
+                }
+                x = memory = y;
+            }
+            else if (l.type === 'linear') {
                 var y = new Float32Array(l.out);
                 for (var o = 0; o < l.out; o++) {
                     var sum = l.bias[o];
@@ -2362,7 +2407,7 @@ var UltimateBot = /** @class */ (function (_super) {
                 x = y;
             }
         }
-        return x;
+        return { logits: x, memory: memory };
     };
     /** Called by Game.move() before each tick; returns an action on decision ticks. */
     UltimateBot.prototype.decide = function (time) {
@@ -2370,7 +2415,10 @@ var UltimateBot = /** @class */ (function (_super) {
             return undefined;
         var t0 = typeof performance !== 'undefined' ? performance.now() : 0;
         var mask = this.actionMask();
-        var logits = this.forward(this.observe());
+        var step = this.forwardStep(this.observe());
+        var logits = step.logits;
+        if (step.memory)
+            this.memory = step.memory;
         var maxL = -Infinity;
         for (var a = 0; a < ULT_NUM_ACTIONS; a++)
             if (mask[a] && logits[a] > maxL)
@@ -2825,9 +2873,52 @@ try {
             maxUnits: Math.max(1, Math.min(50, parseInt(el_1(side + "Max").value) || kindInfo_1(kind).maxUnits)),
         };
     }
+    // models/index.json lists every model the game can load (built by rl/wars_rl/model_index.py:
+    // by the GitHub Pages workflow on deploy, and by the training dashboard on your computer)
+    var MODELS_1 = [];
+    function fillModelList(side) {
+        var info = kindInfo_1(el_1(side + "Kind").value);
+        var pick = el_1(side + "Pick"), input = el_1(side + "Model");
+        var list = MODELS_1.filter(function (m) { return m.kind === info.key; });
+        pick.style.display = list.length ? '' : 'none';
+        if (!list.length)
+            return;
+        var current = input.value.trim() || info.defaultModel;
+        var opt = function (m) {
+            var steps = m.env_steps ? " \u00B7 " + (m.env_steps / 1e6).toFixed(1) + "M decisions" : '';
+            var label = (m.source === 'default' ? m.name + " (default)" : m.name) + steps + (m.note ? " \u00B7 " + m.note : '');
+            return "<option value=\"" + m.file + "\"" + (m.file === current ? ' selected' : '') + ">" + label.replace(/</g, '&lt;') + "</option>";
+        };
+        var group = function (title, ms) { return ms.length ? "<optgroup label=\"" + title + "\">" + ms.map(opt).join('') + "</optgroup>" : ''; };
+        var known = list.some(function (m) { return m.file === current; });
+        pick.innerHTML = (known ? '' : "<option value=\"\" selected>custom: " + current.replace(/</g, '&lt;') + "</option>") +
+            group('Models in the game', list.filter(function (m) { return m.source !== 'run'; })) +
+            group('Your training runs (this computer only)', list.filter(function (m) { return m.source === 'run'; }));
+    }
+    var _loop_1 = function (side) {
+        el_1(side + "Pick").style.display = 'none';
+        el_1(side + "Pick").addEventListener('change', function () {
+            var v = el_1(side + "Pick").value;
+            if (v)
+                el_1(side + "Model").value = v === kindInfo_1(el_1(side + "Kind").value).defaultModel ? '' : v;
+            el_1(side + "File").value = '';
+        });
+        el_1(side + "Model").addEventListener('change', function () { return fillModelList(side); });
+    };
+    for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
+        var side = _a[_i];
+        _loop_1(side);
+    }
+    fetch('models/index.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; }).then(function (list) {
+        if (Array.isArray(list))
+            MODELS_1.push.apply(MODELS_1, list.filter(function (m) { return m && m.file && m.kind; }));
+        fillModelList('left');
+        fillModelList('right');
+    }).catch(function () { });
     function refreshPicker() {
         for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
             var side = _a[_i];
+            fillModelList(side);
             var info = kindInfo_1(el_1(side + "Kind").value);
             el_1(side + "ModelBox").style.display = info.model ? '' : 'none';
             el_1(side + "GreedyBox").style.display = info.key === 'ultimate' ? '' : 'none';
@@ -2847,6 +2938,7 @@ try {
     function makeCustomPlayer(c, side, money) {
         var p = makeCustomPlayerOfKind(c, side, money);
         p.maxUnits = c.maxUnits;
+        p.maxUpgrades = custom_1.cfg && custom_1.cfg.upgrades >= 0 ? custom_1.cfg.upgrades : Infinity;
         return p;
     }
     function makeCustomPlayerOfKind(c, side, money) {
@@ -2950,12 +3042,13 @@ try {
             left: readSide('left'), right: readSide('right'),
             speed: Math.max(1, parseInt(el_1('pickSpeed').value) || 1),
             money: Math.max(0, parseFloat(el_1('pickMoney').value) || 0),
+            upgrades: el_1('pickUpgrades').value === '' ? -1 : Math.max(-1, parseInt(el_1('pickUpgrades').value)),
             limit: Math.max(0, parseFloat(el_1('pickLimit').value) || 0),
             repeat: el_1('pickRepeat').checked,
         };
     }
-    for (var _i = 0, _a = ['left', 'right']; _i < _a.length; _i++) {
-        var side = _a[_i];
+    for (var _b = 0, _c = ['left', 'right']; _b < _c.length; _b++) {
+        var side = _c[_b];
         el_1(side + "Kind").innerHTML = PLAYER_KINDS_1.map(function (k) { return "<option value=\"" + k.key + "\">" + k.label + "</option>"; }).join('');
         el_1(side + "Kind").addEventListener('change', refreshPicker);
     }
@@ -2963,7 +3056,7 @@ try {
     el_1('rightKind').value = 'ultimate';
     var params_1 = new URLSearchParams(window.location.search);
     if (params_1.get('mode') === 'custom') {
-        var _loop_1 = function (side, s) {
+        var _loop_2 = function (side, s) {
             if (params_1.get(side) && PLAYER_KINDS_1.some(function (k) { return k.key === params_1.get(side); }))
                 el_1(side + "Kind").value = params_1.get(side);
             el_1(side + "Model").value = params_1.get(s + "model") || '';
@@ -2971,14 +3064,16 @@ try {
             el_1(side + "Max").value = params_1.get(s + "max") || '';
         };
         // prefill from the URL
-        for (var _b = 0, _c = [['left', 'l'], ['right', 'r']]; _b < _c.length; _b++) {
-            var _d = _c[_b], side = _d[0], s = _d[1];
-            _loop_1(side, s);
+        for (var _d = 0, _e = [['left', 'l'], ['right', 'r']]; _d < _e.length; _d++) {
+            var _f = _e[_d], side = _f[0], s = _f[1];
+            _loop_2(side, s);
         }
         if (params_1.get('speed'))
             el_1('pickSpeed').value = params_1.get('speed');
         if (params_1.get('money'))
             el_1('pickMoney').value = params_1.get('money');
+        if (params_1.get('upgrades'))
+            el_1('pickUpgrades').value = params_1.get('upgrades');
         if (params_1.get('limit'))
             el_1('pickLimit').value = params_1.get('limit');
         el_1('pickRepeat').checked = params_1.get('repeat') === '1';

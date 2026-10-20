@@ -22,24 +22,50 @@ import torch
 
 import wars_engine
 
-from .model import load_model
+from .model import MASK_VALUE, FrozenActor, ModelConfig, load_model
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 WAIT = wars_engine.NUM_ACTIONS - 1
 
 
-class TorchPolicy:
+class _Memory:
+    """Per-game memory for networks with a gru layer: logits() is called with one row per game
+    (always the same games, in order) and reset(i) starts game i's memory from zeros."""
+    recurrent = 0
+    mem = None
+
+    def reset(self, i):
+        if self.mem is not None:
+            self.mem[i] = 0.0
+
+    def _state(self, n):
+        if self.mem is None or len(self.mem) != n:
+            self.mem = np.zeros((n, self.recurrent), dtype=np.float32)
+        return self.mem
+
+
+class TorchPolicy(_Memory):
     def __init__(self, path: str):
-        self.model, ckpt = load_model(path)
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        if "actor" in ckpt:  # actor-only file: a milestone or league snapshot
+            self.net = FrozenActor(ModelConfig(**ckpt["model_config"]), ckpt["actor"])
+        else:
+            self.net, ckpt = load_model(path)
+        self.recurrent = self.net.recurrent
         self.decision_interval = ckpt.get("train_config", {}).get("decision_interval", 10)
+        self.update, self.env_steps = ckpt.get("update"), ckpt.get("env_steps")
 
     def logits(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
         with torch.no_grad():
-            return self.model.logits(torch.from_numpy(obs), torch.from_numpy(mask)).numpy()
+            h = torch.from_numpy(self._state(len(obs))) if self.recurrent else None
+            lg, h = self.net.step(torch.from_numpy(obs), torch.from_numpy(mask), h)
+            if self.recurrent:
+                self.mem[:] = h.numpy()
+            return lg.numpy()
 
 
-class JsonPolicy:
+class JsonPolicy(_Memory):
     """Runs an exported browser model (same math as UltimateBot.forward)."""
 
     def __init__(self, path: str):
@@ -50,7 +76,13 @@ class JsonPolicy:
         self.layers = []
         for l in data["layers"]:
             l = dict(l)
-            if "weight" in l:
+            if l["type"] == "gru":
+                n = l["size"]
+                l["weight_ih"] = dec(l["weight_ih"]).reshape(3 * n, l["in"]).astype(np.float64)
+                l["weight_hh"] = dec(l["weight_hh"]).reshape(3 * n, n).astype(np.float64)
+                l["bias_ih"], l["bias_hh"] = dec(l["bias_ih"]), dec(l["bias_hh"])
+                self.recurrent = n
+            elif "weight" in l:
                 l["weight"] = dec(l["weight"])
                 l["bias"] = dec(l["bias"])
                 if l["type"] == "linear":
@@ -61,7 +93,18 @@ class JsonPolicy:
         x = obs.astype(np.float32)
         for l in self.layers:
             t = l["type"]
-            if t == "linear":
+            if t == "gru":
+                h = self._state(len(obs))
+                n = l["size"]
+                gi = x.astype(np.float64) @ l["weight_ih"].T + l["bias_ih"]
+                gh = h.astype(np.float64) @ l["weight_hh"].T + l["bias_hh"]
+                sig = lambda v: 1.0 / (1.0 + np.exp(-v))
+                r = sig(gi[:, :n] + gh[:, :n])
+                z = sig(gi[:, n:2 * n] + gh[:, n:2 * n])
+                cand = np.tanh(gi[:, 2 * n:] + r * gh[:, 2 * n:])
+                x = ((1 - z) * cand + z * h).astype(np.float32)
+                self.mem[:] = x
+            elif t == "linear":
                 x = (x.astype(np.float64) @ l["weight"].T.astype(np.float64) + l["bias"]).astype(np.float32)
             elif t == "layernorm":
                 xd = x.astype(np.float64)
@@ -77,6 +120,23 @@ class JsonPolicy:
         return np.where(mask, x, -1e9)
 
 
+class ScriptPolicy:
+    """A scripted player from wars_rl/scripted.py, wrapped as one-hot logits."""
+    decision_interval = None
+
+    def __init__(self, fn):
+        self.fn, self.state = fn, {}
+
+    def reset(self, i):
+        self.state[i] = {}
+
+    def logits(self, obs, mask):
+        out = np.full(mask.shape, MASK_VALUE, dtype=np.float32)
+        for i in range(len(obs)):
+            out[i, self.fn(obs[i], mask[i], self.state.setdefault(i, {}))] = 0.0
+        return out
+
+
 class RandomPolicy:
     decision_interval = None
 
@@ -87,6 +147,9 @@ class RandomPolicy:
 def load_policy(spec: str):
     if spec == "random":
         return RandomPolicy()
+    if spec == "shield_push":
+        from .scripted import shield_push
+        return ScriptPolicy(shield_push)
     if spec.endswith(".json"):
         return JsonPolicy(spec)
     return TorchPolicy(spec)
@@ -115,6 +178,8 @@ def wilson(wins: float, n: int, z: float = 1.96):
 def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: int, dqn_model: str | None,
              threads: int = 4, **env_kwargs):
     builtin = opponent in ("classic", "dqn")
+    if opponent == "script":
+        opponent = "shield_push"
     opp_policy = None if builtin else load_policy(opponent)
     di = env_kwargs.pop("decision_interval", None) or getattr(policy, "decision_interval", None) or 10
     opp_di = getattr(opp_policy, "decision_interval", None)
@@ -137,6 +202,9 @@ def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: i
         if builtin:
             kinds[1 - s] = opponent
         venv.reset(i, kinds[0], kinds[1], seed * 100_003 + started)
+        for pol in (policy, opp_policy):
+            if hasattr(pol, "reset"):
+                pol.reset(i)
         side[i] = s
         active[i] = True
         started += 1
@@ -169,7 +237,8 @@ def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: i
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("policy", help=".pt checkpoint, exported .json, or 'random'")
+    ap.add_argument("policy", nargs="+", help=".pt checkpoint(s), exported .json, or 'random'; several are "
+                                              "evaluated one after another (e.g. a run's milestones/*.pt)")
     ap.add_argument("--opponents", default="classic,dqn,random",
                     help="comma list of: classic, dqn, random, or a .pt/.json policy path")
     ap.add_argument("--games", type=int, default=100)
@@ -180,18 +249,32 @@ def main():
                     help="defaults to the checkpoint's training value (exported models: 'decision_interval')")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--max-ticks", type=int, default=54000)
+    ap.add_argument("--max-upgrades", type=int, default=-1, help="base upgrades per player (-1 = unlimited, 0 = none)")
     ap.add_argument("--dqn-model", default=os.path.join(REPO, "ultimate_dqn_model.json"))
+    ap.add_argument("--json", action="store_true", help="also print one JSON line per opponent (for the dashboard)")
     args = ap.parse_args()
-    policy = load_policy(args.policy)
-    print(f"{args.policy} ({'greedy' if args.greedy else 'sampled'}), {args.games} games per opponent")
+    for spec in args.policy:
+        run_one(args, spec)
+
+
+def run_one(args, spec: str):
+    policy = load_policy(spec)
+    print(f"{spec} ({'greedy' if args.greedy else 'sampled'}), {args.games} games per opponent")
     for opp in args.opponents.split(","):
         t0 = time.time()
         r = evaluate(policy, opp, args.games, args.envs, args.greedy, args.seed, args.dqn_model, args.threads,
-                     max_ticks=args.max_ticks, decision_interval=args.decision_interval)
+                     max_ticks=args.max_ticks, decision_interval=args.decision_interval,
+                     max_upgrades=args.max_upgrades)
         lo, hi = wilson(r["wins"], r["games"])
         print(f"  vs {opp:<10} W {r['wins']:4d}  D {r['draws']:4d}  L {r['losses']:4d}  "
               f"win {100 * r['wins'] / max(1, r['games']):5.1f}% (95% CI {100 * lo:.1f}-{100 * hi:.1f})  "
               f"avg game {r['avg_seconds']:.0f}s  [{time.time() - t0:.0f}s]", flush=True)
+        if args.json:
+            print("JSON " + json.dumps({"opponent": opp, **r, "ci_low": lo, "ci_high": hi,
+                                        "greedy": args.greedy, "max_ticks": args.max_ticks,
+                                        "max_upgrades": args.max_upgrades, "policy_path": spec,
+                                        "update": getattr(policy, "update", None),
+                                        "env_steps": getattr(policy, "env_steps", None)}), flush=True)
 
 
 if __name__ == "__main__":

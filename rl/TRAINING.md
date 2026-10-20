@@ -8,6 +8,31 @@ All `python -m wars_rl...` commands are run from the `rl/` folder.
 
 ---
 
+## Easiest: the training dashboard
+
+```bash
+cd rl
+python -m wars_rl.dashboard        # open http://localhost:8008
+```
+
+A web page for everything in this guide: start, stop and resume runs with every setting
+(presets included, and an explanation for each advanced setting), live charts of win and draw
+rates per opponent, the score of every finished game, CPU and memory use, evaluations, and
+export to the game. Training keeps running if you close the dashboard; open it again to pick it
+back up. `pip install psutil` gives more accurate CPU numbers. The rest of this guide is the same
+thing on the command line.
+
+**Changing settings while it trains.** "New training run" always starts a new model (unless you
+pick "Start from weights"). To adjust a run that is already going, open it and click **Change
+settings…**. Rewards (win, draw, every hint), learning rate, entropy, random moves, opponent
+weights, PPO step settings, training length and save/snapshot intervals are applied by the
+running trainer before its next update, with nothing lost. Settings tagged *restart* (game rules,
+parallel games, threads…) are applied by saving, stopping and resuming automatically. Every
+change is listed on the run page and drawn as a dashed line on the charts, so you can see what
+it did.
+
+---
+
 ## 1. One-time setup
 
 You need **Rust** (https://rustup.rs), **Python 3.9+** and **Node.js** (only for the parity
@@ -74,7 +99,8 @@ The same data goes to `runs/v2/log.jsonl` (one JSON object per update) if you wa
 | `latest.pt` | full checkpoint incl. optimizer (~15 MB), saved every 10 updates and on Ctrl+C |
 | `ultimate_model.json` | browser model, re-exported every 20 updates |
 | `league/` | frozen snapshots the AI trains against |
-| `log.jsonl`, `config.json` | training log and the exact settings used |
+| `log.jsonl`, `config.json` | training log and the current settings (updated by live changes) |
+| `changes.jsonl` | settings changed while training: when, old → new, anything rejected |
 
 `runs/` is in `.gitignore`. Nothing in it gets committed by accident.
 
@@ -86,6 +112,30 @@ The same data goes to `runs/v2/log.jsonl` (one JSON object per update) if you wa
 * Long runs survive closing the terminal with
   `nohup python -m wars_rl.train --run-dir runs/v2 > runs/v2.log 2>&1 &` (or use `tmux`/`screen`).
   Then `tail -f runs/v2.log` to watch.
+* **Change settings without stopping:** write the new values into `<run_dir>/live.json`, e.g.
+  `echo '{"lr": 1e-4, "lr_final": 1e-4, "draw_reward": -1}' > runs/v2/live.json`. The trainer
+  applies them before its next update, deletes the file, prints `[live change at update N] …`
+  and logs it to `changes.jsonl`. Allowed: rewards, learning rate and the other PPO settings,
+  exploration, opponent weights, `total_env_steps` and the save/snapshot intervals (`LIVE_FIELDS`
+  in `train.py`). Learning rate and entropy slide from start to end over the run, so set both
+  ends to the same value to pin them. When resuming from the command line later, pass
+  `--config runs/v2/config.json` to keep the changed values.
+
+### Why did it stop?
+
+The run page says why the last session ended: **finished**, **stopped** (Stop button, Ctrl+C,
+closed terminal), **crashed** (with the error) or **killed** (it vanished without a word: force
+quit, out of memory, a power loss or restart). The trainer writes this to `<run_dir>/sessions.jsonl`.
+Crashed and killed runs resume from the last save, at most `save_every` updates back.
+
+Sleep doesn't stop training, it only pauses it. On macOS the trainer keeps the computer awake by
+itself (`prevent_sleep`, using `caffeinate`), except when you close the lid on battery.
+
+After a resume every game starts over from the beginning, so for a few updates the finished games
+are mostly the quick ones (fast wins against weak opponents). Game length, win rates and entropy
+jump around at that point. It is a measuring effect, not the AI getting worse. The charts mark each
+resume with a dashed line, and the rolling win rates are now saved in the checkpoint, so they
+carry on across a resume.
 
 ### How long does it take?
 
@@ -138,6 +188,33 @@ Rules and tips:
   `rl/engine/src/obs.rs` *and* `UltimateBot` in `index.ts` identically, then
   `pip install ./rl/engine` and `python3 rl/parity/check.py --quick` to prove they match.
 
+### Memory (GRU)
+
+A plain network sees only the current moment: it can't tell that the opponent sent five
+Catapults a minute ago, or that its own last push failed. With
+`--recurrent 128` the actor gets a **memory**: its hidden layers feed a GRU cell holding 128
+numbers, which it updates at every decision and carries through the whole game (zeros at the
+start of each game). The action layer reads that memory. It learns by itself what is worth
+remembering (what the opponent has built, what failed, how the game has gone). The critic stays
+a plain network but also reads the memory, so its predictions can use it too.
+
+| flag | default | meaning |
+|------|---------|---------|
+| `--recurrent 128` | 0 (off) | memory size; 64–256 are sensible, 128 is a good start |
+| `--seq-len 64` | 64 | it learns from stretches of this many consecutive decisions (64 = 16 s of game time); can be changed live |
+
+```bash
+python -m wars_rl.train --run-dir runs/memory --recurrent 128
+```
+
+* It is a new architecture: start a new run (or a new run dir). Old checkpoints can't be
+  resumed with memory switched on.
+* Updates take about twice as long as without memory (the GRU goes decision by decision); the
+  games themselves cost about the same.
+* Memory models export with a `gru` layer (format version 2). The game's `UltimateBot` runs it,
+  and so do `evaluate.py`, the pool and the dashboard. Older copies of the game can't run them.
+* It doesn't remember *between* games: each game starts fresh, the same in training and in the browser.
+
 ---
 
 ## 4. Other settings worth tuning
@@ -158,6 +235,110 @@ a JSON file: `python -m wars_rl.train --config configs/ultimate.json` (flags ove
 | `--decision-interval` | 15 | ticks between decisions (15 = 4 per second). Saved into the exported model; the browser bot uses the same value |
 | `--max-ticks` | 54000 | game length limit (15 min) before it counts as a draw |
 | `--seed` | 1 | change to get a different run with the same settings |
+
+### AlphaZero-style search
+
+Settings → **Search (AlphaZero-style)**, or `--search-frac 0.02`. On that share of the AI's
+decisions, the trainer copies the game (`VecEnv.copy_from`) and tries "wait" plus a few moves
+drawn from the policy. Each copy plays about 10 seconds forward with the current network (a
+classic-bot opponent is played by the network inside the copies, because its own search is too
+slow), and the critic judges where it ended up. The policy is then trained towards the moves
+that did better (Gumbel AlphaZero's improved policy), on top of PPO. The **Search agrees with
+the network** chart shows how often the search's best move was already the network's favourite.
+
+* It costs time: 1-2% of decisions searched makes training about 40% slower.
+* Early in a run the copies are played by a weak network, so the search is noisy. It gets
+  sharper as the network improves. More copies per move (`search_rollouts`) reduce the noise.
+* All settings are live. Try it on a run that already plays reasonably, and compare with
+  **Real strength**.
+
+### Fixed opponent pool (and automatic peaks)
+
+Settings → **Fixed opponent pool**. Tick any saved network as a pool member: exported models,
+checkpoints, a run's current weights, peaks, or copies made with **Freeze to pool** (a button on
+every run that saves the AI as it is now to `rl/pool/`). Set the **Pool weight** for the share of
+games. Everything in this section can be changed while training.
+
+* The run page shows a **Fixed opponent pool** table: recent wins, draws and losses against
+  each member. A member counts as **mastered** once the AI wins at least **Mastered at** (95%)
+  of the last **Games measured** (100) games against it. Members it struggles with get more
+  games; mastered ones keep a small share so a regression would show up.
+* **Manual ladder:** when everything is mastered, press **Freeze to pool**. The dashboard
+  offers to add the frozen copy to the running pool straight away.
+* **Automatic peaks** (on/off): once every member is mastered and stays so for **Marinate**
+  updates, the trainer freezes the AI into `<run_dir>/peaks/` and adds it to the pool itself.
+  It then has to learn to beat its own best version, and so on.
+* Against peak copies of itself most games are draws, so switch on **Count draws as half**
+  (score instead of wins) or lower the target for those stages.
+
+### Scripted Shield push and mistake review
+
+**Shield push** (opponent weight `p_script`, default 0.1) is a scripted player with a known strong
+plan: Shield, Range, Catapult in turns. Once the front is past the middle, it stacks Shields and
+then fills the army with Trebuchets (`wars_rl/scripted.py`). It beats basic-troop walls 12-0, so
+an AI that only learned to stall loses to it until it learns a real defence. It is also a fixed
+opponent for **Measure strength**, and `wars_rl.evaluate --opponents script` plays it too.
+
+**Review mistakes** (`review_frac`, Search section) keeps a copy of every game state of a batch.
+After the batch, it goes back to the decisions that turned out worst compared with what the
+critic expected (most negative advantage), replays those exact moments with other moves, and
+trains the network towards the move that would have done better. The **Mistakes reviewed**
+chart shows how often a better move was found. 0.01 costs about 25% of training speed and uses
+memory for one saved game per decision of a batch.
+
+### Is it really getting better?
+
+The "past versions" win rate is relative: those opponents improve too, so the number can fall while
+the AI gets stronger. The trainer saves a small copy of the AI every `milestone_every` updates
+(default 50) in `<run_dir>/milestones/`. On the run page, **Real strength → Measure strength**
+plays a spread of those copies against opponents that never change (the old RL AI and/or the
+classic bot) and charts win and draw rate across the run. Measuring again only plays copies and
+settings not measured yet. From the command line:
+`python -m wars_rl.evaluate runs/v2/milestones/u000500.pt runs/v2/milestones/u001000.pt --opponents dqn`.
+
+### What is the AI actually rewarded with?
+
+The run page's **Reward signals** section shows the reward from finished games, split by source:
+win/loss/draw, base damage dealt and taken, kill money earned and given, front line, Trebuchets
+in range and time cost, plus the total. **show** in Recent games opens one game's full history,
+sampled every 5 seconds of game time, plus the game's details for both sides. The details are
+what each side researched and when, troops bought and lost by type, upgrades, damage, kill
+money, the army at the end, and charts of each army's make-up, base health, money and upgrade
+multiplier over the game. The last 300 games are kept in `<run_dir>/curves/`. Hints are shown at their faded strength, exactly as the AI received
+them. It has three parts, each filterable by opponent:
+
+* **Reward per game, over training:** is the outcome term moving up, or only the hints?
+* **Reward during a game:** the average running total by game minute. A long flat stretch with
+  only the time cost falling is a stalemate.
+* **Average per game by result:** the reward for a win, a draw and a loss. If a draw scores
+  about the same as a win, the AI has no reason to take risks.
+
+`python3 rl/parity/check_rewards.py` plays scripted games and prints each term per side, to check
+the reward code itself.
+
+### Stalling: time cost
+
+`time_penalty` (dashboard: Rewards → *Time cost*, default 0.5) charges a small cost on every
+decision, adding up to that value for a game that lasts the whole time limit. Unlike the reward
+hints it never fades, and it can't be gamed: spamming troops doesn't avoid it, only ending the
+game does. It is live-changeable. The *Waiting with money* chart shows how often the AI waits
+although it could afford something. Some waiting is fine (saving up for a Trebuchet), but a
+high or rising share means it is stalling.
+
+### Training without base upgrades
+
+`--max-upgrades 0` (dashboard: Game → *Max base upgrades*) turns off the +20% base upgrade for
+every player in training games: the AI, the classic bot, the DQN bot and random players. Games
+are then decided by troops and tactics, not by who out-upgrades whom. `-1` is unlimited, as in
+the game, and any other number is a cap. It needs a restart, not a live change, because it is a
+rule of the game.
+
+The limit is saved in the exported model, and `UltimateBot` respects it in the browser: a model
+trained without upgrades never upgrades there either. Otherwise it would pick an action it never
+learned. Its opponents still can, unless you set **Max upgrades** in the match picker, which
+applies to both sides. Evaluate under the same rules with `--max-upgrades 0` (or the field in the
+dashboard's Evaluate panel). A practical plan is to train without upgrades first, then continue
+with Start from weights and upgrades back on, so it learns when upgrading is worth it.
 
 ### Tips
 
@@ -227,14 +408,33 @@ python -m wars_rl.export runs/v2/latest.pt ../ultimate_model.json --checkpoint-o
 python3 parity/check_model.py ../ultimate_model.json checkpoints/ultimate_v2.pt   # browser == PyTorch
 ```
 
+### Which models the game can play
+
+The game is a static web page, so it can only load model files that its web server serves. It
+can't read `.pt` checkpoints, only exported `.json` models. Where a model lives decides where you can play it:
+
+| where | how it gets there | on your computer | on GitHub Pages |
+|-------|-------------------|------------------|-----------------|
+| `ultimate_model.json`, `ultimate_dqn_model.json` (repo root) | export "make it the default" | yes (the defaults) | yes, once pushed |
+| `models/<name>.json` | export "add to the model picker", or `python -m wars_rl.export runs/v2/latest.pt ../models/v2.json --note "…"` | yes | yes, once pushed |
+| `rl/runs/<run>/ultimate_model.json` | written by the trainer every `export_every` updates | yes | no (`rl/runs/` isn't committed) |
+| any `.json` model on your disk | "or file:" in the picker | yes | yes (read by your browser, never uploaded) |
+
+The model dropdown in the match picker is built from `models/index.json`, a list of all of the
+above. Nobody edits it by hand:
+`python3 rl/wars_rl/model_index.py` writes it, and so does every export, the training dashboard
+every 2 minutes and the GitHub Pages workflow before each deploy (without the local runs). It is
+in `.gitignore` because your local copy lists runs that only exist on your computer. A picked
+checkpoint (`.pt`) needs exporting first: dashboard **Export model**, or `wars_rl.export`.
+
 Try it: the game loads the model with `fetch`, so serve the folder over HTTP instead of opening
 the file directly:
 
 ```bash
 cd ..                      # repo root
 python3 -m http.server 8000
-# open http://localhost:8000/ and pick the players (e.g. Human vs Ultimate AI). "or file:" loads a
-# model straight from disk, e.g. rl/runs/v2/ultimate_model.json, without copying it anywhere.
+# open http://localhost:8000/ and pick the players (e.g. Human vs Ultimate AI), then a model from
+# the dropdown: the defaults, models/, and your training runs (latest export of each).
 # Links work too: http://localhost:8000/?mode=custom&left=classic&right=ultimate&speed=5
 ```
 
@@ -248,7 +448,8 @@ What to commit:
 
 | file | size | why |
 |------|------|-----|
-| `ultimate_model.json` (repo root) | ~3.4 MB | the browser loads this file |
+| `ultimate_model.json` (repo root) | ~3.4 MB | the default Ultimate AI in the browser |
+| `models/<name>.json` | ~3.4 MB each | extra models in the game's model dropdown |
 | `rl/checkpoints/ultimate_vN.pt` | ~5 MB | weights to continue from later (`--init-from`) |
 | any code/config you changed | | so the run is reproducible |
 
@@ -258,7 +459,7 @@ What to commit:
 ```bash
 cd Wars-of-Ages
 git checkout -b new-ultimate-model          # or stay on your branch
-git add ultimate_model.json rl/checkpoints/ultimate_v2.pt
+git add ultimate_model.json models/v2.json rl/checkpoints/ultimate_v2.pt   # whichever you made
 git add -u                                  # plus any tracked files you edited
 git status                                  # check nothing unexpected (no rl/runs/!)
 git commit -m "Ultimate AI v2: <win rates from wars_rl.evaluate>"
@@ -267,7 +468,8 @@ git push -u origin new-ultimate-model
 
 Then open a pull request into `master` on GitHub, or push to `master` directly if that's how
 you work. **Pushing to `master` deploys the site** (`.github/workflows/static.yml` publishes the
-repo to GitHub Pages), so the new model goes live for everyone who picks *Ultimate AI*.
+repo to GitHub Pages), so the new default model goes live for everyone who picks *Ultimate AI*,
+and every model in `models/` shows up in the dropdown there.
 
 Tip: put the evaluation results in the commit message or the README's results table, so you
 can tell later which model was better.

@@ -1040,6 +1040,12 @@ class Player implements playerInterface {
     maxUnits: number
     DOMAccess: boolean
     multiplier: number = 1
+    upgrades: number = 0              // +20% base upgrades bought
+    maxUpgrades: number = Infinity    // match option (0 = no upgrades)
+
+    canUpgrade(): boolean {
+        return this.upgrades < this.maxUpgrades
+    }
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean) {
         this.money = money
@@ -1289,8 +1295,9 @@ class Player implements playerInterface {
             button.id = 'incMult'
             if (bindEventListeners) {
                 button.addEventListener('click', () => {
-                    if (this.isEnoughMoney(1500)) {
+                    if (this.isEnoughMoney(1500) && this.canUpgrade()) {
                         this.multiplier *= 1.2
+                        this.upgrades++
                         this.addFunds(-1500)
                         // console.log(this.multiplier)
                     } else this.redden(button, 800)
@@ -1429,8 +1436,9 @@ class SimulatingBot extends Player {
 
     afterMoveArmy() {
         super.afterMoveArmy()
-        if (this.money > 1800) {
+        if (this.money > 1800 && this.canUpgrade()) {
             this.multiplier *= 1.2
+            this.upgrades++
             this.addFunds(-1500)
         }
         let enc = this.encouragement()
@@ -1721,7 +1729,7 @@ class HttpBot extends SimulatingBot {
                 .filter((t, index) => this.unlockedUnits[index] && this.money >= t.price);
         }
 
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableUnits.push({index: 12, name: "Upgrade Base", price: upgCost});
         }
 
@@ -1757,8 +1765,9 @@ class HttpBot extends SimulatingBot {
                     const choice = data?.unit ?? data?.unit_to_send ?? (Array.isArray(data) ? data[0] : data)
 
                     if (choice === "Upgrade Base") {
-                        if (this.money >= 1500) {
+                        if (this.money >= 1500 && this.canUpgrade()) {
                             this.multiplier *= 1.2
+                            this.upgrades++
                             this.addFunds(-1500)
                             this.playerBase.level = (this.playerBase.level || 1) + 1
                             this.stats.spending += upgCost
@@ -2116,7 +2125,7 @@ class LocalRLBot extends SimulatingBot {
                 }
             });
         }
-        if (this.money >= upgCost) {
+        if (this.money >= upgCost && this.canUpgrade()) {
             availableNames.push("Upgrade Base");
             allowedIndices.push(12);
         }
@@ -2254,8 +2263,9 @@ class LocalRLBot extends SimulatingBot {
 
 
             if (choice === "Upgrade Base") {
-                if (this.money >= 1500 && Math.random() > 0.5) {
+                if (this.money >= 1500 && Math.random() > 0.5 && this.canUpgrade()) {
                     this.multiplier *= 1.2;
+                    this.upgrades++;
                     this.addFunds(-1500);
                     // this.playerBase.maxHealth = (this.playerBase.maxHealth || baseStats.health) + 400;
                     // this.playerBase.health += 400;
@@ -2313,6 +2323,11 @@ interface UltimateLayer {
     eps?: number
     weight?: Float32Array
     bias?: Float32Array
+    // gru (memory) layer: gates in PyTorch's order (reset, update, new)
+    weightIh?: Float32Array
+    weightHh?: Float32Array
+    biasIh?: Float32Array
+    biasHh?: Float32Array
 }
 
 class UltimateBot extends Player {
@@ -2320,6 +2335,9 @@ class UltimateBot extends Player {
     greedy: boolean
     layers: Array<UltimateLayer> = null
     lastProbs: Array<number> = null
+    modelMaxUpgrades: number = -1
+    // memory of a model with a gru layer: starts at zeros each game (a new bot per match), updated every decision
+    memory: Float32Array = null
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_model.json', greedy: boolean = false) {
         super(money, side, checkForAvailMoney)
@@ -2351,11 +2369,16 @@ class UltimateBot extends Player {
             throw new Error(`model expects obs ${json.obs_size}/actions ${json.num_actions}, game has ${ULT_OBS_SIZE}/${ULT_NUM_ACTIONS}`)
         }
         this.decisionInterval = json.decision_interval || 10
+        const mu = json.meta && json.meta.max_upgrades
+        this.modelMaxUpgrades = typeof mu === 'number' && mu >= 0 ? mu : -1
+        const dec = (s: string) => s ? UltimateBot.decodeFloats(s) : undefined
         this.layers = json.layers.map(l => ({
             type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
-            weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
-            bias: l.bias ? UltimateBot.decodeFloats(l.bias) : undefined,
+            weight: dec(l.weight), bias: dec(l.bias),
+            weightIh: dec(l.weight_ih), weightHh: dec(l.weight_hh), biasIh: dec(l.bias_ih), biasHh: dec(l.bias_hh),
         }))
+        const gru = this.layers.find(l => l.type === 'gru')
+        this.memory = gru ? new Float32Array(gru.size) : null
     }
 
     protected unlockUnits(bindEventListeners: boolean = true): void {
@@ -2373,7 +2396,8 @@ class UltimateBot extends Player {
             mask[i] = this.unlockedUnits[i] && this.money >= troopArr[i].price && room && !(i === 10 && this.game.atomicDoomPending)
             mask[ULT_RESEARCH0 + i] = !this.unlockedUnits[i] && this.money >= troopArr[i].researchPrice
         }
-        mask[ULT_UPGRADE] = this.money >= 1500
+        // the model's own training limit applies too (meta.max_upgrades: -1 = unlimited)
+        mask[ULT_UPGRADE] = this.money >= 1500 && this.canUpgrade() && (this.modelMaxUpgrades < 0 || this.upgrades < this.modelMaxUpgrades)
         mask[ULT_WAIT] = true
         return mask
     }
@@ -2389,6 +2413,7 @@ class UltimateBot extends Player {
             this.unlockedUnits[i] = true
         } else if (action === ULT_UPGRADE) {
             this.multiplier *= 1.2
+            this.upgrades++
             this.addFunds(-1500)
         }
     }
@@ -2444,10 +2469,35 @@ class UltimateBot extends Player {
         return out
     }
 
+    /** Logits for this observation from the current memory (does not change the memory). */
     forward(obs: Float32Array): Float32Array {
+        return this.forwardStep(obs).logits
+    }
+
+    /** Logits and the memory after this observation (for models with a gru layer). */
+    forwardStep(obs: Float32Array): {logits: Float32Array, memory: Float32Array} {
         let x = obs
+        let memory: Float32Array = null
         for (const l of this.layers) {
-            if (l.type === 'linear') {
+            if (l.type === 'gru') {
+                const n = l.size, h = this.memory
+                const y = new Float32Array(n)
+                const dot = (w: Float32Array, row: number, len: number, v: Float32Array) => {
+                    let sum = 0
+                    const off = row * len
+                    for (let i = 0; i < len; i++) sum += w[off + i] * v[i]
+                    return sum
+                }
+                const sig = (v: number) => 1 / (1 + Math.exp(-v))
+                for (let j = 0; j < n; j++) {
+                    const r = sig(dot(l.weightIh, j, l.in, x) + l.biasIh[j] + dot(l.weightHh, j, n, h) + l.biasHh[j])
+                    const z = sig(dot(l.weightIh, n + j, l.in, x) + l.biasIh[n + j] + dot(l.weightHh, n + j, n, h) + l.biasHh[n + j])
+                    const c = Math.tanh(dot(l.weightIh, 2 * n + j, l.in, x) + l.biasIh[2 * n + j] +
+                        r * (dot(l.weightHh, 2 * n + j, n, h) + l.biasHh[2 * n + j]))
+                    y[j] = (1 - z) * c + z * h[j]
+                }
+                x = memory = y
+            } else if (l.type === 'linear') {
                 const y = new Float32Array(l.out)
                 for (let o = 0; o < l.out; o++) {
                     let sum = l.bias[o]
@@ -2478,7 +2528,7 @@ class UltimateBot extends Player {
                 x = y
             }
         }
-        return x
+        return {logits: x, memory}
     }
 
     private computeMs: Array<number> = []
@@ -2488,7 +2538,9 @@ class UltimateBot extends Player {
         if (!this.layers || time % this.decisionInterval !== 0) return undefined
         const t0 = typeof performance !== 'undefined' ? performance.now() : 0
         const mask = this.actionMask()
-        const logits = this.forward(this.observe())
+        const step = this.forwardStep(this.observe())
+        const logits = step.logits
+        if (step.memory) this.memory = step.memory
         let maxL = -Infinity
         for (let a = 0; a < ULT_NUM_ACTIONS; a++) if (mask[a] && logits[a] > maxL) maxL = logits[a]
         const probs = new Array(ULT_NUM_ACTIONS).fill(0)
@@ -2974,8 +3026,44 @@ try {
         }
     }
 
+    // models/index.json lists every model the game can load (built by rl/wars_rl/model_index.py:
+    // by the GitHub Pages workflow on deploy, and by the training dashboard on your computer)
+    const MODELS: any[] = []
+    function fillModelList(side: string) {
+        const info = kindInfo(el(`${side}Kind`).value)
+        const pick = el(`${side}Pick`), input = el(`${side}Model`)
+        const list = MODELS.filter(m => m.kind === info.key)
+        pick.style.display = list.length ? '' : 'none'
+        if (!list.length) return
+        const current = input.value.trim() || info.defaultModel
+        const opt = (m: any) => {
+            const steps = m.env_steps ? ` · ${(m.env_steps / 1e6).toFixed(1)}M decisions` : ''
+            const label = (m.source === 'default' ? `${m.name} (default)` : m.name) + steps + (m.note ? ` · ${m.note}` : '')
+            return `<option value="${m.file}"${m.file === current ? ' selected' : ''}>${label.replace(/</g, '&lt;')}</option>`
+        }
+        const group = (title: string, ms: any[]) => ms.length ? `<optgroup label="${title}">${ms.map(opt).join('')}</optgroup>` : ''
+        const known = list.some(m => m.file === current)
+        pick.innerHTML = (known ? '' : `<option value="" selected>custom: ${current.replace(/</g, '&lt;')}</option>`) +
+            group('Models in the game', list.filter(m => m.source !== 'run')) +
+            group('Your training runs (this computer only)', list.filter(m => m.source === 'run'))
+    }
+    for (const side of ['left', 'right']) {
+        el(`${side}Pick`).style.display = 'none'
+        el(`${side}Pick`).addEventListener('change', () => {
+            const v = el(`${side}Pick`).value
+            if (v) el(`${side}Model`).value = v === kindInfo(el(`${side}Kind`).value).defaultModel ? '' : v
+            el(`${side}File`).value = ''
+        })
+        el(`${side}Model`).addEventListener('change', () => fillModelList(side))
+    }
+    fetch('models/index.json', {cache: 'no-store'}).then(r => r.ok ? r.json() : []).then(list => {
+        if (Array.isArray(list)) MODELS.push(...list.filter(m => m && m.file && m.kind))
+        fillModelList('left'); fillModelList('right')
+    }).catch(() => {})
+
     function refreshPicker() {
         for (const side of ['left', 'right']) {
+            fillModelList(side)
             const info = kindInfo(el(`${side}Kind`).value)
             el(`${side}ModelBox`).style.display = info.model ? '' : 'none'
             el(`${side}GreedyBox`).style.display = info.key === 'ultimate' ? '' : 'none'
@@ -2996,6 +3084,7 @@ try {
     function makeCustomPlayer(c: any, side: string, money: number): any {
         const p = makeCustomPlayerOfKind(c, side, money)
         p.maxUnits = c.maxUnits
+        p.maxUpgrades = custom.cfg && custom.cfg.upgrades >= 0 ? custom.cfg.upgrades : Infinity
         return p
     }
 
@@ -3081,6 +3170,7 @@ try {
             left: readSide('left'), right: readSide('right'),
             speed: Math.max(1, parseInt(el('pickSpeed').value) || 1),
             money: Math.max(0, parseFloat(el('pickMoney').value) || 0),
+            upgrades: el('pickUpgrades').value === '' ? -1 : Math.max(-1, parseInt(el('pickUpgrades').value)),
             limit: Math.max(0, parseFloat(el('pickLimit').value) || 0),
             repeat: el('pickRepeat').checked,
         }
@@ -3103,6 +3193,7 @@ try {
         }
         if (params.get('speed')) el('pickSpeed').value = params.get('speed')
         if (params.get('money')) el('pickMoney').value = params.get('money')
+        if (params.get('upgrades')) el('pickUpgrades').value = params.get('upgrades')
         if (params.get('limit')) el('pickLimit').value = params.get('limit')
         el('pickRepeat').checked = params.get('repeat') === '1'
     }

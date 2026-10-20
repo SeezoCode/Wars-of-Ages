@@ -1,0 +1,1090 @@
+"""Local web dashboard for training the Ultimate AI.
+
+    cd rl
+    python -m wars_rl.dashboard            # then open http://localhost:8008
+    python -m wars_rl.dashboard --port 9000 --host 0.0.0.0   # reachable from other machines (no auth!)
+
+Start / stop / resume training runs with every setting, watch scores and charts live,
+check CPU and memory, evaluate models and export them to the game. Uses only the
+Python standard library (plus the training stack itself); `pip install psutil` adds
+better CPU/memory numbers.
+
+Everything lives in rl/runs/<name>/: the trainer's own files (latest.pt, log.jsonl,
+episodes.jsonl, league/) plus train.out (console output), trainer.pid and evals.jsonl.
+Runs keep going if the dashboard is closed; reopening it picks them up again.
+"""
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import threading
+import time
+from collections import OrderedDict, deque
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+import numpy as np
+
+from . import model_index
+from .train import LIVE_FIELDS, TrainConfig
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+RL_DIR = os.path.abspath(os.path.join(HERE, ".."))
+REPO = os.path.abspath(os.path.join(RL_DIR, ".."))
+RUNS = os.path.join(RL_DIR, "runs")
+POOL_DIR = os.path.join(RL_DIR, "pool")  # networks frozen with "Freeze to pool"
+NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+try:
+    import psutil  # optional
+except ImportError:  # pragma: no cover
+    psutil = None
+
+# --------------------------------------------------------------------------- settings catalogue
+# section -> (advanced?, intro shown above the fields)
+SECTIONS = [
+    ("Run", False, ""),
+    ("Opponents", False, "Who the AI plays against during training. The numbers are relative weights "
+                         "(they don't need to add up to 1). Give more weight to whatever it is weakest against."),
+    ("Fixed opponent pool", False, "Trained networks that never change. The AI plays them until it reliably beats "
+                                   "each one (mastered); members it struggles with get more games. Tick any saved "
+                                   "model below, or use 'Freeze to pool' on a run. With automatic peaks on, the AI "
+                                   "adds a frozen copy of itself once it has mastered every member, so it climbs a "
+                                   "ladder of ever stronger opponents. All settings here can be changed live."),
+    ("Game", False, "The rules of the training games. Most match the browser game; change them to experiment."),
+    ("Computer", False, "How much of your machine training uses. Set the thread counts to your number of CPU cores."),
+    ("Network", True, "The neural network. The actor chooses actions and is what runs in the browser; the critic "
+                      "only exists during training and estimates how good a situation is. Each number is one hidden "
+                      "layer's width, so 512,512,256 means three layers. Bigger networks can learn more but train "
+                      "slower and usually need more games. Changing the network needs a new run."),
+    ("Learning (PPO)", True, "PPO collects a batch of games, then nudges the network a small, limited step towards "
+                             "the actions that worked better than expected. These settings control how big and how "
+                             "careful those steps are. The defaults are sensible; change one thing at a time."),
+    ("Exploration", True, "An AI that always plays its current favourite move never discovers better ones. "
+                          "Entropy keeps its choices a bit random; epsilon occasionally forces a random move. Both "
+                          "fade out over training."),
+    ("Rewards", True, "What the AI is told is good. Winning (+) and losing (-) is all that really matters; the "
+                      "\"hints\" give small extra rewards for progress (damaging the base, pushing the front, getting "
+                      "Trebuchets in range, earning kill money) so it learns faster early on. They fade out over "
+                      "training so the final AI optimises for winning only."),
+    ("Search & mistake review", True, "On a share of its decisions the AI thinks ahead: it copies the game, tries "
+                                       "several moves, plays each copy about 10 seconds forward with its own network and "
+                                       "scores the result with its critic. The network is then trained towards the moves "
+                                       "that did better (on top of PPO). The search gets sharper as the network improves. "
+                                       "It costs time: 1-2% of decisions searched makes training about 40% slower. "
+                                       "0 = off."),
+    ("League & saving", True, "The league is a pool of frozen past versions of the AI. Playing against them keeps it "
+                              "from forgetting how to beat old strategies."),
+]
+
+# field -> (section, label, help)
+FIELDS = {
+    "total_env_steps": ("Run", "Training length (decisions)",
+                        "Total AI decisions to train on. 10 million is about 2-3 hours on 4 cores. Learning rate, "
+                        "exploration and reward hints fade out relative to this."),
+    "init_from": ("Run", "Start from weights",
+                  "Continue from an existing model instead of a random network. The network settings must match it."),
+    "seed": ("Run", "Random seed", "Change it to get a different run with otherwise identical settings."),
+
+    "p_self": ("Opponents", "Itself (mirror)", "The current AI on both sides. Both sides produce training data."),
+    "p_past": ("Opponents", "Past versions (league)", "Frozen earlier versions; the ones it beats least are picked most."),
+    "p_classic": ("Opponents", "Classic AI (Player vs AI bot)",
+                  "The original brute-force bot. The slowest opponent to simulate, but the hardest one."),
+    "p_dqn": ("Opponents", "Old reinforcement AI (DQN)", "Your previous model, ultimate_dqn_model.json."),
+    "p_random": ("Opponents", "Random player", "Random moves; a warm-up curriculum from nearly idle to full spam."),
+    "p_pool": ("Fixed opponent pool", "Pool weight",
+               "Share of games against the pool (relative, like the other opponent weights). Ignored while the pool "
+               "is empty."),
+    "pool_models": ("Fixed opponent pool", "Pool members",
+                    "Trained networks to play against; you can add or remove members while training. 'run: ...' "
+                    "uses that run's weights as they are when loaded (they change if it keeps training); for a copy "
+                    "that never changes use 'Freeze to pool' on the run."),
+    "pool_target": ("Fixed opponent pool", "Mastered at",
+                    "Win rate (0.95 = 95%) over the last games against a member at which it counts as mastered and "
+                    "gets only a small share of games."),
+    "pool_window": ("Fixed opponent pool", "Games measured",
+                    "How many recent games per member the rate is measured over."),
+    "pool_min_games": ("Fixed opponent pool", "Minimum games",
+                       "Games against a member before it can count as mastered."),
+    "pool_use_score": ("Fixed opponent pool", "Count draws as half",
+                       "Measure a score (win 1, draw 0.5) instead of wins only. Useful once the pool holds peak "
+                       "copies of the AI itself, which tend to draw."),
+    "pool_auto": ("Fixed opponent pool", "Automatic peaks",
+                  "When every member is mastered (and stays so for the marinate time), freeze the AI and add it to "
+                  "the pool by itself. Off = you decide when to add a peak."),
+    "pool_marinate": ("Fixed opponent pool", "Marinate (updates)",
+                      "How long it keeps training after mastering everyone before it is added as a peak, so it can "
+                      "learn to win faster and more reliably."),
+    "p_script": ("Opponents", "Shield push (scripted)",
+                 "A fixed plan: Shield, Range, Catapult in turns; once the front is past the middle, Shields then "
+                 "Trebuchets up to the limit. Beats basic-troop walls, so the AI has to learn to stop it."),
+    "random_activity_power": ("Opponents", "Random player laziness",
+                              "Each game the random player acts on a fraction U^power of its turns. Higher = lazier "
+                              "(easier) random opponents on average."),
+
+    "max_ticks": ("Game", "Game time limit (ticks)",
+                  "60 ticks = 1 second; 54000 = 15 minutes. When the time runs out the game is a draw. Longer games "
+                  "show slow losses (e.g. getting out-upgraded) instead of hiding them as draws, but train slower."),
+    "start_money": ("Game", "Starting money", "Money each side starts with (the game uses 55)."),
+    "agent_max_units": ("Game", "AI max troops", "Troop limit for the AI being trained (the game's human limit is 10). "
+                                                 "The AI can only see 10 of its own troops."),
+    "classic_max_units": ("Game", "Classic AI max troops", "The classic bot uses 7 in the game."),
+    "max_upgrades": ("Game", "Max base upgrades",
+                     "How many +20% base upgrades each player (the AI and every opponent) may buy. -1 = unlimited, "
+                     "like the game; 0 = none, so games are won with troops and tactics instead of out-upgrading. "
+                     "Saved into the exported model, which then never upgrades past it in the browser either."),
+    "dqn_max_units": ("Game", "Old RL AI max troops", "The old reinforcement bot uses 10 against humans."),
+    "decision_interval": ("Game", "Decision interval (ticks)",
+                          "The AI decides every N ticks (15 = 4 times per second). Lower reacts faster but every "
+                          "game costs more compute. Saved into the model; the browser uses the same value."),
+    "nuke_freeze_ticks": ("Game", "Nuke animation freeze (ticks)",
+                          "In the browser everything pauses ~45 ticks while the nuke explodes; 0 turns it off."),
+    "worker_latency": ("Game", "Classic AI thinking delay (min ticks)",
+                       "The classic bot thinks in a background worker; its answer arrives at least this many ticks later."),
+    "worker_unit_ticks_per_frame": ("Game", "Classic AI thinking speed",
+                                    "How fast the browser runs the classic bot's simulations (units x ticks per frame). "
+                                    "Lower = slower thinking = weaker classic bot."),
+    "dqn_model": ("Game", "Old RL AI model file", "Path to the DQN weights used for the 'Old reinforcement AI' opponent."),
+
+    "num_envs": ("Computer", "Parallel games", "Games simulated at once. More = smoother learning and more RAM."),
+    "rollout_steps": ("Computer", "Steps per update",
+                      "Decisions per game collected before each learning step. Parallel games x steps = batch size."),
+    "env_threads": ("Computer", "Game threads", "CPU threads simulating games (Rust)."),
+    "torch_threads": ("Computer", "Learning threads", "CPU threads for the network update (PyTorch)."),
+    "prevent_sleep": ("Computer", "Keep the Mac awake",
+                      "macOS only: stops the computer from going to sleep on its own while training "
+                      "(sleep pauses training). Closing the lid still sleeps it."),
+    "rollout_torch_threads": ("Computer", "Inference threads",
+                              "Threads for choosing moves while playing. 1 is usually fastest for these small batches."),
+
+    "actor_hidden": ("Network", "Actor layers", "Hidden layer widths of the policy network, e.g. 512,512,256."),
+    "critic_hidden": ("Network", "Critic layers", "Hidden layer widths of the value network (training only)."),
+    "activation": ("Network", "Activation", "relu, tanh or silu (all supported by the browser)."),
+    "layernorm": ("Network", "LayerNorm", "Normalises each layer; keeps training stable with raw game numbers."),
+    "recurrent": ("Network", "Memory size (GRU)",
+                  "0 = no memory. Otherwise the policy carries this many numbers from one decision to the next "
+                  "through each game (128 is a good size), so it can remember what the opponent did and "
+                  "counter it. Training is a bit slower. Needs a game version that knows memory models."),
+    "seq_len": ("Network", "Memory training stretch",
+                "Memory models learn from stretches of this many consecutive decisions (64 = 16 s of game time). "
+                "Longer lets it learn longer-lasting memories, at more cost per update."),
+
+    "lr": ("Learning (PPO)", "Learning rate (start)", "Step size of each update. Too high = unstable, too low = slow."),
+    "lr_final": ("Learning (PPO)", "Learning rate (end)", "The learning rate shrinks linearly to this by the end."),
+    "gamma": ("Learning (PPO)", "Discount (gamma)",
+              "How much future rewards count. 0.999 looks ~1000 decisions (~4 minutes) ahead."),
+    "gae_lambda": ("Learning (PPO)", "GAE lambda",
+                   "Balance between trusting the critic (lower) and actual game outcomes (higher) when crediting moves."),
+    "clip": ("Learning (PPO)", "Clip range", "Max change of each action's probability per update (0.2 = 20%)."),
+    "epochs": ("Learning (PPO)", "Epochs per batch", "How many passes over each batch of games."),
+    "minibatch_size": ("Learning (PPO)", "Minibatch size", "Samples per gradient step."),
+    "vf_coef": ("Learning (PPO)", "Value loss weight", "How much the critic's error counts in the loss."),
+    "max_grad_norm": ("Learning (PPO)", "Gradient clipping", "Caps the size of one gradient step."),
+    "target_kl": ("Learning (PPO)", "Target KL",
+                  "Stops an update early if the policy changed more than this (a safety brake). 0 disables it."),
+
+    "ent_coef": ("Exploration", "Entropy bonus (start)", "Reward for keeping move choices varied."),
+    "ent_coef_final": ("Exploration", "Entropy bonus (end)", "Value reached at the end of training."),
+    "explore_eps": ("Exploration", "Random move chance",
+                    "Probability that a decision is replaced by a random valid (non-wait) move, e.g. 0.03 = 3%."),
+    "explore_anneal_frac": ("Exploration", "Random moves fade over",
+                            "Fraction of training over which the random-move chance fades to zero."),
+
+    "win_reward": ("Rewards", "Win reward", "Reward for winning a game."),
+    "timeout_tiebreak": ("Rewards", "Timeout tie-break",
+                         "When the time limit ends a game, the draw reward is adjusted by who is ahead: plus this "
+                         "times (own base - enemy base) / 800, at most +-this. A draw at 800 vs 400 base health then "
+                         "scores half of it better than an even draw, so every bit of base damage (Trebuchets!) "
+                         "counts. 0 = all draws are equal."),
+    "tiebreak_army": ("Rewards", "Tie-break: army weight",
+                      "Also count the difference in the troops' total health at the end (per 3000 HP). Small values "
+                      "only: a big weight teaches it to hoard troops for the final second."),
+    "loss_reward": ("Rewards", "Loss reward",
+                    "Reward for losing (usually negative). What drives learning is the gap between win, draw and "
+                    "loss: a much harsher loss than draw makes it play safe and stall; a draw close to a loss makes it "
+                    "take risks to win."),
+    "draw_reward": ("Rewards", "Draw reward", "Usually negative so stalling isn't a safe option."),
+    "time_penalty": ("Rewards", "Time cost",
+                     "Total penalty for a game that lasts the whole time limit, charged a little on every decision "
+                     "(never fades). Makes stalling and waiting cost something, so it learns to end games. Keep it "
+                     "around the size of the draw penalty; 0 turns it off."),
+    "shaping_base_damage": ("Rewards", "Hint: base damage", "x (damage dealt - damage taken) / 800 base HP."),
+    "shaping_bounty": ("Rewards", "Hint: kill money", "x (money earned from kills - money given) / 100."),
+    "shaping_front": ("Rewards", "Hint: front line", "Reward for pushing the front line forward."),
+    "shaping_siege": ("Rewards", "Hint: Trebuchets in range (classic)",
+                      "Potential-style Trebuchet hint: pays while Trebuchets move towards base-hitting range and takes "
+                      "it all back in one hit when one dies. Neutral in theory, but in practice those sudden "
+                      "penalties teach the AI to avoid Trebuchets, so it is off (0) by default."),
+    "shaping_siege_progress": ("Rewards", "Hint: Trebuchets advancing",
+                               "Pays for Trebuchets moving towards the spot where they can hit the enemy base (they are "
+                               "the only troops that hurt a defended base), and never takes it back when one dies. "
+                               "Game-specific knowledge; set 0 for a purer learner."),
+    "shaping_anneal_frac": ("Rewards", "Hints fade over", "Fraction of training over which all hints fade to zero."),
+
+    "search_frac": ("Search & mistake review", "Share of decisions searched",
+                    "0.01-0.02 is a good start. 0 turns the search off."),
+    "search_candidates": ("Search & mistake review", "Moves tried",
+                          "Per searched decision: 'wait' plus this many minus one moves, picked at random in proportion "
+                          "to how likely the AI already thinks they are."),
+    "search_rollouts": ("Search & mistake review", "Copies per move",
+                        "Each move is played out this many times with different luck; more = less noisy, slower."),
+    "search_horizon": ("Search & mistake review", "Look-ahead (decisions)",
+                       "How far each copy plays before the critic judges it. 40 = 10 s of game time at 4 decisions/s."),
+    "search_strength": ("Search & mistake review", "Search strength",
+                        "How strongly the training target leans towards the moves that scored best. Higher = trusts "
+                        "the (noisy) search more."),
+    "search_coef": ("Search & mistake review", "Search loss weight",
+                    "How much 'copy the search' counts in training compared with PPO's own update."),
+    "review_frac": ("Search & mistake review", "Review mistakes (share)",
+                    "After each batch the AI looks back at its decisions that turned out worst compared with what it "
+                    "expected, replays those exact moments with other moves (same search settings) and learns the "
+                    "move that would have done better. 0.005-0.01 is a good start; 0 = off. Uses extra memory: one "
+                    "saved game per decision of a batch."),
+    "search_every": ("Search & mistake review", "Search batch interval",
+                     "Searches are done in batches every this many steps of a rollout (bigger batches run faster)."),
+    "milestone_every": ("League & saving", "Strength copy every (updates)",
+                        "How often a small permanent copy is saved for the Real strength chart."),
+    "snapshot_every": ("League & saving", "Snapshot every (updates)", "How often a frozen copy joins the league."),
+    "max_snapshots": ("League & saving", "League size", "Most snapshots kept; the easiest ones are dropped first."),
+    "save_every": ("League & saving", "Save every (updates)", "How often latest.pt is written."),
+    "export_every": ("League & saving", "Export every (updates)",
+                     "How often the run's ultimate_model.json (browser model) is refreshed."),
+}
+HIDDEN = {"run_dir", "resume"}
+
+PRESETS = {
+    "Default": {},
+    "Quick test (~2 min)": {"num_envs": 16, "rollout_steps": 64, "total_env_steps": 200_000, "snapshot_every": 5,
+                            "save_every": 5, "export_every": 5},
+    "Beat the classic bot (continue v1)": {
+        "init_from": "checkpoints/ultimate_v1.pt", "lr": 1e-4, "total_env_steps": 30_000_000, "max_ticks": 108_000,
+        "draw_reward": -0.8, "p_self": 0.15, "p_past": 0.4, "p_classic": 0.3, "p_dqn": 0.05, "p_random": 0.1,
+        "explore_eps": 0.05, "ent_coef": 0.03},
+    "Big network": {"actor_hidden": [1024, 1024, 512, 256], "critic_hidden": [1024, 1024, 512, 256]},
+    "Small & fast network": {"actor_hidden": [256, 256], "critic_hidden": [256, 256]},
+}
+
+
+def schema() -> dict:
+    defaults = TrainConfig()
+    fields = {}
+    for f in dataclasses.fields(TrainConfig):
+        if f.name in HIDDEN:
+            continue
+        section, label, help_ = FIELDS.get(f.name, ("Other", f.name, ""))
+        v = getattr(defaults, f.name)
+        typ = "models" if f.name == "pool_models" else "bool" if isinstance(v, bool) else "list" if isinstance(v, list) else \
+            "int" if isinstance(v, int) else "float" if isinstance(v, float) else "str"
+        if f.name == "dqn_model":
+            v = os.path.relpath(v, RL_DIR)
+        fields.setdefault(section, []).append({"name": f.name, "label": label, "help": help_, "type": typ,
+                                               "default": v})
+    sections = [{"name": n, "advanced": adv, "intro": intro, "fields": fields.get(n, [])} for n, adv, intro in SECTIONS]
+    if "Other" in fields:
+        sections.append({"name": "Other", "advanced": True, "intro": "", "fields": fields["Other"]})
+    return {"sections": sections, "presets": PRESETS, "live_fields": sorted(LIVE_FIELDS)}
+
+
+# --------------------------------------------------------------------------- run bookkeeping
+def run_path(name: str) -> str:
+    if not NAME_RE.match(name or ""):
+        raise ValueError("run name: letters, digits, '-', '_' and '.' only")
+    return os.path.join(RUNS, name)
+
+
+def pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if psutil:
+        return psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    try:  # zombie check on Linux
+        with open(f"/proc/{pid}/stat") as fh:
+            return fh.read().split(")")[-1].split()[0] != "Z"
+    except OSError:
+        return True
+
+
+class Runs:
+    """Owns trainer processes and incremental readers of each run's log files."""
+
+    def __init__(self):
+        self.procs: dict[str, subprocess.Popen] = {}
+        self.cache: dict[str, dict] = {}
+        self.lock = threading.Lock()
+        self.restarting: dict[str, str] = {}  # run name -> status text
+        self.exit_codes: dict[str, int] = {}  # run name -> exit code of a trainer this dashboard started
+
+    def trainer_pid(self, name: str) -> int:
+        p = self.procs.get(name)
+        if p is not None:
+            if p.poll() is None:
+                return p.pid
+            self.exit_codes[name] = p.returncode
+            self.procs.pop(name, None)
+        try:
+            with open(os.path.join(run_path(name), "trainer.pid")) as fh:
+                pid = int(fh.read().strip() or 0)
+            return pid if pid_alive(pid) else 0
+        except (OSError, ValueError):
+            return 0
+
+    def list(self) -> list:
+        out = []
+        if not os.path.isdir(RUNS):
+            return out
+        for name in sorted(os.listdir(RUNS)):
+            d = os.path.join(RUNS, name)
+            if not (os.path.isdir(d) and NAME_RE.match(name)):
+                continue
+            if not any(os.path.exists(os.path.join(d, f)) for f in ("config.json", "log.jsonl", "train.out")):
+                continue
+            last = self._last_log(d)
+            out.append({"name": name, "running": bool(self.trainer_pid(name)), "update": last.get("update"),
+                        "env_steps": last.get("env_steps"), "modified": os.path.getmtime(d)})
+        out.sort(key=lambda r: -r["modified"])
+        return out
+
+    @staticmethod
+    def _last_log(d: str) -> dict:
+        path = os.path.join(d, "log.jsonl")
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(max(0, os.path.getsize(path) - 8192))
+                lines = fh.read().decode("utf-8", "replace").strip().splitlines()
+            return json.loads(lines[-1]) if lines else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _cached(self, name: str) -> dict:
+        c = self.cache.get(name)
+        if c is None:
+            c = self.cache[name] = {"log_pos": 0, "log": [], "ep_pos": 0, "scores": {}, "recent": deque(maxlen=200),
+                                    "last100": {}, "rew": [], "curves": {}, "ep_count": 0, "game_curves": OrderedDict()}
+        return c
+
+    def _read_new(self, path: str, pos: int):
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            return pos, []
+        if size < pos:  # file was replaced
+            pos = 0
+        with open(path, "rb") as fh:
+            fh.seek(pos)
+            data = fh.read()
+        end = data.rfind(b"\n") + 1  # only complete lines
+        rows = []
+        for line in data[:end].decode("utf-8", "replace").splitlines():
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                pass
+        return pos + end, rows
+
+    def detail(self, name: str) -> dict:
+        d = run_path(name)
+        with self.lock:
+            c = self._cached(name)
+            c["log_pos"], rows = self._read_new(os.path.join(d, "log.jsonl"), c["log_pos"])
+            keep = ("update", "env_steps", "episodes", "sps", "win", "draw", "games", "entropy", "explained_var",
+                    "approx_kl", "ep_ticks", "lr", "ent_coef", "hints_now", "explore_now", "idle_wait",
+                    "search_agree", "search_kl", "search_q_spread", "search_roots", "search_s",
+                    "review_changed", "review_n", "review_s", "rollout_s", "update_s")
+            c["log"].extend({k: r.get(k) for k in keep} for r in rows)
+            c["ep_pos"], eps = self._read_new(os.path.join(d, "episodes.jsonl"), c["ep_pos"])
+            for e in eps:
+                opp = e.get("opponent", "?")
+                s = c["scores"].setdefault(opp, {"W": 0, "D": 0, "L": 0, "ticks": 0, "enemy_base": 0, "games": 0})
+                s[e.get("result", "D")] += 1
+                s["games"] += 1
+                s["ticks"] += e.get("ticks", 0)
+                s["enemy_base"] += e.get("enemy_base", 0)
+                last = c["last100"].setdefault(opp, deque(maxlen=100))
+                last.append(e.get("result", "D"))
+                if "rewards" in e:  # runs trained before reward logging have none
+                    parts = parts_of(e["rewards"])
+                    c["rew"].append((e.get("env_steps", 0), opp, e.get("result", "D"), parts))
+                    entry = (e.get("episode"), curve_of(e.get("reward_curve") or [parts]))
+                    for key in ("all", opp):  # "all" keeps its own deque so it holds the 200 most recent games
+                        c["curves"].setdefault(key, deque(maxlen=200)).append(entry)
+                c["ep_count"] += 1
+                if "reward_curve" in e:  # minute-level fallback for games without a curves/<episode>.json
+                    c["game_curves"][c["ep_count"]] = (e.get("episode"), curve_of(e["reward_curve"]))
+                    while len(c["game_curves"]) > 300:
+                        c["game_curves"].popitem(last=False)
+                e = {k: v for k, v in e.items() if k != "reward_curve"}  # big; not needed in the table
+                e["idx"] = c["ep_count"]
+                e["has_curve"] = c["ep_count"] in c["game_curves"]
+                c["recent"].append(e)
+            log = c["log"]
+            step = max(1, len(log) // 400)
+            series = log[::step] + ([log[-1]] if log and (len(log) - 1) % step else [])
+            scores = {}
+            for opp, s in c["scores"].items():
+                last = list(c["last100"][opp])
+                scores[opp] = {"W": s["W"], "D": s["D"], "L": s["L"], "games": s["games"],
+                               "avg_minutes": s["ticks"] / max(1, s["games"]) / 3600,
+                               "avg_enemy_base": s["enemy_base"] / max(1, s["games"]),
+                               "last100": {k: last.count(k) for k in "WDL"}, "last100_n": len(last)}
+            recent = list(c["recent"])[-60:][::-1]
+            if c.get("rew_n") != len(c["rew"]):  # only recompute when games finished
+                c["rew_n"], c["rew_summary"] = len(c["rew"]), reward_summary(c["rew"], c["curves"], d)
+            rewards = c["rew_summary"]
+        config = {}
+        try:
+            with open(os.path.join(d, "config.json")) as fh:
+                config = json.load(fh)
+        except (OSError, ValueError):
+            pass
+        evals = []
+        try:
+            with open(os.path.join(d, "evals.jsonl")) as fh:
+                evals = [json.loads(x) for x in fh if x.strip()][-40:][::-1]
+        except (OSError, ValueError):
+            pass
+        changes, pending = [], {}
+        try:
+            with open(os.path.join(d, "changes.jsonl")) as fh:
+                changes = [json.loads(x) for x in fh if x.strip()][-100:]
+        except (OSError, ValueError):
+            pass
+        try:
+            with open(os.path.join(d, "live.json")) as fh:
+                pending = json.load(fh)
+        except (OSError, ValueError):
+            pass
+        strength = []
+        try:
+            with open(os.path.join(d, "strength.jsonl")) as fh:
+                strength = [json.loads(x) for x in fh if x.strip()]
+        except (OSError, ValueError):
+            pass
+        mdir = os.path.join(d, "milestones")
+        n_milestones = len([f for f in os.listdir(mdir) if f.endswith(".pt")]) if os.path.isdir(mdir) else 0
+        pid = self.trainer_pid(name)
+        sessions = []
+        try:
+            with open(os.path.join(d, "sessions.jsonl")) as fh:
+                sessions = [json.loads(x) for x in fh if x.strip()]
+        except (OSError, ValueError):
+            pass
+        output = tail(os.path.join(d, "train.out"), 80)
+        return {"name": name, "running": bool(pid), "pid": pid, "config": config, "series": series,
+                "ended": None if pid else self._why_ended(name, sessions, output, config),
+                "resumes": [{"update": e.get("update"), "env_steps": e.get("env_steps"), "time": e.get("time")}
+                            for e in sessions if e.get("event") == "start" and e.get("update")],
+                "changes": changes, "pending": pending, "rewards": rewards, "strength": strength,
+                "milestones": n_milestones, "restarting": self.restarting.get(name),
+                "latest": log[-1] if log else None, "scores": scores, "recent": recent, "evals": evals,
+                "output": output,
+                "has_checkpoint": os.path.exists(os.path.join(d, "latest.pt")), "pool": read_json(os.path.join(d, "pool.json"))}
+
+    def _why_ended(self, name: str, sessions: list, output: list, config: dict) -> dict | None:
+        """Why the last training session ended, from sessions.jsonl (or train.out for older runs)."""
+        code = self.exit_codes.get(name)
+        killed = ("It ended without saying why: something killed it (a force quit, the system running out of "
+                  "memory, a crash inside the game engine) or the computer restarted or shut down. Training "
+                  f"resumes from the last save (every {config.get('save_every', 10)} updates).")
+        if code is not None and code < 0:
+            try:
+                sig = signal.Signals(-code).name
+            except ValueError:
+                sig = str(-code)
+            killed += f" The process was killed by {sig}" + (" (on macOS/Linux this is usually the system running "
+                                                             "out of memory)." if sig == "SIGKILL" else ".")
+        if sessions:
+            last = sessions[-1]
+            if last.get("event") == "end":
+                return {k: last.get(k) for k in ("state", "reason", "error", "time", "update")}
+            return {"state": "killed", "reason": killed}
+        text = "\n".join(output)
+        if "Traceback (most recent call last)" in text:
+            err = text[text.rfind("Traceback (most recent call last)"):]
+            return {"state": "crashed", "reason": err.strip().splitlines()[-1][:300], "error": err[-4000:]}
+        if "interrupted" in text[-2000:]:
+            return {"state": "stopped", "reason": "stopped (Stop button, Ctrl+C or kill)"}
+        if output:
+            return {"state": "killed", "reason": killed}
+        return None
+
+    def game(self, name: str, idx: int) -> dict:
+        """One recent game's reward history (cumulative REWARD_PARTS per game minute)."""
+        run_path(name)
+        with self.lock:
+            c = self._cached(name)
+            entry = c["game_curves"].get(idx)
+            info = next((e for e in c["recent"] if e.get("idx") == idx), None)
+        if entry is None or info is None:
+            raise ValueError("that game is no longer in the recent list")
+        episode, curve = entry
+        try:  # the full history, sampled every 5 s of game time
+            with open(os.path.join(run_path(name), "curves", f"{episode}.json")) as fh:
+                fine = json.load(fh)
+            return {"parts": REWARD_PARTS, "every": fine["every"], "curve": curve_of(fine["curve"]), "game": info,
+                    "troops": fine.get("troops"), "state": fine.get("state"), "players": fine.get("players")}
+        except (OSError, ValueError, KeyError, TypeError):
+            return {"parts": REWARD_PARTS, "every": 3600, "curve": curve, "game": info}
+
+    def start(self, name: str, config: dict, resume: bool) -> dict:
+        d = run_path(name)
+        if self.trainer_pid(name):
+            raise ValueError(f"{name} is already training")
+        exists = os.path.exists(os.path.join(d, "latest.pt"))
+        if exists and not resume:
+            raise ValueError(f"run '{name}' already exists: resume it or choose a new name")
+        os.makedirs(d, exist_ok=True)
+        valid = {f.name for f in dataclasses.fields(TrainConfig)}
+        cfg = {k: v for k, v in config.items() if k in valid and k not in HIDDEN}
+        for k in ("init_from", "dqn_model"):
+            if cfg.get(k):
+                cfg[k] = os.path.abspath(os.path.join(RL_DIR, cfg[k]))
+        cfg["run_dir"] = d
+        cfg["resume"] = True
+        try:  # a live change that never reached the old trainer must not override these settings
+            os.remove(os.path.join(d, "live.json"))
+        except OSError:
+            pass
+        cfg_path = os.path.join(d, "dashboard_config.json")
+        with open(cfg_path, "w") as fh:
+            json.dump(cfg, fh, indent=2)
+        out = open(os.path.join(d, "train.out"), "a")
+        out.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} {'resume' if exists else 'start'} from dashboard =====\n")
+        out.flush()
+        kwargs = {}
+        if os.name == "nt":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True  # keeps training if the dashboard is stopped with Ctrl+C
+        p = subprocess.Popen([sys.executable, "-u", "-m", "wars_rl.train", "--config", cfg_path], cwd=RL_DIR,
+                             stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kwargs)
+        self.procs[name] = p
+        with open(os.path.join(d, "trainer.pid"), "w") as fh:
+            fh.write(str(p.pid))
+        self.cache.pop(name, None)
+        self.exit_codes.pop(name, None)
+        if not self.restarting.get(name, "").endswith("…"):
+            self.restarting.pop(name, None)  # clear an old restart error
+        return {"pid": p.pid}
+
+    def stop(self, name: str) -> dict:
+        pid = self.trainer_pid(name)
+        if not pid:
+            raise ValueError(f"{name} is not training")
+        if os.name == "nt":
+            os.kill(pid, signal.CTRL_BREAK_EVENT)
+        else:
+            os.kill(pid, signal.SIGTERM)  # the trainer saves latest.pt, then exits
+        return {"stopping": pid}
+
+    def live(self, name: str, changes: dict) -> dict:
+        """Queue settings for a running trainer; it picks them up before its next update."""
+        d = run_path(name)
+        if not self.trainer_pid(name):
+            raise ValueError(f"{name} is not training (change the settings with Resume instead)")
+        bad = [k for k in changes if k not in LIVE_FIELDS]
+        if bad:
+            raise ValueError(f"these settings need a restart: {', '.join(bad)}")
+        clean = {}
+        bools = {f.name for f in dataclasses.fields(TrainConfig) if f.type in ("bool", bool)}
+        for k, v in changes.items():
+            if k == "pool_models":
+                if not (isinstance(v, list) and all(isinstance(x, str) for x in v)):
+                    raise ValueError("pool_models: expected a list of model paths")
+            elif k in bools:
+                if not isinstance(v, bool):
+                    raise ValueError(f"{k}: expected true or false")
+            elif isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
+                raise ValueError(f"{k}: expected a number, got {v!r}")
+            clean[k] = v
+        path = os.path.join(d, "live.json")
+        with self.lock:
+            pending = {}
+            try:
+                with open(path) as fh:
+                    pending = json.load(fh)
+            except (OSError, ValueError):
+                pass
+            pending.update(clean)
+            tmp = path + ".tmp"
+            with open(tmp, "w") as fh:
+                json.dump(pending, fh)
+            os.replace(tmp, path)  # atomic: the trainer never sees a half-written file
+        return {"pending": pending}
+
+    def restart(self, name: str, config: dict) -> dict:
+        """Stop (which saves), wait for the trainer to exit, then resume with new settings."""
+        run_path(name)
+        if self.restarting.get(name, "").endswith("…"):
+            raise ValueError(f"{name} is already restarting")
+        self.restarting[name] = "saving and stopping…"
+
+        def work():
+            try:
+                if self.trainer_pid(name):
+                    self.stop(name)
+                deadline = time.time() + 600
+                while self.trainer_pid(name):
+                    if time.time() > deadline:
+                        self.restarting[name] = "the old trainer did not exit; stop it and resume by hand"
+                        return
+                    time.sleep(0.5)
+                self.restarting[name] = "starting…"
+                self.start(name, config, True)
+                self.restarting.pop(name, None)
+            except Exception as e:  # shown in the run view
+                self.restarting[name] = f"restart failed: {e}"
+
+        threading.Thread(target=work, daemon=True).start()
+        return {"restarting": True}
+
+
+REWARD_PARTS = ("outcome", "base_dealt", "base_taken", "kill_earned", "kill_given", "front", "trebuchet", "time")
+# games logged before the split had 5 net parts; shown as dealt / earned / front line
+OLD_PARTS = {"outcome": "outcome", "base_damage": "base_dealt", "kill_money": "kill_earned", "position": "front",
+             "time": "time"}
+OLD_ORDER = ("outcome", "base_damage", "kill_money", "position", "time")
+
+
+def parts_of(rewards: dict) -> list:
+    if "base_damage" in rewards:
+        rewards = {OLD_PARTS[k]: v for k, v in rewards.items() if k in OLD_PARTS}
+    return [rewards.get(k, 0.0) for k in REWARD_PARTS]
+
+
+def curve_of(curve: list) -> list:
+    return [parts_of(dict(zip(OLD_ORDER, row))) if len(row) == len(OLD_ORDER) else row for row in curve]
+
+
+FINE_CACHE: "OrderedDict[str, np.ndarray]" = OrderedDict()  # curves/<episode>.json already read
+
+
+def fine_curve(run_dir: str, episode) -> "np.ndarray | None":
+    """A game's 5-second reward history (samples x REWARD_PARTS), or None if its file is gone."""
+    if episode is None:
+        return None
+    key = os.path.join(run_dir, "curves", f"{episode}.json")
+    if key in FINE_CACHE:
+        FINE_CACHE.move_to_end(key)
+        return FINE_CACHE[key]
+    try:
+        with open(key) as fh:
+            arr = np.asarray(curve_of(json.load(fh)["curve"]), dtype=np.float32)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    FINE_CACHE[key] = arr
+    while len(FINE_CACHE) > 2000:
+        FINE_CACHE.popitem(last=False)
+    return arr
+
+
+def average_curve(cs: list) -> np.ndarray:
+    """Mean of running totals; a game that has ended keeps its final total."""
+    length = max(len(cv) for cv in cs)
+    out = np.empty((len(cs), length, len(REWARD_PARTS)), dtype=np.float32)
+    for i, cv in enumerate(cs):
+        out[i, :len(cv)] = cv
+        out[i, len(cv):] = cv[-1]
+    return out.mean(0)
+
+
+def reward_summary(rew: list, curves: dict, run_dir: str) -> dict:
+    """Average reward per game by source: over training, during a game, and by opponent and result."""
+    def mean(rows):
+        n = len(rows)
+        return [sum(r[i] for r in rows) / n for i in range(len(REWARD_PARTS))] if n else None
+
+    groups = {"all": rew}
+    for r in rew:
+        groups.setdefault(r[1], []).append(r)
+    over_training, by_result = {}, {}
+    for g, rows in groups.items():
+        # ~60 equal-width bins over training; games finished in the same update share a bin
+        lo, hi = (rows[0][0], rows[-1][0]) if rows else (0, 0)
+        width = max(1.0, (hi - lo) / 60)
+        bins = {}
+        for r in rows:
+            bins.setdefault(int((r[0] - lo) / width), []).append(r)
+        over_training[g] = [[sum(r[0] for r in b) / len(b), mean([r[3] for r in b]), len(b)]
+                            for _, b in sorted(bins.items())]
+        last = rows[-300:]
+        by_result[g] = {res: {"n": len(sel), "parts": mean([r[3] for r in sel])}
+                        for res in "WDL" for sel in [[r for r in last if r[2] == res]] if sel}
+    during = {}
+    for g, q in curves.items():
+        if not q:
+            continue
+        # every 5 s from the games' own history files; per minute (from the log) while too few files exist
+        fine = [f for f in (fine_curve(run_dir, ep) for ep, _ in q) if f is not None and len(f)]
+        if len(fine) >= len(q) / 2:
+            cs, every = fine, 300
+        else:
+            cs, every = [np.asarray(cv, dtype=np.float32) for _, cv in q], 3600
+        avg = average_curve(cs)
+        during[g] = {"games": len(cs), "every": every, "minutes": np.round(avg, 4).tolist()}
+    return {"parts": REWARD_PARTS, "over_training": over_training, "during": during, "by_result": by_result}
+
+
+def tail(path: str, n: int) -> list:
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(max(0, os.path.getsize(path) - 64 * 1024))
+            lines = fh.read().decode("utf-8", "replace").splitlines()
+        return lines[-n:]
+    except OSError:
+        return []
+
+
+# --------------------------------------------------------------------------- background jobs (evaluate / export)
+class Jobs:
+    def __init__(self):
+        self.jobs: list[dict] = []
+        self.lock = threading.Lock()
+
+    def submit(self, kind: str, title: str, cmd: list, on_line=None, on_done=None) -> dict:
+        job = {"id": len(self.jobs) + 1, "kind": kind, "title": title, "status": "running", "output": [],
+               "started": time.time(), "ended": None}
+        with self.lock:
+            self.jobs.append(job)
+
+        def work():
+            try:
+                p = subprocess.Popen(cmd, cwd=RL_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                     bufsize=1)
+                for line in p.stdout:
+                    line = line.rstrip("\n")
+                    if on_line:
+                        on_line(line)
+                    if not line.startswith("JSON "):
+                        job["output"].append(line)
+                        del job["output"][:-200]
+                code = p.wait()
+                job["status"] = "done" if code == 0 else f"failed (exit {code})"
+            except Exception as e:  # noqa: BLE001
+                job["status"] = f"failed: {e}"
+            job["ended"] = time.time()
+            if on_done:
+                on_done(job)
+
+        threading.Thread(target=work, daemon=True).start()
+        return job
+
+    def list(self) -> list:
+        return [dict(j, output=j["output"][-30:]) for j in self.jobs[-20:]][::-1]
+
+
+def policies() -> list:
+    """Models that can be evaluated or used as opponents."""
+    out = []
+    for name in sorted(os.listdir(RUNS)) if os.path.isdir(RUNS) else []:
+        p = os.path.join(RUNS, name, "latest.pt")
+        if os.path.exists(p):
+            out.append({"label": f"run: {name}", "path": os.path.relpath(p, RL_DIR)})
+    ck = os.path.join(RL_DIR, "checkpoints")
+    for f in sorted(os.listdir(ck)) if os.path.isdir(ck) else []:
+        if f.endswith(".pt"):
+            out.append({"label": f"checkpoint: {f}", "path": os.path.join("checkpoints", f)})
+    for f in sorted(os.listdir(POOL_DIR)) if os.path.isdir(POOL_DIR) else []:
+        if f.endswith(".pt"):
+            out.append({"label": f"frozen: {f}", "path": os.path.join("pool", f)})
+    for name in sorted(os.listdir(RUNS)) if os.path.isdir(RUNS) else []:
+        pk = os.path.join(RUNS, name, "peaks")
+        for f in sorted(os.listdir(pk)) if os.path.isdir(pk) else []:
+            if f.endswith(".pt"):
+                out.append({"label": f"peak: {name}/{f}", "path": os.path.relpath(os.path.join(pk, f), RL_DIR)})
+    md = os.path.join(REPO, "models")
+    for f in sorted(os.listdir(md)) if os.path.isdir(md) else []:
+        if f.endswith(".json") and f != "index.json":
+            out.append({"label": f"model: models/{f}", "path": os.path.relpath(os.path.join(md, f), RL_DIR)})
+    if os.path.exists(os.path.join(REPO, "ultimate_model.json")):
+        out.append({"label": "game model: ultimate_model.json", "path": os.path.relpath(
+            os.path.join(REPO, "ultimate_model.json"), RL_DIR)})
+    return out
+
+
+def read_json(path: str):
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def freeze(body: dict) -> dict:
+    """Copy a run's current actor into rl/pool/ as a fixed opponent that never changes."""
+    import torch
+    name = body["run"]
+    src = os.path.join(run_path(name), "latest.pt")
+    if not os.path.exists(src):
+        raise ValueError("this run has no checkpoint yet")
+    ck = torch.load(src, map_location="cpu", weights_only=False)
+    actor = {k[len("actor."):]: v for k, v in ck["state_dict"].items() if k.startswith("actor.")}
+    os.makedirs(POOL_DIR, exist_ok=True)
+    out = os.path.join(POOL_DIR, f"{name}-u{ck.get('update', 0)}.pt")
+    torch.save({"model_config": ck["model_config"], "actor": actor, "update": ck.get("update"),
+                "env_steps": ck.get("env_steps"), "train_config": {"decision_interval": ck.get(
+                    "train_config", {}).get("decision_interval")}}, out)
+    return {"path": os.path.relpath(out, RL_DIR)}
+
+
+def safe_policy(path: str) -> str:
+    full = os.path.abspath(os.path.join(RL_DIR, path))
+    if not (full.startswith(REPO + os.sep) and full.endswith((".pt", ".json")) and os.path.exists(full)):
+        raise ValueError(f"unknown model: {path}")
+    return full
+
+
+# --------------------------------------------------------------------------- system usage
+_prev_cpu = {"t": None}
+
+
+def system_usage(runs: Runs) -> dict:
+    info = {"cores": os.cpu_count(), "psutil": bool(psutil)}
+    trainers = [{"run": r["name"], "pid": runs.trainer_pid(r["name"])} for r in runs.list() if r["running"]]
+    if psutil:
+        info["cpu_percent"] = psutil.cpu_percent(interval=None)
+        info["per_core"] = psutil.cpu_percent(interval=None, percpu=True)
+        vm = psutil.virtual_memory()
+        info["mem_used_gb"], info["mem_total_gb"] = (vm.total - vm.available) / 1e9, vm.total / 1e9
+        for t in trainers:
+            try:
+                pr = psutil.Process(t["pid"])
+                procs = [pr] + pr.children(recursive=True)
+                t["cpu_percent"] = sum(p.cpu_percent(interval=None) for p in procs)
+                t["mem_gb"] = sum(p.memory_info().rss for p in procs) / 1e9
+            except psutil.Error:
+                pass
+    else:
+        try:
+            with open("/proc/stat") as fh:
+                parts = [int(x) for x in fh.readline().split()[1:]]
+            idle, total = parts[3] + parts[4], sum(parts)
+            prev = _prev_cpu["t"]
+            _prev_cpu["t"] = (idle, total)
+            if prev and total > prev[1]:
+                info["cpu_percent"] = 100.0 * (1 - (idle - prev[0]) / (total - prev[1]))
+            mem = {}
+            with open("/proc/meminfo") as fh:
+                for line in fh:
+                    k, v = line.split(":")
+                    mem[k] = int(v.split()[0]) * 1024
+            info["mem_used_gb"] = (mem["MemTotal"] - mem.get("MemAvailable", mem["MemFree"])) / 1e9
+            info["mem_total_gb"] = mem["MemTotal"] / 1e9
+        except (OSError, ValueError, KeyError, IndexError):
+            pass
+        if hasattr(os, "getloadavg"):
+            info["load"] = os.getloadavg()
+        for t in trainers:
+            try:  # works on Linux and macOS
+                out = subprocess.run(["ps", "-o", "%cpu=,rss=", "-p", str(t["pid"])], capture_output=True, text=True,
+                                     timeout=2).stdout.split()
+                t["cpu_percent"], t["mem_gb"] = float(out[0]), int(out[1]) * 1024 / 1e9
+            except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                pass
+    info["trainers"] = trainers
+    return info
+
+
+# --------------------------------------------------------------------------- HTTP
+RUNS_STATE = Runs()
+JOBS = Jobs()
+
+
+def evaluate_job(body: dict) -> dict:
+    name = body.get("run")
+    policy = safe_policy(body["policy"])
+    opps = []
+    for o in body.get("opponents", []):
+        opps.append(o if o in ("classic", "dqn", "random", "script") else safe_policy(o))
+    if not opps:
+        raise ValueError("pick at least one opponent")
+    games = max(2, min(2000, int(body.get("games", 100))))
+    max_ticks = max(600, int(float(body.get("max_minutes", 15)) * 3600))
+    threads = max(1, min(os.cpu_count() or 4, int(body.get("threads", 4))))
+    cmd = [sys.executable, "-u", "-m", "wars_rl.evaluate", policy, "--opponents", ",".join(opps), "--games",
+           str(games), "--max-ticks", str(max_ticks), "--threads", str(threads), "--envs", str(min(games, 50)),
+           "--json", "--max-upgrades", str(int(body.get("max_upgrades", -1)))]
+    if body.get("greedy"):
+        cmd.append("--greedy")
+    out_file = os.path.join(run_path(name), "evals.jsonl") if name else None
+    label = os.path.relpath(policy, REPO)
+
+    def on_line(line):
+        if line.startswith("JSON ") and out_file:
+            rec = json.loads(line[5:])
+            rec.update(policy=label, time=time.time(),
+                       opponent=os.path.relpath(rec["opponent"], REPO) if os.sep in rec["opponent"] else rec["opponent"])
+            with open(out_file, "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+
+    return JOBS.submit("evaluate", f"evaluate {label} vs {', '.join(os.path.basename(o) for o in opps)}", cmd, on_line)
+
+
+def strength_job(body: dict) -> dict:
+    """Play saved milestones (milestones/u*.pt) against fixed opponents: real strength over the run."""
+    name = body["run"]
+    d = run_path(name)
+    mdir = os.path.join(d, "milestones")
+    files = sorted(f for f in os.listdir(mdir) if f.endswith(".pt")) if os.path.isdir(mdir) else []
+    if not files:
+        raise ValueError("no milestones yet: the trainer saves one every milestone_every updates (default 50)")
+    opps = [o for o in body.get("opponents", ["dqn"]) if o in ("classic", "dqn", "script")]
+    if not opps:
+        raise ValueError("pick at least one opponent")
+    games = max(4, min(1000, int(body.get("games", 40))))
+    max_ticks = max(600, int(float(body.get("max_minutes", 15)) * 3600))
+    points = max(2, min(60, int(body.get("points", 8))))
+    threads = max(1, min(os.cpu_count() or 4, int(body.get("threads", 4))))
+    out_file = os.path.join(d, "strength.jsonl")
+    done = set()
+    try:
+        with open(out_file) as fh:
+            for x in fh:
+                r = json.loads(x)
+                done.add((r["milestone"], r["opponent"], r["games"], r["max_ticks"]))
+    except (OSError, ValueError, KeyError):
+        pass
+    # evenly spread over the run, always including the newest
+    idx = sorted({round(i * (len(files) - 1) / (points - 1)) for i in range(points)}) if len(files) > 1 else [0]
+    todo = [files[i] for i in idx if any((files[i], o, games, max_ticks) not in done for o in opps)]
+    if not todo:
+        raise ValueError("those milestones are already measured with these settings; add points or games")
+    cmd = [sys.executable, "-u", "-m", "wars_rl.evaluate", *[os.path.join(mdir, f) for f in todo],
+           "--opponents", ",".join(opps), "--games", str(games), "--max-ticks", str(max_ticks),
+           "--threads", str(threads), "--envs", str(min(games, 50)), "--json",
+           "--max-upgrades", str(int(body.get("max_upgrades", -1)))]
+
+    def on_line(line):
+        if line.startswith("JSON "):
+            rec = json.loads(line[5:])
+            rec.update(milestone=os.path.basename(rec.pop("policy_path")), time=time.time())
+            with open(out_file, "a") as fh:
+                fh.write(json.dumps(rec) + "\n")
+
+    return JOBS.submit("strength", f"strength of {name}: {len(todo)} milestones vs {', '.join(opps)}", cmd, on_line)
+
+
+def export_job(body: dict) -> dict:
+    name = body["run"]
+    src = os.path.join(run_path(name), "latest.pt")
+    if not os.path.exists(src):
+        raise ValueError("this run has no checkpoint yet")
+    targets = [os.path.join(run_path(name), "ultimate_model.json")]
+    if body.get("model_name"):  # models/<name>.json: listed in the game's model picker (and on GitHub Pages once pushed)
+        mn = body["model_name"].removesuffix(".json")
+        if not NAME_RE.match(mn):
+            raise ValueError("model name: letters, digits, '-', '_' and '.' only")
+        targets.append(os.path.join(REPO, "models", mn + ".json"))
+    if body.get("to_game"):
+        targets.append(os.path.join(REPO, "ultimate_model.json"))
+    cmd = [sys.executable, "-u", "-m", "wars_rl.export", src, *targets]
+    if body.get("note"):
+        cmd += ["--note", str(body["note"])[:200]]
+    if body.get("checkpoint_name"):
+        ck = body["checkpoint_name"]
+        if not NAME_RE.match(ck):
+            raise ValueError("checkpoint name: letters, digits, '-', '_' and '.' only")
+        os.makedirs(os.path.join(RL_DIR, "checkpoints"), exist_ok=True)
+        cmd += ["--checkpoint-out", os.path.join(RL_DIR, "checkpoints", ck if ck.endswith(".pt") else ck + ".pt")]
+    return JOBS.submit("export", f"export {name} → " + ", ".join(os.path.relpath(t, REPO) for t in targets[1:] or targets), cmd)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):  # keep the console quiet
+        pass
+
+    def _send(self, code: int, body, ctype="application/json"):
+        data = body if isinstance(body, bytes) else json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+        try:
+            if url.path in ("/", "/index.html"):
+                with open(os.path.join(HERE, "dashboard.html"), "rb") as fh:
+                    return self._send(200, fh.read(), "text/html; charset=utf-8")
+            if url.path == "/api/schema":
+                return self._send(200, schema())
+            if url.path == "/api/runs":
+                return self._send(200, RUNS_STATE.list())
+            if url.path == "/api/run":
+                return self._send(200, RUNS_STATE.detail(q.get("name", "")))
+            if url.path == "/api/game":
+                return self._send(200, RUNS_STATE.game(q.get("name", ""), int(q.get("idx", 0))))
+            if url.path == "/api/system":
+                return self._send(200, system_usage(RUNS_STATE))
+            if url.path == "/api/jobs":
+                return self._send(200, JOBS.list())
+            if url.path == "/api/policies":
+                return self._send(200, policies())
+            return self._send(404, {"error": "not found"})
+        except ValueError as e:
+            return self._send(400, {"error": str(e)})
+
+    def do_POST(self):
+        url = urlparse(self.path)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(n) or b"{}")
+            if url.path == "/api/train":
+                return self._send(200, RUNS_STATE.start(body["name"], body.get("config", {}), bool(body.get("resume"))))
+            if url.path == "/api/stop":
+                return self._send(200, RUNS_STATE.stop(body["name"]))
+            if url.path == "/api/live":
+                return self._send(200, RUNS_STATE.live(body["name"], dict(body.get("changes") or {})))
+            if url.path == "/api/restart":
+                return self._send(200, RUNS_STATE.restart(body["name"], body.get("config", {})))
+            if url.path == "/api/evaluate":
+                return self._send(200, evaluate_job(body))
+            if url.path == "/api/freeze":
+                return self._send(200, freeze(body))
+            if url.path == "/api/strength":
+                return self._send(200, strength_job(body))
+            if url.path == "/api/export":
+                return self._send(200, export_job(body))
+            return self._send(404, {"error": "not found"})
+        except (ValueError, KeyError, TypeError) as e:
+            return self._send(400, {"error": str(e)})
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--port", type=int, default=8008)
+    ap.add_argument("--host", default="127.0.0.1", help="127.0.0.1 = only this computer (recommended)")
+    args = ap.parse_args()
+    os.makedirs(RUNS, exist_ok=True)
+    def keep_model_list_fresh():  # runs re-export their model every few updates; keep the game's picker current
+        while True:
+            try:
+                model_index.write()
+            except Exception as e:  # never take the dashboard down over this
+                print("model list:", e)
+            time.sleep(120)
+
+    threading.Thread(target=keep_model_list_fresh, daemon=True).start()
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"Wars of Ages training dashboard: http://{'localhost' if args.host in ('127.0.0.1', '0.0.0.0') else args.host}:{args.port}")
+    print("Ctrl+C stops the dashboard; training runs keep going in the background.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

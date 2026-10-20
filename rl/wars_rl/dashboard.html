@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wars of Ages training</title>
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --accent: #2a78d6;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --good: #0ca30c; --critical: #d03b3b; --neutral: #a9a8a1; --good-text: #006300;
+  --hover: rgba(11,11,11,0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --neutral: #6b6a65; --good-text: #0ca30c; --hover: rgba(255,255,255,0.05);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --accent: #3987e5;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --neutral: #6b6a65; --good-text: #0ca30c; --hover: rgba(255,255,255,0.05);
+}
+* { box-sizing: border-box }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif }
+header { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface) }
+header h1 { font-size: 17px; margin: 0; font-weight: 650 }
+#sys { color: var(--ink-2); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 18px; font-variant-numeric: tabular-nums }
+#sys b { color: var(--ink); font-weight: 600 }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 50px) }
+@media (max-width: 800px) { .layout { grid-template-columns: 1fr } }
+aside { border-right: 1px solid var(--border); padding: 14px; background: var(--surface) }
+main { padding: 16px 20px 60px; min-width: 0 }
+h2 { font-size: 15px; margin: 22px 0 8px; font-weight: 650 }
+h2:first-child { margin-top: 0 }
+.muted { color: var(--muted) } .small { font-size: 12px } .ink2 { color: var(--ink-2) }
+button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); cursor: pointer }
+button:hover { background: var(--hover) }
+button.primary { background: var(--accent); color: white; border-color: transparent; font-weight: 600 }
+button.danger { color: var(--critical) }
+button:disabled { opacity: .5; cursor: default }
+input, select { font: inherit; padding: 4px 7px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface); color: var(--ink) }
+input[type=number] { width: 120px } input[type=text] { width: 180px }
+.runlist { list-style: none; padding: 0; margin: 8px 0 }
+.runlist li { padding: 7px 9px; border-radius: 8px; cursor: pointer; margin-bottom: 2px }
+.runlist li:hover { background: var(--hover) }
+.runlist li.sel { background: var(--hover); outline: 1px solid var(--border) }
+.runlist .meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2) }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--neutral) }
+.pill.on::before { background: var(--good) }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)) }
+.charts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)) }
+.charts.three { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)) }  /* auto-fit: the 3 charts share the full width */
+@media (max-width: 520px) { .charts { grid-template-columns: 1fr } }
+.score-big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: .5px }
+.score-title { font-weight: 600; display: flex; align-items: center; gap: 7px }
+.key { display: inline-block; width: 14px; height: 2px; border-radius: 2px }
+.wdl { display: flex; gap: 2px; height: 10px; margin: 8px 0 4px }
+.wdl span { display: block; height: 100%; border-radius: 3px; min-width: 0 }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap }
+th { color: var(--ink-2); font-weight: 600; font-size: 12px }
+.tablewrap { overflow-x: auto }
+.res-W { color: var(--good-text); font-weight: 600 } .res-L { color: var(--critical); font-weight: 600 } .res-D { color: var(--ink-2) }
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; overflow: auto; max-height: 340px; font-size: 12px; margin: 0 }
+details.section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px }
+details.section > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; list-style-position: inside }
+details.section .body { padding: 0 14px 12px }
+.adv { font-size: 11px; font-weight: 600; color: var(--ink-2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; margin-left: 6px }
+.intro { color: var(--ink-2); margin: 0 0 10px; max-width: 760px }
+.field { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); gap: 4px 14px; padding: 7px 0; border-top: 1px solid var(--grid) }
+.field label { font-weight: 550 }
+.field .help { grid-column: 2; color: var(--muted); font-size: 12px; max-width: 640px }
+.field.changed > label::after { content: " •"; color: var(--accent) }
+@media (max-width: 600px) { .field { grid-template-columns: 1fr } .field .help { grid-column: 1 } }
+.chart-card h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600 }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin: 4px 0 2px }
+.legend span { display: inline-flex; align-items: center; gap: 6px }
+.chart { position: relative }
+.chart svg { display: block; width: 100%; overflow: visible }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); white-space: nowrap; display: none; z-index: 5 }
+.tip .v { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums } .tip .n { color: var(--ink-2) }
+.linkbtn { background: none; border: 0; color: var(--accent); padding: 0; font-size: 12px; cursor: pointer }
+.err { color: var(--critical) } .note { color: var(--ink-2); font-size: 13px }
+.empty { color: var(--muted); padding: 30px; text-align: center }
+</style>
+</head>
+<body>
+<header>
+  <h1>Wars of Ages · training</h1>
+  <div id="sys">loading…</div>
+</header>
+<div class="layout">
+  <aside>
+    <button class="primary" id="newRunBtn" style="width: 100%">+ New training run</button>
+    <h2 style="margin-top: 16px">Runs</h2>
+    <ul class="runlist" id="runlist"></ul>
+    <h2>Jobs</h2>
+    <div id="jobs" class="small muted">none yet</div>
+  </aside>
+  <main id="main"><div class="empty">Pick a run on the left or start a new one.</div></main>
+</div>
+
+<script>
+'use strict'
+// ---------- tiny helpers (textContent only: run names, opponents and logs are data) ----------
+const $ = s => document.querySelector(s)
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue
+    if (k === 'class') e.className = v
+    else if (k === 'style') e.setAttribute('style', v)
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v)
+    else if (k in e && typeof v !== 'string') e[k] = v
+    else e.setAttribute(k, v === true ? '' : v)
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false)
+    e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)))
+  return e
+}
+const svgNS = 'http://www.w3.org/2000/svg'
+function s(tag, attrs, ...kids) {
+  const e = document.createElementNS(svgNS, tag)
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v)
+  for (const kid of kids) e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)))
+  return e
+}
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)} : {})
+  const j = await r.json()
+  if (!r.ok) throw new Error(j.error || r.statusText)
+  return j
+}
+const fmtN = n => n == null ? '–' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 1 : 2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + 'k' : String(Math.round(n))
+const pct = v => v == null ? '–' : Math.round(v * 100) + '%'
+const ago = t => { const d = Date.now() / 1000 - t; return d < 90 ? Math.round(d) + ' s ago' : d < 5400 ? Math.round(d / 60) + ' min ago' : d < 129600 ? Math.round(d / 3600) + ' h ago' : Math.round(d / 86400) + ' d ago' }
+
+// opponent identity -> fixed categorical slot (never re-assigned by rank)
+const OPP = {
+  classic: {label: 'Classic AI', color: 'var(--s1)'},
+  dqn: {label: 'Old RL AI (DQN)', color: 'var(--s2)'},
+  past: {label: 'Past versions', color: 'var(--s3)'},
+  random: {label: 'Random', color: 'var(--s4)'},
+  self: {label: 'Itself (mirror)', color: 'var(--neutral)'},
+  script: {label: 'Shield push (scripted)', color: 'var(--s5)'},
+  pool: {label: 'Fixed pool', color: 'var(--s6)'},
+}
+const OPP_ORDER = ['classic', 'dqn', 'pool', 'past', 'random', 'script', 'self']
+const oppLabel = k => (OPP[k] || {label: k}).label
+
+const ENDED = {finished: 'finished', stopped: 'stopped', crashed: 'crashed', killed: 'killed'}
+// ---------- state ----------
+let SCHEMA = null, POLICIES = [], selected = null, view = 'empty', lastDetail = null, formState = null
+
+// ---------- line chart (SVG; crosshair tooltip; direct end labels; table view) ----------
+function lineChart({title, subtitle, series, yMax, yMin, yFmt = v => v.toFixed(2), xFmt = fmtN, xLabel = 'decisions trained', marks = []}) {
+  const card = h('div', {class: 'card chart-card'})
+  const tableBtn = h('button', {class: 'linkbtn'}, 'table')
+  card.append(h('div', {class: 'chart-head'}, h('div', {}, h('h3', {}, title), subtitle ? h('div', {class: 'small muted'}, subtitle) : null), tableBtn))
+  const live = series.filter(s => s.points.length)
+  if (!live.length) { card.append(h('div', {class: 'empty small'}, 'no data yet')); return card }
+  if (live.length >= 2) card.append(h('div', {class: 'legend'}, live.map(se => h('span', {}, h('i', {class: 'key', style: se.dash ? `background: repeating-linear-gradient(90deg, ${se.color} 0 4px, transparent 4px 7px)` : `background:${se.color}`}), se.name))))
+  const box = h('div', {class: 'chart'}); card.append(box)
+  const tip = h('div', {class: 'tip'}); box.append(tip)
+  let showTable = false
+  tableBtn.onclick = () => { showTable = !showTable; tableBtn.textContent = showTable ? 'chart' : 'table'; draw() }
+  const W = 640, H = 210, L = 46, R = 92, T = 10, B = 30
+  const xs = [...new Set(live.flatMap(se => se.points.map(p => p[0])))].sort((a, b) => a - b)
+  const xmin = xs[0], xmax = xs[xs.length - 1] === xmin ? xmin + 1 : xs[xs.length - 1]
+  const vals = live.flatMap(se => se.points.map(p => p[1]))
+  let ymax = yMax ?? Math.max(1e-9, ...vals)
+  if (yMax == null) { const m = Math.pow(10, Math.floor(Math.log10(ymax))); ymax = Math.ceil(ymax / m * 1.05) * m }
+  let ymin = yMin ?? Math.min(0, ...vals)
+  if (ymin < 0 && yMin == null) { const m = Math.pow(10, Math.floor(Math.log10(-ymin))); ymin = -Math.ceil(-ymin / m) * m }
+  const X = x => L + (x - xmin) / (xmax - xmin) * (W - L - R)
+  const Y = y => T + (1 - (y - ymin) / (ymax - ymin)) * (H - T - B)
+  function draw() {
+    box.querySelectorAll('svg, .tablewrap').forEach(e => e.remove())
+    if (showTable) {
+      const rows = xs.slice(-15).reverse()
+      box.append(h('div', {class: 'tablewrap'}, h('table', {},
+        h('tr', {}, h('th', {}, xLabel), live.map(se => h('th', {}, se.name))),
+        rows.map(x => h('tr', {}, h('td', {}, xFmt(x)), live.map(se => { const p = se.points.find(p => p[0] === x); return h('td', {}, p ? yFmt(p[1]) : '–') }))))))
+      return
+    }
+    const svg = s('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': title})
+    for (let i = 0; i <= 4; i++) {
+      const v = ymin + (ymax - ymin) * i / 4, y = Y(v)
+      svg.append(s('line', {x1: L, x2: W - R, y1: y, y2: y, stroke: Math.abs(v) < 1e-12 || (i === 0 && ymin >= 0) ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1}))
+      svg.append(s('text', {x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)'}, yFmt(v)))
+    }
+    for (let i = 0; i <= 4; i++) {
+      const v = xmin + (xmax - xmin) * i / 4
+      svg.append(s('text', {x: X(v), y: H - 10, 'text-anchor': i === 0 ? 'start' : i === 4 ? 'end' : 'middle', 'font-size': 11, fill: 'var(--muted)'}, xFmt(v)))
+    }
+    for (const m of marks) {  // settings changed during the run
+      if (m.x < xmin || m.x > xmax) continue
+      const ln = s('line', {x1: X(m.x), x2: X(m.x), y1: T, y2: H - B, stroke: 'var(--ink-2)', 'stroke-width': 1, 'stroke-dasharray': '3 3', opacity: 0.7})
+      ln.append(s('title', {}, m.label)); svg.append(ln)
+    }
+    const ends = []
+    for (const se of live) {
+      const d = se.points.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1)).join(' ')
+      svg.append(s('path', {d, fill: 'none', stroke: se.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'stroke-dasharray': se.dash || 'none'}))
+      const last = se.points[se.points.length - 1]
+      ends.push({se, y: Y(last[1]), v: last[1], x: X(last[0])})
+    }
+    // direct labels at line ends, nudged apart
+    ends.splice(0, ends.length, ...ends.filter(e => e.se.label !== false))  // unlabeled series: legend only
+    ends.sort((a, b) => a.y - b.y)
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13
+    for (const e of ends) {
+      svg.append(s('circle', {cx: e.x, cy: Y(e.v), r: 3.5, fill: e.se.color, stroke: 'var(--surface)', 'stroke-width': 2}))
+      svg.append(s('text', {x: W - R + 8, y: e.y + 4, 'font-size': 11, fill: 'var(--ink-2)'}, `${yFmt(e.v)} ${live.length > 1 ? e.se.short || e.se.name : ''}`))
+    }
+    const cross = s('line', {y1: T, y2: H - B, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden'})
+    svg.append(cross)
+    const hit = s('rect', {x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent'})
+    svg.append(hit)
+    hit.addEventListener('pointermove', ev => {
+      const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W
+      const xv = xmin + (px - L) / (W - L - R) * (xmax - xmin)
+      let best = xs[0]; for (const x of xs) if (Math.abs(x - xv) < Math.abs(best - xv)) best = x
+      cross.setAttribute('x1', X(best)); cross.setAttribute('x2', X(best)); cross.setAttribute('visibility', 'visible')
+      tip.replaceChildren(h('div', {class: 'n'}, `${xFmt(best)} ${xLabel}`), ...live.map(se => {
+        const p = se.points.find(p => p[0] === best)
+        return h('div', {}, h('i', {class: 'key', style: `background:${se.color};margin-right:6px;vertical-align:middle`}), h('span', {class: 'v'}, p ? yFmt(p[1]) : '–'), ' ', h('span', {class: 'n'}, se.name))
+      }))
+      tip.style.display = 'block'
+      const bx = box.getBoundingClientRect(), left = X(best) / W * r.width
+      tip.style.left = Math.min(left + 12, bx.width - tip.offsetWidth - 4) + 'px'
+      tip.style.top = '8px'
+    })
+    hit.addEventListener('pointerleave', () => { tip.style.display = 'none'; cross.setAttribute('visibility', 'hidden') })
+    box.prepend(svg)
+  }
+  draw()
+  return card
+}
+
+// ---------- sidebar ----------
+async function refreshRuns() {
+  const runs = await api('/api/runs')
+  const ul = $('#runlist')
+  ul.replaceChildren(...runs.map(r => h('li', {class: r.name === selected && view === 'run' ? 'sel' : '', onclick: () => openRun(r.name)},
+    h('div', {class: 'row', style: 'justify-content: space-between'}, h('b', {}, r.name), h('span', {class: 'pill' + (r.running ? ' on' : '')}, r.running ? 'training' : 'stopped')),
+    h('div', {class: 'meta'}, r.update ? `update ${r.update} · ${fmtN(r.env_steps)} decisions` : 'no updates yet'))))
+  if (!runs.length) ul.append(h('li', {class: 'muted small'}, 'No runs yet.'))
+}
+async function refreshSystem() {
+  try {
+    const s = await api('/api/system')
+    const parts = [h('span', {}, h('b', {}, s.cores), ' CPU cores')]
+    if (s.cpu_percent != null) parts.push(h('span', {}, 'CPU ', h('b', {}, Math.round(s.cpu_percent) + '%')))
+    if (s.load) parts.push(h('span', {}, 'load ', h('b', {}, s.load.map(x => x.toFixed(1)).join(' / '))))
+    if (s.mem_total_gb) parts.push(h('span', {}, 'RAM ', h('b', {}, `${s.mem_used_gb.toFixed(1)} / ${s.mem_total_gb.toFixed(1)} GB`)))
+    for (const t of s.trainers) parts.push(h('span', {}, `${t.run}: `, h('b', {}, t.cpu_percent != null ? Math.round(t.cpu_percent) + '% CPU' : 'running'), t.mem_gb != null ? `, ${t.mem_gb.toFixed(1)} GB` : ''))
+    if (!s.psutil && s.cpu_percent == null) parts.push(h('span', {class: 'muted'}, '(pip install psutil for CPU %)'))
+    $('#sys').replaceChildren(...parts)
+  } catch (e) { $('#sys').textContent = 'dashboard server not reachable' }
+}
+async function refreshJobs() {
+  const jobs = await api('/api/jobs')
+  const el = $('#jobs')
+  if (!jobs.length) { el.textContent = 'none yet'; return }
+  el.replaceChildren(...jobs.slice(0, 8).map(j => h('div', {style: 'margin-bottom: 8px'},
+    h('div', {class: 'ink2'}, j.title),
+    h('div', {class: j.status.startsWith('failed') ? 'err' : ''}, j.status === 'running' ? `running… ${j.output[j.output.length - 1] || ''}` : j.status))))
+}
+
+// ---------- run view ----------
+async function openRun(name) {
+  if (pinnedGame && pinnedGame.run !== name) pinnedGame = null
+  selected = name; view = 'run'; lastDetail = null
+  $('#main').replaceChildren(h('div', {class: 'empty'}, 'loading…'))
+  await refreshRun(true)
+  refreshRuns()
+}
+async function refreshRun(force) {
+  if (view !== 'run' || !selected) return
+  let d
+  try { d = await api('/api/run?name=' + encodeURIComponent(selected)) } catch (e) { return }
+  const sig = JSON.stringify([d.running, d.latest && d.latest.update, d.recent.length && d.recent[0].time, d.evals.length, d.output.slice(-3), d.changes.length, d.pending, d.restarting, d.strength.length, d.milestones])
+  if (!force && lastDetail === sig) return
+  lastDetail = sig
+  renderRun(d)
+}
+let lastRunData = null
+function renderRun(d) {
+  lastRunData = d
+  const main = $('#main')
+  const keepScroll = window.scrollY
+  const last = d.latest || {}
+  const head = h('div', {class: 'row', style: 'justify-content: space-between; margin-bottom: 12px'},
+    h('div', {}, h('div', {class: 'row'}, h('h2', {style: 'margin:0;font-size:19px'}, d.name), h('span', {class: 'pill' + (d.running ? ' on' : '')}, d.running ? `training (pid ${d.pid})` : ENDED[d.ended && d.ended.state] || 'stopped')),
+      h('div', {class: 'small muted'}, last.update ? `update ${last.update} · ${fmtN(last.env_steps)} of ${fmtN(d.config.total_env_steps)} decisions · ${fmtN(last.episodes)} games · ${fmtN(last.sps)} decisions/s` : 'waiting for the first update…')),
+    h('div', {class: 'row'},
+      d.restarting ? h('span', {class: d.restarting.endsWith('…') ? 'note' : 'err'}, 'Restart: ' + d.restarting) : null,
+      d.running ? h('button', {class: 'primary', onclick: () => openForm(d.name, d.config, d.latest || {})}, 'Change settings…') : null,
+      d.running ? h('button', {class: 'danger', onclick: () => act('/api/stop', {name: d.name}, 'Stopping (saves first)…')}, 'Stop (saves)') :
+        h('button', {class: 'primary', disabled: !!(d.restarting && d.restarting.endsWith('…')), onclick: () => openForm(d.name, d.config)}, d.has_checkpoint ? 'Resume…' : 'Start…'),
+      h('button', {onclick: () => openForm(null, d.config)}, 'Copy settings to new run'),
+      h('button', {disabled: !d.has_checkpoint, title: 'Save the AI as it is now as a fixed opponent (rl/pool/)', onclick: async () => {
+        try {
+          const r = await api('/api/freeze', {run: d.name})
+          POLICIES = await api('/api/policies')
+          if (d.running && confirm(`Saved ${r.path}.\n\nAdd it to this run's opponent pool now?`)) {
+            await api('/api/live', {name: d.name, changes: {pool_models: [...(d.config.pool_models || []), r.path]}})
+            toast('Added to the pool before the next update')
+          } else toast(`Saved ${r.path}: pick it under Fixed opponent pool in the settings of any run`)
+        } catch (e) { alert(e.message) }
+      }}, 'Freeze to pool'),
+      h('button', {disabled: !d.has_checkpoint, onclick: () => exportDialog(d.name)}, 'Export model')))
+  main.replaceChildren(head)
+  if (d.ended && ['crashed', 'killed'].includes(d.ended.state)) main.append(h('div', {class: 'card', style: 'margin-bottom:12px; border-color: var(--critical)'},
+    h('div', {}, h('b', {class: 'err'}, d.ended.state === 'crashed' ? 'Training crashed' : 'Training was killed'),
+      h('span', {class: 'muted'}, (d.ended.time ? ` ${ago(d.ended.time)}` : '') + (d.ended.update ? ` · at update ${d.ended.update}` : ''))),
+    h('div', {class: 'note', style: 'margin-top:4px'}, d.ended.reason),
+    d.ended.error ? h('pre', {style: 'max-height: 220px; margin-top: 8px'}, d.ended.error) : null,
+    h('div', {class: 'small muted', style: 'margin-top:6px'}, 'Resume continues from the last save. If it keeps happening, the trainer output at the bottom of this page shows what it was doing.')))
+  else if (d.ended && d.ended.reason && !d.running) main.append(h('div', {class: 'small muted', style: 'margin:-6px 0 10px'},
+    `Last session: ${d.ended.reason}` + (d.ended.time ? ` (${ago(d.ended.time)})` : '')))
+  if (d.running || d.changes.length) main.append(settingsCard(d))
+
+  // scores
+  main.append(h('h2', {}, 'Game scores (training games)'))
+  const opps = OPP_ORDER.filter(k => d.scores[k]).concat(Object.keys(d.scores).filter(k => !OPP_ORDER.includes(k)))
+  if (!opps.length) main.append(h('div', {class: 'card muted'}, 'No finished games yet. Games are long (up to the time limit), so the first results take a few minutes.'))
+  else main.append(h('div', {class: 'grid'}, opps.map(k => scoreCard(k, d.scores[k]))))
+  main.append(h('div', {class: 'small muted', style: 'margin-top:6px'}, 'W–D–L counted from the AI\'s point of view. "Itself (mirror)" games are shown from the left side. Bars show the last 100 games.'))
+
+  if (d.pool && d.pool.members && d.pool.members.some(m => m.active)) main.append(poolPanel(d))
+
+  // charts
+  main.append(h('h2', {}, 'Progress'))
+  const S = d.series.filter(r => r.update)
+  const bySeries = (field, opp) => S.filter(r => r[field] && r[field][opp] != null).map(r => [r.env_steps, r[field][opp]])
+  const oppSeries = field => ['classic', 'dqn', 'pool', 'past', 'random', 'script'].map(k => ({name: oppLabel(k), short: k, color: OPP[k].color, points: bySeries(field, k)}))
+  const marks = d.changes.filter(c => Object.keys(c.applied).length).map(c => ({x: c.env_steps, label: `update ${c.update}: ` + Object.entries(c.applied).map(([k, [a, b]]) => `${k} ${fmtV(a)} → ${fmtV(b)}`).join(', ')}))
+  for (const r of d.resumes || []) marks.push({x: r.env_steps, label: `resumed at update ${r.update}: the games restart from the beginning, so the first results after this are mostly short games`})
+  const one = (field, map = v => v) => [{name: field, color: 'var(--s1)', points: S.filter(r => r[field] != null).map(r => [r.env_steps, map(r[field])])}]
+  main.append(h('div', {class: 'charts'},
+    lineChart({marks, title: 'Win rate by opponent', subtitle: 'rolling, last 300 games each', series: oppSeries('win'), yMax: 1, yFmt: pct}),
+    lineChart({marks, title: 'Draw rate by opponent', subtitle: 'games that hit the time limit (or both bases fell)', series: oppSeries('draw'), yMax: 1, yFmt: pct}),
+    lineChart({marks, title: 'Game length', subtitle: 'average minutes of game time', series: one('ep_ticks', v => v / 3600), yFmt: v => v.toFixed(1) + ' min'}),
+    lineChart({marks, title: 'Training speed', subtitle: 'decisions per second', series: one('sps'), yFmt: fmtN}),
+    lineChart({marks, title: 'Entropy', subtitle: 'how varied its choices are; near 0 = it stopped exploring', series: one('entropy'), yFmt: v => v.toFixed(2)}),
+    lineChart({marks, title: 'Explained variance', subtitle: 'how well the critic predicts outcomes (1 = perfect, below 0 = worse than guessing; clipped at -1)', series: one('explained_var', v => Math.max(-1, v)), yMax: 1, yFmt: v => v.toFixed(2)}),
+    ...(S.some(r => r.review_changed != null) ? [lineChart({marks, title: 'Mistakes reviewed',
+      subtitle: 'share of reviewed bad moments where replaying them found a better move than the one played; falling = fewer avoidable mistakes',
+      series: one('review_changed'), yMax: 1, yMin: 0, yFmt: pct})] : []),
+    ...(S.some(r => r.search_agree != null) ? [lineChart({marks, title: 'Search agrees with the network',
+      subtitle: 'share of searched decisions where the best move found was also the network\'s favourite; rising = the network has absorbed the search',
+      series: one('search_agree'), yMax: 1, yMin: 0, yFmt: pct})] : []),
+    lineChart({marks, title: 'Waiting with money', subtitle: 'share of its decisions that were "wait" although it could afford a troop, research or upgrade', series: one('idle_wait'), yMax: 1, yFmt: pct})))
+
+  // recent games
+  main.append(strengthSection(d))
+  main.append(rewardSection(d))
+
+  main.append(h('h2', {}, 'Recent games'))
+  main.append(h('div', {class: 'card tablewrap'}, d.recent.length ? h('table', {},
+    h('tr', {}, ['when', 'update', 'opponent', 'side', 'result', 'length', 'its base', 'enemy base', 'rewards'].map(x => h('th', {}, x))),
+    d.recent.map(g => h('tr', {},
+      h('td', {}, ago(g.time)), h('td', {}, g.update), h('td', {}, oppLabel(g.opponent) + (g.opponent_id ? ` #${g.opponent_id}` : '') + (g.activity != null ? ` (acts ${Math.round(g.activity * 100)}%)` : '')),
+      h('td', {}, g.side), h('td', {class: 'res-' + g.result}, {W: 'win', D: 'draw', L: 'loss'}[g.result]),
+      h('td', {}, (g.ticks / 3600).toFixed(1) + ' min'), h('td', {}, Math.max(0, g.own_base)), h('td', {}, Math.max(0, g.enemy_base)),
+      h('td', {}, g.has_curve ? h('button', {class: 'linkbtn', 'data-game': g.idx, onclick: () => showGame(d.name, g.idx)}, 'show') : '–')))) :
+    h('div', {class: 'muted'}, 'none yet')))
+
+  // evaluation
+  main.append(h('h2', {}, 'Evaluate'))
+  main.append(evalPanel(d))
+
+  main.append(h('h2', {}, 'Trainer output'))
+  const pre = h('pre', {}, d.output.join('\n') || '(no output yet)')
+  main.append(pre)
+  markShown()
+  requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; window.scrollTo(0, keepScroll) })
+}
+function fmtV(v) { return typeof v === 'number' && v !== 0 && (Math.abs(v) < 1e-2 || Math.abs(v) >= 1e6) ? v.toExponential(2) : String(+(+v).toPrecision(6)) }
+function settingsCard(d) {
+  const L = d.latest || {}
+  const now = [['learning rate', L.lr], ['entropy bonus', L.ent_coef], ['random-move rate', L.explore_now], ['reward hints at', L.hints_now != null ? Math.round(L.hints_now * 100) + '%' : null], ['waits with money', L.idle_wait != null ? (L.idle_wait * 100).toFixed(1) + '%' : null]]
+    .filter(([, v]) => v != null).map(([k, v]) => h('span', {style: 'margin-right:16px'}, h('span', {class: 'muted'}, k + ' '), typeof v === 'number' ? fmtV(v) : v))
+  const pend = Object.entries(d.pending || {})
+  const hist = d.changes.slice(-8).reverse().map(c => h('div', {class: 'small'}, h('span', {class: 'muted'}, `${ago(c.time)} · update ${c.update} · ${fmtN(c.env_steps)} decisions: `),
+    Object.entries(c.applied).map(([k, [a, b]]) => `${k} ${fmtV(a)} → ${fmtV(b)}`).join(', ') || 'nothing changed',
+    Object.keys(c.rejected).length ? h('span', {class: 'err'}, ' · not applied: ' + Object.entries(c.rejected).map(([k, why]) => `${k} (${why})`).join(', ')) : null))
+  return h('div', {class: 'card', style: 'margin-bottom:12px'},
+    now.length ? h('div', {class: 'small'}, h('b', {}, 'Right now: '), now) : null,
+    pend.length ? h('div', {class: 'small', style: 'margin-top:6px'}, h('b', {}, 'Waiting for the next update: '), pend.map(([k, v]) => `${k} = ${fmtV(v)}`).join(', ')) : null,
+    hist.length ? h('div', {style: 'margin-top:6px'}, h('div', {class: 'small'}, h('b', {}, 'Changed during training'), h('span', {class: 'muted'}, ' (dashed lines on the charts)')), hist) : null)
+}
+const REWARD_SERIES = {
+  outcome: {name: 'Win / loss / draw', color: 'var(--s1)'},
+  base_dealt: {name: 'Base damage dealt', color: 'var(--s2)'},
+  base_taken: {name: 'Base damage taken', color: 'var(--s3)'},
+  kill_earned: {name: 'Kill money earned', color: 'var(--s4)'},
+  kill_given: {name: 'Kill money given', color: 'var(--s5)'},
+  front: {name: 'Front line', color: 'var(--s6)'},
+  trebuchet: {name: 'Trebuchets in range', color: 'var(--s7)'},
+  time: {name: 'Time cost', color: 'var(--s8)'},
+}
+const clock = v => { const sec = Math.round(v * 60); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` }
+let rewardFilter = 'all'
+function rewardSection(d) {
+  const R = d.rewards
+  const wrap = h('div', {}, h('h2', {}, 'Reward signals'))
+  if (!R || !R.over_training.all || !R.over_training.all.length) {
+    wrap.append(h('div', {class: 'card muted'}, 'No reward data yet: no game has finished since reward logging was added (runs trained with older code don\'t have it).'))
+    return wrap
+  }
+  const groups = ['all'].concat(OPP_ORDER.filter(k => R.over_training[k]))
+  if (!groups.includes(rewardFilter)) rewardFilter = 'all'
+  const sel = h('select', {onchange: () => { rewardFilter = sel.value; renderRun(lastRunData) }},
+    groups.map(g => h('option', {value: g, selected: g === rewardFilter}, g === 'all' ? 'all opponents' : oppLabel(g))))
+  wrap.append(h('div', {class: 'row', style: 'margin-bottom:8px'}, 'Games against ', sel,
+    h('span', {class: 'small muted'}, 'What the AI was actually rewarded with, split by source (hints are already scaled by how much they have faded). Positive = good for it.')))
+  // 6 lines: only the total gets an end label; the rest are in the legend, tooltip and table view
+  const series = (rowsToPoints) => R.parts.map((p, i) => ({...REWARD_SERIES[p], label: false, points: rowsToPoints(i)}))
+    .concat([{name: 'Total', short: 'total', color: 'var(--ink-2)', dash: '5 4', points: rowsToPoints(-1)}])
+  const sum = parts => parts.reduce((a, b) => a + b, 0)
+  const ot = R.over_training[rewardFilter] || []
+  const du = R.during[rewardFilter]
+  const fmt = v => (v > 0 ? '+' : '') + v.toFixed(2)
+  wrap.append(h('div', {class: 'charts three'},
+    lineChart({marks: [], title: 'Reward per game, over training', subtitle: 'average total per finished game, by source',
+      series: series(i => ot.map(([x, parts]) => [x, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt}),
+    du ? lineChart({title: 'Reward during a game', subtitle: `running total every ${du.every >= 3600 ? 'minute' : du.every / 60 + ' s'}, average of the last ${du.games} games (a finished game keeps its final total)`,
+      series: series(i => du.minutes.map((parts, m) => [(m + 1) * du.every / 3600, i < 0 ? sum(parts) : parts[i]])), yFmt: fmt, xFmt: clock, xLabel: 'game time'}) : null,
+    gameSlot(d.name)))
+  const br = R.by_result[rewardFilter] || {}
+  wrap.append(h('div', {class: 'card tablewrap', style: 'margin-top:12px'},
+    h('div', {class: 'small muted', style: 'margin-bottom:6px'}, 'Average reward per game in the last 300 games, by result. ' +
+      'Front line and Trebuchet hints pay out while a side pushes forward and are handed back when the game ends, so a winner\'s per-game sum is ' +
+      'about zero or slightly negative; what matters to the AI is that it gets them early (see "Reward during a game").'),
+    h('table', {}, h('tr', {}, h('th', {}, 'result'), h('th', {}, 'games'), R.parts.map(p => h('th', {}, REWARD_SERIES[p].name)), h('th', {}, 'Total')),
+      ['W', 'D', 'L'].filter(k => br[k]).map(k => h('tr', {}, h('td', {class: 'res-' + k}, {W: 'win', D: 'draw', L: 'loss'}[k]), h('td', {}, br[k].n),
+        br[k].parts.map(v => h('td', {}, fmt(v))), h('td', {}, h('b', {}, fmt(sum(br[k].parts)))))))))
+  wrap.append(detailsSlot(d.name))
+  return wrap
+}
+// the colors the game draws each troop with (index.ts troopArr); Atomic Bomb shares Atomic Troop's green, so it is hatched
+const TROOP_COLORS = {'Basic Troop': 'limegreen', 'Fast Troop': 'lightpink', 'Range Troop': 'blue', 'Advanced Troop': 'darkgreen',
+  'Shield Troop': 'cadetblue', 'Catapult': 'yellow', 'Boomer Troop': 'red', 'Doggo': 'chocolate', 'Trebuchet': 'brown',
+  'Atomic Troop': 'forestgreen', 'Atomic Bomb': 'forestgreen', 'Boss': 'crimson'}
+const swatch = l => l.hatch ? `background: repeating-linear-gradient(45deg, ${l.color} 0 2px, transparent 2px 4px)` : `background:${l.color}`
+let patternSeq = 0
+// strength over the run: saved milestones played against fixed opponents (absolute, unlike "past versions")
+const strengthForm = {opps: {dqn: true, classic: false, script: true}, games: 40, points: 8, minutes: 15}
+function strengthSection(d) {
+  const wrap = h('div', {}, h('h2', {}, 'Real strength (fixed opponents)'))
+  const agg = {}
+  for (const r of d.strength) {
+    const k = r.opponent + '|' + r.milestone
+    const a = agg[k] = agg[k] || {opp: r.opponent, x: r.env_steps, update: r.update, w: 0, dr: 0, n: 0}
+    a.w += r.wins; a.dr += r.draws; a.n += r.games
+  }
+  const rows = Object.values(agg).sort((a, b) => a.x - b.x)
+  const opps = ['dqn', 'classic', 'script'].filter(o => rows.some(r => r.opp === o))
+  const series = opps.flatMap(o => [
+    {name: `wins vs ${oppLabel(o)}`, short: `wins ${o}`, color: OPP[o].color, points: rows.filter(r => r.opp === o).map(r => [r.x, r.w / r.n])},
+    {name: `draws vs ${oppLabel(o)}`, short: `draws ${o}`, color: OPP[o].color, dash: '4 4', points: rows.filter(r => r.opp === o).map(r => [r.x, r.dr / r.n])}])
+  const boxes = ['dqn', 'classic', 'script'].map(o => h('label', {style: 'margin-right:12px'}, h('input', {type: 'checkbox', checked: strengthForm.opps[o],
+    onchange: e => strengthForm.opps[o] = e.target.checked}), ' ', oppLabel(o)))
+  const num = (k, attrs) => h('input', {type: 'number', value: strengthForm[k], style: 'width:64px', ...attrs, oninput: e => strengthForm[k] = +e.target.value})
+  const msg = h('span', {class: 'note'})
+  const btn = h('button', {class: 'primary', disabled: !d.milestones, onclick: async () => {
+    try {
+      await api('/api/strength', {run: d.name, opponents: Object.keys(strengthForm.opps).filter(o => strengthForm.opps[o]),
+        games: strengthForm.games, points: strengthForm.points, max_minutes: strengthForm.minutes, threads: 4, max_upgrades: d.config.max_upgrades ?? -1})
+      msg.textContent = 'started: see Jobs on the left; points appear as each copy finishes'; msg.className = 'note'; refreshJobs()
+    } catch (e) { msg.textContent = e.message; msg.className = 'err' }
+  }}, 'Measure strength')
+  wrap.append(h('div', {class: 'card', style: 'margin-bottom:12px'},
+    h('div', {class: 'note', style: 'margin-bottom:8px'}, `The "past versions" win rate is relative: its opponents get stronger too, so it can fall while the AI improves. ` +
+      `This plays copies saved during training (every ${d.config.milestone_every || 50} updates; ${d.milestones} so far) against opponents that never change, so the line shows whether it really gets better or worse.`),
+    h('div', {class: 'row'}, 'Against ', boxes, ' games per copy ', num('games', {min: 4}), ' copies ', num('points', {min: 2, max: 60}), ' time limit (min) ', num('minutes', {min: 1}), btn, msg)))
+  if (rows.length) wrap.append(h('div', {class: 'charts'}, lineChart({title: 'Win and draw rate of saved copies', subtitle: 'solid = wins, dashed = draws; each point is one saved copy',
+    series, yMax: 1, yMin: 0, yFmt: pct})))
+  return wrap
+}
+function detailsSlot(run) {
+  const slot = h('div', {id: 'gameDetails'})
+  if (pinnedGame && pinnedGame.run === run && pinnedGame.details) slot.append(pinnedGame.details)
+  return slot
+}
+// stacked areas: troops alive by type over game time (one chart per side, same colors and scale)
+function stackChart({title, subtitle, times, layers, yMax}) {
+  const card = h('div', {class: 'card chart-card'})
+  const tableBtn = h('button', {class: 'linkbtn'}, 'table')
+  card.append(h('div', {class: 'chart-head'}, h('div', {}, h('h3', {}, title), subtitle ? h('div', {class: 'small muted'}, subtitle) : null), tableBtn))
+  card.append(h('div', {class: 'legend'}, layers.map(l => h('span', {}, h('i', {class: 'key', style: swatch(l) + ';height:10px'}), l.name))))
+  const box = h('div', {class: 'chart'}); card.append(box)
+  const tip = h('div', {class: 'tip'}); box.append(tip)
+  if (!times.length) { box.append(h('div', {class: 'empty small'}, 'no samples')); return card }
+  const W = 640, H = 210, L = 46, R = 16, T = 10, B = 30
+  const xmin = 0, xmax = Math.max(times[times.length - 1], 1e-6)
+  const X = x => L + (x - xmin) / (xmax - xmin) * (W - L - R), Y = y => T + (1 - y / yMax) * (H - T - B)
+  let showTable = false
+  tableBtn.onclick = () => { showTable = !showTable; tableBtn.textContent = showTable ? 'chart' : 'table'; draw() }
+  function draw() {
+    box.querySelectorAll('svg, .tablewrap').forEach(e => e.remove())
+    if (showTable) {
+      const step = Math.max(1, Math.ceil(times.length / 30))
+      box.append(h('div', {class: 'tablewrap'}, h('table', {}, h('tr', {}, h('th', {}, 'time'), layers.map(l => h('th', {}, l.name))),
+        times.map((t, i) => i % step ? null : h('tr', {}, h('td', {}, clock(t)), layers.map(l => h('td', {}, l.values[i]))))))); return
+    }
+    const svg = s('svg', {viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': title})
+    for (let i = 0; i <= 4; i++) {
+      const v = yMax * i / 4, y = Y(v)
+      svg.append(s('line', {x1: L, x2: W - R, y1: y, y2: y, stroke: i === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': 1}))
+      svg.append(s('text', {x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--muted)'}, +v.toFixed(1)))
+    }
+    for (let i = 0; i <= 4; i++) {
+      const v = xmax * i / 4
+      svg.append(s('text', {x: X(v), y: H - 10, 'text-anchor': i === 0 ? 'start' : i === 4 ? 'end' : 'middle', 'font-size': 11, fill: 'var(--muted)'}, clock(v)))
+    }
+    const base = times.map(() => 0)
+    const defs = s('defs', {}); svg.append(defs)
+    for (const l of layers) {
+      let fill = l.color
+      if (l.hatch) {
+        const id = 'hatch' + (++patternSeq)
+        const pat = s('pattern', {id, width: 4, height: 4, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)'})
+        pat.append(s('rect', {width: 2, height: 4, fill: l.color}))
+        defs.append(pat); fill = `url(#${id})`
+      }
+      const top = base.map((b, i) => b + l.values[i])
+      const d = 'M' + times.map((t, i) => `${X(t).toFixed(1)} ${Y(top[i]).toFixed(1)}`).join(' L') + ' L' +
+        times.map((t, i) => `${X(t).toFixed(1)} ${Y(base[i]).toFixed(1)}`).reverse().join(' L') + ' Z'
+      svg.append(s('path', {d, fill, stroke: 'var(--surface)', 'stroke-width': 1}))
+      top.forEach((v, i) => base[i] = v)
+    }
+    const cross = s('line', {y1: T, y2: H - B, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden'})
+    const hit = s('rect', {x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent'})
+    svg.append(cross, hit)
+    hit.addEventListener('pointermove', ev => {
+      const r = svg.getBoundingClientRect(), xv = ((ev.clientX - r.left) / r.width * W - L) / (W - L - R) * (xmax - xmin)
+      let bi = 0; times.forEach((t, i) => { if (Math.abs(t - xv) < Math.abs(times[bi] - xv)) bi = i })
+      cross.setAttribute('x1', X(times[bi])); cross.setAttribute('x2', X(times[bi])); cross.setAttribute('visibility', 'visible')
+      tip.replaceChildren(h('div', {class: 'n'}, clock(times[bi])), ...layers.filter(l => l.values[bi]).reverse().map(l =>
+        h('div', {}, h('i', {class: 'key', style: `${swatch(l)};height:10px;margin-right:6px;vertical-align:middle`}), h('span', {class: 'v'}, l.values[bi]), ' ', h('span', {class: 'n'}, l.name))))
+      tip.style.display = 'block'
+      tip.style.left = Math.min(X(times[bi]) / W * r.width + 12, box.getBoundingClientRect().width - tip.offsetWidth - 4) + 'px'; tip.style.top = '8px'
+    })
+    hit.addEventListener('pointerleave', () => { tip.style.display = 'none'; cross.setAttribute('visibility', 'hidden') })
+    box.prepend(svg)
+  }
+  draw()
+  return card
+}
+function gameDetails(r) {
+  const g = r.game, P = r.players, names = r.troops || [], every = r.every / 3600
+  if (!P || !r.state) return h('div', {class: 'card muted', style: 'margin-top:12px'}, 'This game was logged before game details were recorded.')
+  const times = r.state.map((_, i) => (i + 1) * every)
+  // each troop type in its in-game color, stacked in troop order (Basic Troop at the bottom); only types present
+  const used = names.map((_, k) => r.state.some(st => st[0][3 + k] || st[1][3 + k]))
+  const layersFor = side => names.map((nm, k) => used[k] ? {name: nm, color: TROOP_COLORS[nm] || 'var(--neutral)', hatch: nm === 'Atomic Bomb',
+    values: r.state.map(st => st[side][3 + k])} : null).filter(Boolean)
+  const yMax = Math.max(1, ...r.state.map(st => Math.max(...[0, 1].map(sd => st[sd].slice(3).reduce((a, b) => a + b, 0)))))
+  const sides = [['AI', 'var(--s1)'], ['Opponent', 'var(--s2)']]
+  const line = (field, label) => sides.map(([nm, color], sd) => ({name: `${nm} ${label}`, short: nm, color, points: r.state.map((st, i) => [times[i], st[sd][field]])}))
+  const ai = P.ai, op = P.opponent
+  const t = v => v < 0 ? '–' : clock(v / 3600)
+  const wrapStyle = 'white-space: normal; min-width: 120px'
+  const row = (label, a, b) => h('tr', {}, h('td', {}, label), h('td', {style: wrapStyle}, a), h('td', {style: wrapStyle}, b))
+  const armyText = army => { if (!army.length) return '–'; const c = {}; army.forEach(n => c[n] = (c[n] || 0) + 1)
+    return Object.entries(c).sort((a, b) => b[1] - a[1]).map(([n, k]) => k > 1 ? `${n} ×${k}` : n).join(', ') }
+  const summary = h('div', {class: 'card tablewrap'}, h('h3', {}, 'Summary'), h('table', {},
+    h('tr', {}, h('th', {}, ''), h('th', {}, `AI (${g.side})`), h('th', {}, `${oppLabel(g.opponent)}${g.opponent_id ? ' #' + g.opponent_id : ''}`)),
+    row('result', {W: 'win', D: 'draw', L: 'loss'}[g.result], {W: 'loss', D: 'draw', L: 'win'}[g.result]),
+    row('base left', Math.max(0, ai.base), Math.max(0, op.base)),
+    row('damage dealt (troops + base)', ai.damage_dealt, op.damage_dealt),
+    row('kill money earned', ai.kill_money, op.kill_money),
+    row('troops bought / lost', `${ai.spawned.reduce((a, b) => a + b, 0)} / ${ai.lost.reduce((a, b) => a + b, 0)}`, `${op.spawned.reduce((a, b) => a + b, 0)} / ${op.lost.reduce((a, b) => a + b, 0)}`),
+    row('upgrades (+20%)', ai.upgrades ? `${ai.upgrades} at ${ai.upgrade_times.map(x => t(x)).join(', ')}` : '0', op.upgrades ? `${op.upgrades} at ${op.upgrade_times.map(x => t(x)).join(', ')}` : '0'),
+    row('money left', ai.money, op.money),
+    row('army at the end', armyText(ai.army), armyText(op.army))))
+  const troops = h('div', {class: 'card tablewrap'}, h('h3', {}, 'Troops'), h('table', {},
+    h('tr', {}, h('th', {}, 'troop'), h('th', {}, 'AI researched'), h('th', {}, 'AI bought'), h('th', {}, 'AI lost'),
+      h('th', {}, 'opp. researched'), h('th', {}, 'opp. bought'), h('th', {}, 'opp. lost')),
+    names.map((nm, k) => (ai.researched_at[k] >= 0 || op.researched_at[k] >= 0 || ai.spawned[k] || op.spawned[k]) ? h('tr', {},
+      h('td', {}, nm), h('td', {}, k === 0 ? 'start' : t(ai.researched_at[k])), h('td', {}, ai.spawned[k]), h('td', {}, ai.lost[k]),
+      h('td', {}, k === 0 ? 'start' : t(op.researched_at[k])), h('td', {}, op.spawned[k]), h('td', {}, op.lost[k])) : null)))
+  return h('div', {style: 'margin-top:12px'},
+    h('h3', {style: 'margin: 4px 0 8px'}, `Game ${pinnedGame ? pinnedGame.idx : ''} details`),
+    h('div', {class: 'charts three'}, summary, troops),
+    h('div', {class: 'charts three', style: 'margin-top:12px'},
+      stackChart({title: 'AI army', subtitle: 'troops alive by type, every 5 s, in their in-game colors', times, layers: layersFor(0), yMax}),
+      stackChart({title: 'Opponent army', subtitle: 'troops alive by type, every 5 s, in their in-game colors', times, layers: layersFor(1), yMax}),
+      lineChart({title: 'Base health', subtitle: 'both bases (800 = full)', series: line(1, 'base'), yMin: 0, yMax: 800, yFmt: v => Math.round(v), xFmt: clock, xLabel: 'game time'}),
+      lineChart({title: 'Money', subtitle: 'money in the bank', series: line(0, 'money'), yFmt: v => Math.round(v), xFmt: clock, xLabel: 'game time'}),
+      lineChart({title: 'Upgrade multiplier', subtitle: 'troop stats ×1.2 per upgrade', series: line(2, 'multiplier'), yMin: 1, yFmt: v => '×' + v.toFixed(2), xFmt: clock, xLabel: 'game time'})))
+}
+// one game's reward history, chosen with the "show" buttons in Recent games. The card is built once
+// per click and the same element is re-attached on every refresh, so it never redraws on its own.
+let pinnedGame = null  // {run, idx, card}
+function gameSlot(run) {
+  const slot = h('div', {id: 'gameSlot'})
+  if (pinnedGame && pinnedGame.run === run) slot.append(pinnedGame.card)
+  else slot.append(h('div', {class: 'card chart-card'}, h('h3', {}, 'One game'),
+    h('div', {class: 'empty small'}, 'Press “show” next to a game in Recent games to see its whole reward history here.')))
+  return slot
+}
+async function showGame(run, idx) {
+  let r
+  try { r = await api(`/api/game?name=${encodeURIComponent(run)}&idx=${idx}`) } catch (e) { toast(e.message); return }
+  const g = r.game, sum = parts => parts.reduce((a, b) => a + b, 0)
+  const n = r.curve.length
+  const x = m => m < n - 1 ? (m + 1) * r.every / 3600 : g.ticks / 3600  // sample times (minutes), then the end
+  const series = r.parts.map((p, i) => ({...REWARD_SERIES[p], label: false, points: r.curve.map((parts, m) => [x(m), parts[i]])}))
+    .concat([{name: 'Total', color: 'var(--ink-2)', dash: '5 4', points: r.curve.map((parts, m) => [x(m), sum(parts)])}])
+  const card = lineChart({title: `Game ${idx}: ${{W: 'win', D: 'draw', L: 'loss'}[g.result]} vs ${oppLabel(g.opponent)}${g.opponent_id ? ' #' + g.opponent_id : ''}`,
+    subtitle: `running total, every ${r.every >= 3600 ? 'minute (older game)' : r.every / 60 + ' s'} · played ${g.side}, update ${g.update}, ${(g.ticks / 3600).toFixed(1)} min, bases ${Math.max(0, g.own_base)} vs ${Math.max(0, g.enemy_base)}`,
+    series, yFmt: v => (v > 0 ? '+' : '') + v.toFixed(2), xFmt: clock, xLabel: 'game time'})
+  card.append(h('div', {class: 'row small', style: 'margin-top:6px'}, h('button', {class: 'linkbtn', onclick: () => {
+    pinnedGame = null; const slot = $('#gameSlot'); if (slot) slot.replaceWith(gameSlot(run))
+    const ds = $('#gameDetails'); if (ds) ds.replaceChildren(); markShown() }}, 'clear')))
+  pinnedGame = {run, idx, card}
+  pinnedGame.details = gameDetails(r)
+  const slot = $('#gameSlot'); if (slot) slot.replaceChildren(card)
+  const ds = $('#gameDetails'); if (ds) ds.replaceChildren(pinnedGame.details)
+  markShown()
+}
+function markShown() {
+  document.querySelectorAll('button[data-game]').forEach(b => {
+    const on = pinnedGame && +b.dataset.game === pinnedGame.idx
+    b.textContent = on ? 'showing' : 'show'; b.disabled = on
+  })
+}
+function poolPanel(d) {
+  const P = d.pool, act = P.members.filter(m => m.active)
+  const n = act.filter(m => m.mastered).length
+  let status
+  if (P.auto) status = P.mastered_since != null
+    ? `Every member is mastered (since update ${P.mastered_since}); the AI is added as a new peak after ${P.marinate} updates of that (${Math.max(0, P.marinate - (P.update - P.mastered_since))} to go).`
+    : `Automatic peaks are on: the AI is added to the pool once all ${act.length} members are mastered (${n} so far).`
+  else status = n === act.length ? 'Every member is mastered. Automatic peaks are off: press Freeze to pool and add the frozen copy as the next member when you are happy with it.'
+    : `${n} of ${act.length} members mastered.`
+  return h('div', {}, h('h2', {}, 'Fixed opponent pool'),
+    h('div', {class: 'card tablewrap'},
+      h('div', {class: 'note', style: 'margin-bottom:8px'}, status + (P.peaks_added ? ` Peaks added so far: ${P.peaks_added}.` : '')),
+      h('table', {}, h('tr', {}, ['member', 'recent games', 'won', 'drawn', 'lost', P.use_score ? 'score' : 'win rate', '', 'games in total'].map(x => h('th', {}, x))),
+        act.map(m => h('tr', {}, h('td', {}, m.name), h('td', {}, m.recent),
+          h('td', {class: 'res-W'}, m.W), h('td', {class: 'res-D'}, m.D), h('td', {class: 'res-L'}, m.L),
+          h('td', {}, pct(m.rate ?? m.perf)), h('td', {}, m.mastered ? h('b', {class: 'res-W'}, '✓ mastered') : h('span', {class: 'muted'}, `target ${pct(P.target)}`)),
+          h('td', {}, m.games))))))
+}
+function scoreCard(k, sc) {
+  const l = sc.last100, n = Math.max(1, sc.last100_n)
+  const seg = (v, color, label) => v ? h('span', {title: `${label}: ${v}`, style: `width:${v / n * 100}%;background:${color}`}) : null
+  return h('div', {class: 'card'},
+    h('div', {class: 'score-title'}, OPP[k] ? h('i', {class: 'key', style: `background:${OPP[k].color};height:3px`}) : null, oppLabel(k)),
+    h('div', {class: 'score-big'}, `${sc.W} – ${sc.D} – ${sc.L}`),
+    h('div', {class: 'small ink2'}, `wins – draws – losses · ${sc.games} games`),
+    h('div', {class: 'wdl'}, seg(l.W, 'var(--good)', 'wins'), seg(l.D, 'var(--neutral)', 'draws'), seg(l.L, 'var(--critical)', 'losses')),
+    h('div', {class: 'small'}, h('span', {class: 'res-W'}, `${Math.round(l.W / n * 100)}% won`), ' · ', h('span', {class: 'res-D'}, `${Math.round(l.D / n * 100)}% drawn`), ' · ', h('span', {class: 'res-L'}, `${Math.round(l.L / n * 100)}% lost`), h('span', {class: 'muted'}, ` (last ${sc.last100_n})`)),
+    h('div', {class: 'small muted', style: 'margin-top:4px'}, `avg game ${sc.avg_minutes.toFixed(1)} min · enemy base left ${Math.round(sc.avg_enemy_base)} / 800`))
+}
+function evalPanel(d) {
+  const own = POLICIES.find(p => p.path === `runs/${d.name}/latest.pt`)
+  const pol = h('select', {}, POLICIES.map(p => h('option', {value: p.path, selected: own && p === own}, p.label)))
+  const boxes = [['classic', 'Classic AI', true], ['dqn', 'Old RL AI (DQN)', true], ['random', 'Random', false], ['script', 'Shield push (scripted)', true]].map(([v, label, on]) =>
+    h('label', {style: 'margin-right:12px'}, h('input', {type: 'checkbox', value: v, checked: on}), ' ', label))
+  const vsModel = h('select', {}, h('option', {value: ''}, '— also vs a model —'), POLICIES.map(p => h('option', {value: p.path}, p.label)))
+  const games = h('input', {type: 'number', value: 100, min: 2, max: 2000})
+  const minutes = h('input', {type: 'number', value: 15, min: 1, max: 240, step: 1})
+  const greedy = h('input', {type: 'checkbox'})
+  const threads = h('input', {type: 'number', value: 4, min: 1, max: 64})
+  const upgrades = h('input', {type: 'number', value: d.config.max_upgrades ?? -1, min: -1, style: 'width: 60px', title: '-1 = unlimited (the real game), 0 = none'})
+  const msg = h('span', {class: 'note'})
+  const run = h('button', {class: 'primary', onclick: async () => {
+    const opponents = boxes.map(b => b.querySelector('input')).filter(i => i.checked).map(i => i.value)
+    if (vsModel.value) opponents.push(vsModel.value)
+    try {
+      await api('/api/evaluate', {run: d.name, policy: pol.value, opponents, games: +games.value, max_minutes: +minutes.value, greedy: greedy.checked, threads: +threads.value, max_upgrades: +upgrades.value})
+      msg.textContent = 'started: see Jobs on the left; results appear below when done'; refreshJobs()
+    } catch (e) { msg.textContent = e.message; msg.className = 'err' }
+  }}, 'Run evaluation')
+  const evals = d.evals.length ? h('div', {class: 'tablewrap', style: 'margin-top:12px'}, h('table', {},
+    h('tr', {}, ['when', 'model', 'vs', 'W', 'D', 'L', 'win rate (95% range)', 'avg game', 'settings'].map(x => h('th', {}, x))),
+    d.evals.map(e => h('tr', {}, h('td', {}, ago(e.time)), h('td', {}, e.policy), h('td', {}, oppLabel(e.opponent)),
+      h('td', {class: 'res-W'}, e.wins), h('td', {class: 'res-D'}, e.draws), h('td', {class: 'res-L'}, e.losses),
+      h('td', {}, `${Math.round(e.wins / Math.max(1, e.games) * 100)}% (${Math.round(e.ci_low * 100)}–${Math.round(e.ci_high * 100)}%)`),
+      h('td', {}, Math.round(e.avg_seconds / 60) + ' min'), h('td', {class: 'muted'}, `${e.greedy ? 'greedy' : 'sampled'}, limit ${Math.round(e.max_ticks / 3600)} min` + (e.max_upgrades >= 0 ? `, max ${e.max_upgrades} upgrades` : '')))))) :
+    h('div', {class: 'small muted', style: 'margin-top:8px'}, 'No evaluations for this run yet.')
+  return h('div', {class: 'card'},
+    h('div', {class: 'note', style: 'margin-bottom:8px'}, 'Plays separate test games (half on each side) without learning, and reports the score with a 95% confidence range. Fewer parallel games while training is running keeps both fast.'),
+    h('div', {class: 'row'}, 'Model ', pol), h('div', {class: 'row', style: 'margin-top:6px'}, 'Opponents ', boxes, vsModel),
+    h('div', {class: 'row', style: 'margin-top:6px'}, 'Games ', games, ' time limit (min) ', minutes, ' max base upgrades ', upgrades, ' threads ', threads,
+      h('label', {}, greedy, ' always best move (greedy)')),
+    h('div', {class: 'row', style: 'margin-top:10px'}, run, msg), evals)
+}
+function exportDialog(name) {
+  const modelName = h('input', {type: 'text', value: name})
+  const note = h('input', {type: 'text', placeholder: 'e.g. beats the DQN 100%', style: 'width: 280px'})
+  const toPicker = h('input', {type: 'checkbox', checked: true})
+  const toGame = h('input', {type: 'checkbox'})
+  const ck = h('input', {type: 'text', placeholder: 'leave empty to skip'})
+  const dlg = h('dialog', {class: 'card', style: 'max-width: 560px; color: var(--ink)'},
+    h('h3', {style: 'margin-top:0'}, `Export “${name}” to the game`),
+    h('p', {class: 'note'}, `The run already re-exports itself to rl/runs/${name}/ultimate_model.json every few updates; the game lists it as a local model. Choose where else it should go:`),
+    h('div', {class: 'field'}, h('label', {}, toPicker, ' Add to the model picker'), h('div', {}, 'models/', modelName, '.json'),
+      h('div', {class: 'help'}, 'Shows up in the game\'s model list. Commit and push the file and it\'s also playable on GitHub Pages.')),
+    h('div', {class: 'field'}, h('label', {}, 'Description'), h('div', {}, note), h('div', {class: 'help'}, 'Optional; shown next to the model in the picker.')),
+    h('div', {class: 'field'}, h('label', {}, toGame, ' Make it the default'), h('div', {class: 'small'}, 'replace ultimate_model.json in the repo root'),
+      h('div', {class: 'help'}, 'The model the game picks when you choose Ultimate AI without picking a model.')),
+    h('div', {class: 'field'}, h('label', {}, 'Small checkpoint'), h('div', {}, 'rl/checkpoints/', ck, '.pt'),
+      h('div', {class: 'help'}, 'Weights only (no optimizer), small enough to commit; use it later with “Start from weights”.')),
+    h('div', {class: 'row', style: 'margin-top:12px'},
+      h('button', {class: 'primary', onclick: () => { dlg.close(); dlg.remove()
+        act('/api/export', {run: name, model_name: toPicker.checked ? modelName.value.trim() : '', note: note.value.trim(), to_game: toGame.checked, checkpoint_name: ck.value.trim()}, 'Exporting… see Jobs') }}, 'Export'),
+      h('button', {onclick: () => { dlg.close(); dlg.remove() }}, 'Cancel')))
+  document.body.append(dlg); dlg.showModal()
+}
+async function act(path, body, note) {
+  try { await api(path, body); if (note) toast(note); setTimeout(() => { refreshRun(true); refreshRuns(); refreshJobs() }, 800) }
+  catch (e) { alert(e.message) }
+}
+function toast(text) {
+  const t = h('div', {class: 'card', style: 'position:fixed;right:16px;bottom:16px;z-index:9'}, text)
+  document.body.append(t); setTimeout(() => t.remove(), 3500)
+}
+
+// ---------- settings form ----------
+function openForm(resumeName, baseConfig, liveNow) {
+  // liveNow (the latest log row) = change the settings of a run that is training right now
+  const isLive = !!liveNow
+  $('#main').oninput = $('#main').onchange = null
+  view = 'form'; selected = resumeName; lastDetail = null
+  refreshRuns()
+  const defaults = {}
+  for (const sec of SCHEMA.sections) for (const f of sec.fields) defaults[f.name] = f.default
+  const values = {...defaults}
+  if (baseConfig) for (const k of Object.keys(defaults)) if (baseConfig[k] !== undefined) values[k] = baseConfig[k]
+  // runs from before the split had one symmetric win/loss reward
+  if (baseConfig && baseConfig.loss_reward === undefined && baseConfig.win_reward !== undefined) values.loss_reward = -baseConfig.win_reward
+  for (const k of ['init_from', 'dqn_model']) if (values[k] && values[k].includes('/rl/')) values[k] = values[k].split('/rl/').pop()
+  formState = {values, inputs: {}, defaults: isLive ? {...values} : defaults, live: isLive, now: liveNow}
+  const main = $('#main')
+  const nameInput = h('input', {type: 'text', value: resumeName || suggestName(), disabled: !!resumeName})
+  const preset = h('select', {onchange: () => applyPreset(preset.value)}, h('option', {value: ''}, '— load a preset —'),
+    Object.keys(SCHEMA.presets).map(p => h('option', {value: p}, p)))
+  main.replaceChildren(
+    h('h2', {style: 'font-size:19px'}, isLive ? `Change “${resumeName}” while it trains` : resumeName ? `Resume “${resumeName}”` : 'New training run'),
+    isLive ? h('div', {}, h('p', {class: 'intro'}, 'The form shows the run\'s current settings. Settings without a “restart” tag are applied by the running trainer ' +
+      'before its next update (usually within a minute), keeping the model, optimizer and league as they are. Settings tagged “restart” are ' +
+      'applied by saving, stopping and resuming the run automatically. Changed settings are marked with •.'),
+      h('p', {class: 'intro'}, 'Learning rate and entropy bonus slide from their start value to their end value over the run, so the value used right now ' +
+      'is in between (shown next to them). To pin a value from now on, set start and end to the same number. Changing the training length moves the run\'s ' +
+      'position in every schedule (learning rate, entropy, reward hints, random moves).')) :
+    h('p', {class: 'intro'}, resumeName ?
+      'Continues from the run\'s latest checkpoint (model, optimizer, league and schedules). You can change most settings; network sizes must stay the same.' :
+      'Pick a preset or change any setting below. The sections at the bottom are for experimenting with the AI itself; each explains what it does. Changed settings are marked with •.'),
+    h('div', {class: 'card row', style: 'margin-bottom:12px'}, 'Run name ', nameInput, resumeName ? null : preset,
+      isLive ? h('button', {onclick: () => openForm(resumeName, baseConfig, liveNow)}, 'Undo my changes') :
+        h('button', {onclick: () => { openForm(resumeName, null) }}, 'Reset to defaults')))
+  for (const sec of SCHEMA.sections) {
+    const det = h('details', {class: 'section', open: !sec.advanced},
+      h('summary', {}, sec.name, sec.advanced ? h('span', {class: 'adv'}, 'advanced') : null),
+      h('div', {class: 'body'}, sec.intro ? h('p', {class: 'intro'}, sec.intro) : null, sec.fields.map(f => fieldRow(f, values, !!resumeName))))
+    main.append(det)
+  }
+  const msg = h('span', {class: 'note'})
+  const totalWeights = h('span', {class: 'note'})
+  if (isLive) return liveButtons(resumeName, msg)
+  main.append(h('div', {class: 'row', style: 'margin-top: 14px'},
+    h('button', {class: 'primary', onclick: async () => {
+      const name = nameInput.value.trim()
+      try {
+        await api('/api/train', {name, config: collect(), resume: !!resumeName})
+        toast('Training started'); await refreshRuns(); openRun(name)
+      } catch (e) { msg.textContent = e.message; msg.className = 'err' }
+    }}, resumeName ? 'Resume training' : 'Start training'),
+    h('button', {onclick: () => resumeName ? openRun(resumeName) : ($('#main').replaceChildren(h('div', {class: 'empty'}, 'Pick a run on the left or start a new one.')), view = 'empty')}, 'Cancel'), msg, totalWeights))
+  window.scrollTo(0, 0)
+}
+function liveButtons(name, msg) {
+  const LIVE = new Set(SCHEMA.live_fields)
+  const changed = () => Object.entries(formState.inputs).filter(([k, {f, input}]) => JSON.stringify(read(f, input)) !== JSON.stringify(formState.defaults[k])).map(([k]) => k)
+  const btn = h('button', {class: 'primary'})
+  const upd = () => {
+    const ch = changed(), slow = ch.filter(k => !LIVE.has(k))
+    btn.disabled = !ch.length
+    btn.textContent = !ch.length ? 'Apply' : slow.length ? 'Save, restart & resume' : `Apply now (no restart)`
+    msg.className = 'note'
+    msg.textContent = slow.length ? `${slow.map(k => formState.inputs[k].f.label).join(', ')} need${slow.length === 1 ? 's' : ''} a restart (about a minute of saving and loading)` : ''
+  }
+  btn.onclick = async () => {
+    const ch = changed()
+    try {
+      if (ch.some(k => !LIVE.has(k))) {
+        if (!confirm('Save the checkpoint, stop the trainer and resume it with these settings?')) return
+        await api('/api/restart', {name, config: collect()})
+        toast('Restarting with the new settings…')
+      } else {
+        await api('/api/live', {name, changes: Object.fromEntries(ch.map(k => [k, read(formState.inputs[k].f, formState.inputs[k].input)]))})
+        toast('Sent: applied before the next update')
+      }
+      openRun(name)
+    } catch (e) { msg.textContent = e.message; msg.className = 'err' }
+  }
+  const form = $('#main'); form.oninput = upd; form.onchange = upd; upd()
+  $('#main').append(h('div', {class: 'row', style: 'margin-top: 14px'}, btn, h('button', {onclick: () => openRun(name)}, 'Cancel'), msg))
+  window.scrollTo(0, 0)
+}
+function suggestName() { const d = new Date(); return `run-${d.getMonth() + 1}-${d.getDate()}-${d.getHours()}${String(d.getMinutes()).padStart(2, '0')}` }
+function fieldRow(f, values, resuming) {
+  let input
+  const v = values[f.name]
+  const locked = resuming && ['actor_hidden', 'critic_hidden', 'activation', 'layernorm', 'recurrent', 'init_from'].includes(f.name)
+  if (f.type === 'bool') input = h('input', {type: 'checkbox', checked: !!v})
+  else if (f.name === 'activation') input = h('select', {}, ['relu', 'tanh', 'silu'].map(a => h('option', {value: a, selected: a === v}, a)))
+  else if (f.name === 'init_from') input = h('select', {}, h('option', {value: ''}, '(random network: train from scratch)'),
+    POLICIES.filter(p => p.path.endsWith('.pt')).map(p => h('option', {value: p.path, selected: p.path === v}, p.label)))
+  else if (f.type === 'models') {
+    // checkbox list of every saved model, plus members that are not in the list (e.g. typed by hand)
+    const chosen = new Set(v || [])
+    const opts = POLICIES.map(p => p.path).concat([...chosen].filter(p => !POLICIES.some(q => q.path === p)))
+    input = h('div', {class: 'models', style: 'max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px'},
+      opts.length ? opts.map(p => h('label', {style: 'display:block'}, h('input', {type: 'checkbox', value: p, checked: chosen.has(p)}), ' ',
+        (POLICIES.find(q => q.path === p) || {label: p}).label)) : h('span', {class: 'muted small'}, 'No saved models yet: use Freeze to pool or Export model on a run.'))
+  }
+  else if (f.type === 'list') input = h('input', {type: 'text', value: (v || []).join(',')})
+  else if (f.type === 'str') input = h('input', {type: 'text', value: v ?? '', style: 'width: 320px'})
+  else input = h('input', {type: 'number', value: v, step: 'any'})
+  if (locked) input.disabled = true
+  const restartTag = formState.live && !locked && !SCHEMA.live_fields.includes(f.name) ? h('span', {class: 'adv', title: 'changing this saves, stops and resumes the run'}, 'restart') : null
+  const row = h('div', {class: 'field'}, h('label', {}, f.label, restartTag), h('div', {}, input, extraHint(f, input)), f.help ? h('div', {class: 'help'}, f.help) : null)
+  const mark = () => row.classList.toggle('changed', JSON.stringify(read(f, input)) !== JSON.stringify(formState.defaults[f.name]))
+  input.addEventListener('input', mark); input.addEventListener('change', mark); mark()
+  formState.inputs[f.name] = {f, input, row, mark}
+  return row
+}
+function extraHint(f, input) {
+  // live helper next to a few fields
+  const span = h('span', {class: 'small muted', style: 'margin-left:10px'})
+  const upd = () => {
+    const x = +input.value
+    if (f.name === 'max_ticks') span.textContent = `= ${(x / 3600).toFixed(1)} min of game time`
+    else if (f.name === 'decision_interval') span.textContent = `= ${(60 / Math.max(1, x)).toFixed(1)} decisions per second`
+    else if (f.name === 'total_env_steps') span.textContent = `≈ ${(x / 1500 / 3600).toFixed(1)}–${(x / 900 / 3600).toFixed(1)} h on 4 cores`
+    else if (f.name === 'gamma') span.textContent = x < 1 ? `looks ~${Math.round(1 / (1 - x))} decisions ahead` : ''
+    const now = formState.now
+    if (now) {
+      const nowText = {lr: now.lr, ent_coef: now.ent_coef, explore_eps: now.explore_now, shaping_anneal_frac: now.hints_now != null ? `hints at ${Math.round(now.hints_now * 100)}%` : null}[f.name]
+      if (nowText != null) span.textContent += (span.textContent ? ' · ' : '') + 'right now: ' + (typeof nowText === 'number' ? fmtV(nowText) : nowText)
+    }
+  }
+  if (['max_ticks', 'decision_interval', 'total_env_steps', 'gamma', 'lr', 'ent_coef', 'explore_eps', 'shaping_anneal_frac'].includes(f.name)) { input.addEventListener('input', upd); upd(); return span }
+  return null
+}
+function read(f, input) {
+  if (f.type === 'models') return [...input.querySelectorAll('input[type=checkbox]')].filter(b => b.checked).map(b => b.value)
+  if (f.type === 'bool') return input.checked
+  if (f.type === 'list') return input.value.split(',').map(x => parseInt(x.trim())).filter(x => x > 0)
+  if (f.type === 'int') return Math.round(+input.value)
+  if (f.type === 'float') return +input.value
+  return input.value
+}
+function collect() {
+  const out = {}
+  for (const [k, {f, input}] of Object.entries(formState.inputs)) out[k] = read(f, input)
+  return out
+}
+function applyPreset(name) {
+  if (!name) return
+  const p = SCHEMA.presets[name]
+  for (const [k, {f, input, mark}] of Object.entries(formState.inputs)) {
+    const v = k in p ? p[k] : formState.defaults[k]
+    if (f.type === 'bool') input.checked = !!v
+    else if (f.type === 'list') input.value = v.join(',')
+    else input.value = v
+    input.dispatchEvent(new Event('input')); mark()
+  }
+}
+
+// ---------- boot ----------
+$('#newRunBtn').onclick = () => openForm(null, null)
+async function boot() {
+  SCHEMA = await api('/api/schema')
+  POLICIES = await api('/api/policies')
+  await refreshRuns(); refreshSystem(); refreshJobs()
+  const runs = await api('/api/runs')
+  if (runs.length) openRun((runs.find(r => r.running) || runs[0]).name)
+  setInterval(refreshSystem, 4000)
+  setInterval(() => { refreshRuns(); refreshJobs() }, 5000)
+  setInterval(() => refreshRun(false), 3000)
+  setInterval(async () => { POLICIES = await api('/api/policies') }, 15000)
+}
+boot()
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ use crate::game::{Controller, Game, Player, Side};
 use crate::rng::Rng;
 use crate::troops::*;
 
+#[derive(Clone)]
 pub struct PendingReply {
     pub deliver_at: i64,
     pub troops: Vec<usize>,
@@ -14,6 +15,7 @@ pub struct PendingReply {
     pub enc: f64,
 }
 
+#[derive(Clone)]
 pub struct ClassicState {
     pub cooldown: i64,
     pub to_unlock: usize,
@@ -79,7 +81,7 @@ pub fn try_to_unlock(to_unlock: &mut usize, me: &mut Player) {
         let rp = TROOPS[*to_unlock].research_price;
         if me.is_enough_money(rp) {
             me.money -= rp;
-            me.unlocked[*to_unlock] = true;
+            me.unlock(*to_unlock);
         }
         *to_unlock += 1;
     }
@@ -120,9 +122,10 @@ pub fn after_move_army(game: &mut Game, p: usize, st: &mut ClassicState) {
     let (me, en) = if p == 0 { (&mut a[0], &mut b[0]) } else { (&mut b[0], &mut a[0]) };
 
     me.financial_aid();
-    if me.money > 1800.0 {
+    if me.money > 1800.0 && me.can_upgrade() {
         me.multiplier *= UPGRADE_FACTOR;
         me.money -= UPGRADE_COST;
+        me.note_upgrade();
     }
     let enc = encouragement(me, en);
     if enc > 50.0 && me.units.len() <= 1 {
