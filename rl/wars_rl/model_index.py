@@ -31,6 +31,7 @@ def describe(path: str) -> dict | None:
     if d.get("format") == "wars-ultimate-mlp":
         meta = d.get("meta") or {}
         return {"kind": "ultimate", "hidden": [l["out"] for l in d.get("layers", []) if l.get("type") == "linear"][:-1],
+                "memory": sum(l.get("size", 0) for l in d.get("layers", []) if l.get("type") == "gru") or None,
                 "updates": meta.get("updates", meta.get("update")), "env_steps": meta.get("env_steps"), "note": meta.get("note", ""),
                 "exported": meta.get("exported")}
     if all(k in d for k in ("W1", "W2", "Wa")):

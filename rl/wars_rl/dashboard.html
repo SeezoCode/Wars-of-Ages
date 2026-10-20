@@ -824,7 +824,7 @@ function suggestName() { const d = new Date(); return `run-${d.getMonth() + 1}-$
 function fieldRow(f, values, resuming) {
   let input
   const v = values[f.name]
-  const locked = resuming && ['actor_hidden', 'critic_hidden', 'activation', 'layernorm', 'init_from'].includes(f.name)
+  const locked = resuming && ['actor_hidden', 'critic_hidden', 'activation', 'layernorm', 'recurrent', 'init_from'].includes(f.name)
   if (f.type === 'bool') input = h('input', {type: 'checkbox', checked: !!v})
   else if (f.name === 'activation') input = h('select', {}, ['relu', 'tanh', 'silu'].map(a => h('option', {value: a, selected: a === v}, a)))
   else if (f.name === 'init_from') input = h('select', {}, h('option', {value: ''}, '(random network: train from scratch)'),

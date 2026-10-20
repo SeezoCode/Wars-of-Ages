@@ -2323,6 +2323,11 @@ interface UltimateLayer {
     eps?: number
     weight?: Float32Array
     bias?: Float32Array
+    // gru (memory) layer: gates in PyTorch's order (reset, update, new)
+    weightIh?: Float32Array
+    weightHh?: Float32Array
+    biasIh?: Float32Array
+    biasHh?: Float32Array
 }
 
 class UltimateBot extends Player {
@@ -2331,6 +2336,8 @@ class UltimateBot extends Player {
     layers: Array<UltimateLayer> = null
     lastProbs: Array<number> = null
     modelMaxUpgrades: number = -1
+    // memory of a model with a gru layer: starts at zeros each game (a new bot per match), updated every decision
+    memory: Float32Array = null
 
     constructor(money = 0, side: string, checkForAvailMoney: boolean, modelUrl: string = 'ultimate_model.json', greedy: boolean = false) {
         super(money, side, checkForAvailMoney)
@@ -2364,11 +2371,14 @@ class UltimateBot extends Player {
         this.decisionInterval = json.decision_interval || 10
         const mu = json.meta && json.meta.max_upgrades
         this.modelMaxUpgrades = typeof mu === 'number' && mu >= 0 ? mu : -1
+        const dec = (s: string) => s ? UltimateBot.decodeFloats(s) : undefined
         this.layers = json.layers.map(l => ({
             type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
-            weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
-            bias: l.bias ? UltimateBot.decodeFloats(l.bias) : undefined,
+            weight: dec(l.weight), bias: dec(l.bias),
+            weightIh: dec(l.weight_ih), weightHh: dec(l.weight_hh), biasIh: dec(l.bias_ih), biasHh: dec(l.bias_hh),
         }))
+        const gru = this.layers.find(l => l.type === 'gru')
+        this.memory = gru ? new Float32Array(gru.size) : null
     }
 
     protected unlockUnits(bindEventListeners: boolean = true): void {
@@ -2459,10 +2469,35 @@ class UltimateBot extends Player {
         return out
     }
 
+    /** Logits for this observation from the current memory (does not change the memory). */
     forward(obs: Float32Array): Float32Array {
+        return this.forwardStep(obs).logits
+    }
+
+    /** Logits and the memory after this observation (for models with a gru layer). */
+    forwardStep(obs: Float32Array): {logits: Float32Array, memory: Float32Array} {
         let x = obs
+        let memory: Float32Array = null
         for (const l of this.layers) {
-            if (l.type === 'linear') {
+            if (l.type === 'gru') {
+                const n = l.size, h = this.memory
+                const y = new Float32Array(n)
+                const dot = (w: Float32Array, row: number, len: number, v: Float32Array) => {
+                    let sum = 0
+                    const off = row * len
+                    for (let i = 0; i < len; i++) sum += w[off + i] * v[i]
+                    return sum
+                }
+                const sig = (v: number) => 1 / (1 + Math.exp(-v))
+                for (let j = 0; j < n; j++) {
+                    const r = sig(dot(l.weightIh, j, l.in, x) + l.biasIh[j] + dot(l.weightHh, j, n, h) + l.biasHh[j])
+                    const z = sig(dot(l.weightIh, n + j, l.in, x) + l.biasIh[n + j] + dot(l.weightHh, n + j, n, h) + l.biasHh[n + j])
+                    const c = Math.tanh(dot(l.weightIh, 2 * n + j, l.in, x) + l.biasIh[2 * n + j] +
+                        r * (dot(l.weightHh, 2 * n + j, n, h) + l.biasHh[2 * n + j]))
+                    y[j] = (1 - z) * c + z * h[j]
+                }
+                x = memory = y
+            } else if (l.type === 'linear') {
                 const y = new Float32Array(l.out)
                 for (let o = 0; o < l.out; o++) {
                     let sum = l.bias[o]
@@ -2493,7 +2528,7 @@ class UltimateBot extends Player {
                 x = y
             }
         }
-        return x
+        return {logits: x, memory}
     }
 
     private computeMs: Array<number> = []
@@ -2503,7 +2538,9 @@ class UltimateBot extends Player {
         if (!this.layers || time % this.decisionInterval !== 0) return undefined
         const t0 = typeof performance !== 'undefined' ? performance.now() : 0
         const mask = this.actionMask()
-        const logits = this.forward(this.observe())
+        const step = this.forwardStep(this.observe())
+        const logits = step.logits
+        if (step.memory) this.memory = step.memory
         let maxL = -Infinity
         for (let a = 0; a < ULT_NUM_ACTIONS; a++) if (mask[a] && logits[a] > maxL) maxL = logits[a]
         const probs = new Array(ULT_NUM_ACTIONS).fill(0)

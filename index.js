@@ -2178,6 +2178,8 @@ var UltimateBot = /** @class */ (function (_super) {
         _this.layers = null;
         _this.lastProbs = null;
         _this.modelMaxUpgrades = -1;
+        // memory of a model with a gru layer: starts at zeros each game (a new bot per match), updated every decision
+        _this.memory = null;
         _this.computeMs = [];
         _this.brainHistory = [];
         _this.greedy = greedy;
@@ -2227,11 +2229,14 @@ var UltimateBot = /** @class */ (function (_super) {
         this.decisionInterval = json.decision_interval || 10;
         var mu = json.meta && json.meta.max_upgrades;
         this.modelMaxUpgrades = typeof mu === 'number' && mu >= 0 ? mu : -1;
+        var dec = function (s) { return s ? UltimateBot.decodeFloats(s) : undefined; };
         this.layers = json.layers.map(function (l) { return ({
             type: l.type, in: l.in, out: l.out, size: l.size, eps: l.eps,
-            weight: l.weight ? UltimateBot.decodeFloats(l.weight) : undefined,
-            bias: l.bias ? UltimateBot.decodeFloats(l.bias) : undefined,
+            weight: dec(l.weight), bias: dec(l.bias),
+            weightIh: dec(l.weight_ih), weightHh: dec(l.weight_hh), biasIh: dec(l.bias_ih), biasHh: dec(l.bias_hh),
         }); });
+        var gru = this.layers.find(function (l) { return l.type === 'gru'; });
+        this.memory = gru ? new Float32Array(gru.size) : null;
     };
     UltimateBot.prototype.unlockUnits = function (bindEventListeners) {
         if (bindEventListeners === void 0) { bindEventListeners = true; }
@@ -2330,11 +2335,37 @@ var UltimateBot = /** @class */ (function (_super) {
         writeUnits(en.playerUnits, ULT_GLOBAL + ULT_MAX_SLOTS * ULT_UNIT);
         return out;
     };
+    /** Logits for this observation from the current memory (does not change the memory). */
     UltimateBot.prototype.forward = function (obs) {
+        return this.forwardStep(obs).logits;
+    };
+    /** Logits and the memory after this observation (for models with a gru layer). */
+    UltimateBot.prototype.forwardStep = function (obs) {
         var x = obs;
+        var memory = null;
         for (var _i = 0, _a = this.layers; _i < _a.length; _i++) {
             var l = _a[_i];
-            if (l.type === 'linear') {
+            if (l.type === 'gru') {
+                var n = l.size, h = this.memory;
+                var y = new Float32Array(n);
+                var dot = function (w, row, len, v) {
+                    var sum = 0;
+                    var off = row * len;
+                    for (var i = 0; i < len; i++)
+                        sum += w[off + i] * v[i];
+                    return sum;
+                };
+                var sig = function (v) { return 1 / (1 + Math.exp(-v)); };
+                for (var j = 0; j < n; j++) {
+                    var r = sig(dot(l.weightIh, j, l.in, x) + l.biasIh[j] + dot(l.weightHh, j, n, h) + l.biasHh[j]);
+                    var z = sig(dot(l.weightIh, n + j, l.in, x) + l.biasIh[n + j] + dot(l.weightHh, n + j, n, h) + l.biasHh[n + j]);
+                    var c = Math.tanh(dot(l.weightIh, 2 * n + j, l.in, x) + l.biasIh[2 * n + j] +
+                        r * (dot(l.weightHh, 2 * n + j, n, h) + l.biasHh[2 * n + j]));
+                    y[j] = (1 - z) * c + z * h[j];
+                }
+                x = memory = y;
+            }
+            else if (l.type === 'linear') {
                 var y = new Float32Array(l.out);
                 for (var o = 0; o < l.out; o++) {
                     var sum = l.bias[o];
@@ -2376,7 +2407,7 @@ var UltimateBot = /** @class */ (function (_super) {
                 x = y;
             }
         }
-        return x;
+        return { logits: x, memory: memory };
     };
     /** Called by Game.move() before each tick; returns an action on decision ticks. */
     UltimateBot.prototype.decide = function (time) {
@@ -2384,7 +2415,10 @@ var UltimateBot = /** @class */ (function (_super) {
             return undefined;
         var t0 = typeof performance !== 'undefined' ? performance.now() : 0;
         var mask = this.actionMask();
-        var logits = this.forward(this.observe());
+        var step = this.forwardStep(this.observe());
+        var logits = step.logits;
+        if (step.memory)
+            this.memory = step.memory;
         var maxL = -Infinity;
         for (var a = 0; a < ULT_NUM_ACTIONS; a++)
             if (mask[a] && logits[a] > maxL)

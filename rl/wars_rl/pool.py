@@ -17,7 +17,6 @@ from collections import deque
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.distributions import Categorical
 
 from .model import MASK_VALUE, FrozenActor, ModelConfig, load_model
 
@@ -30,14 +29,22 @@ def resolve(path: str) -> str:
 
 
 class _JsonActor(nn.Module):
-    """An exported browser model (ultimate_model.json format) as a torch actor."""
+    """An exported browser model (ultimate_model.json format) as a torch policy with step()."""
 
     def __init__(self, data: dict):
         super().__init__()
         dec = lambda s: torch.from_numpy(np.frombuffer(base64.b64decode(s), dtype="<f4").copy())
-        mods = []
+        mods, self.gru, self.recurrent = [], None, 0
         for l in data["layers"]:
             t = l["type"]
+            if t == "gru":
+                g = nn.GRUCell(l["in"], l["size"])
+                n = l["size"]
+                g.weight_ih.data = dec(l["weight_ih"]).reshape(3 * n, l["in"])
+                g.weight_hh.data = dec(l["weight_hh"]).reshape(3 * n, n)
+                g.bias_ih.data, g.bias_hh.data = dec(l["bias_ih"]), dec(l["bias_hh"])
+                self.enc, self.gru, self.recurrent, mods = nn.Sequential(*mods), g, n, []
+                continue
             if t == "linear":
                 m = nn.Linear(l["in"], l["out"])
                 m.weight.data = dec(l["weight"]).reshape(l["out"], l["in"])
@@ -48,12 +55,21 @@ class _JsonActor(nn.Module):
             else:
                 m = {"relu": nn.ReLU(), "tanh": nn.Tanh(), "silu": nn.SiLU()}[t]
             mods.append(m)
-        self.actor = nn.Sequential(*mods)
+        self.head = nn.Sequential(*mods)  # everything after the gru layer (the whole network without one)
         self.eval()
+
+    @torch.no_grad()
+    def step(self, obs: torch.Tensor, mask: torch.Tensor, h=None):
+        if self.gru is not None:
+            h = self.gru(self.enc(obs), torch.zeros(obs.shape[0], self.recurrent) if h is None else h)
+            x = h
+        else:
+            x = obs
+        return self.head(x).masked_fill(~mask, MASK_VALUE), h
 
 
 def load_actor(path: str) -> tuple[nn.Module, dict]:
-    """(module with .actor, info) for any saved network."""
+    """(policy with .recurrent and step(obs, mask, h) -> (logits, h), info) for any saved network."""
     full = resolve(path)
     if full.endswith(".json"):
         with open(full) as fh:
@@ -78,10 +94,13 @@ class Member:
         self.active = True
         self.games = 0
 
+    @property
+    def recurrent(self) -> int:
+        return getattr(self.module, "recurrent", 0)
+
     @torch.no_grad()
-    def act(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        logits = self.module.actor(torch.from_numpy(obs)).masked_fill(~torch.from_numpy(mask), MASK_VALUE)
-        return Categorical(logits=logits).sample().numpy()
+    def step(self, obs: torch.Tensor, mask: torch.Tensor, h=None):
+        return self.module.step(obs, mask, h)
 
     def perf(self, use_score: bool) -> float:
         """Win rate (or score: win 1, draw 0.5) with a weak 50% prior so new members aren't 'mastered' at once."""

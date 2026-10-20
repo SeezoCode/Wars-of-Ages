@@ -13,6 +13,9 @@ The improved policy (Gumbel MuZero style, Danihelka et al. 2022) is
     pi'(a) ~ prior(a) * exp(strength * q(a)),
 q = (Q - V(root)) scaled to [-1, 1] per root; moves that were not searched get the prior-weighted
 mean q of the searched ones. The trainer adds a loss that pulls the network towards pi'.
+
+With a memory network (recurrent > 0), every copy starts from the memories both sides had at the
+root (root_h) and carries its own from there.
 """
 from __future__ import annotations
 
@@ -34,20 +37,26 @@ def _sample(logits: np.ndarray, u: np.ndarray) -> np.ndarray:
 
 @torch.no_grad()
 def search(trainer, roots: np.ndarray, sides: np.ndarray, obs: np.ndarray, mask: np.ndarray, shaping: float,
-           rng: np.random.Generator, src=None, kinds=None) -> tuple[np.ndarray, dict]:
+           rng: np.random.Generator, src=None, kinds=None, root_h=None) -> tuple[np.ndarray, dict]:
     """Improved policies for the learner at envs `roots` of `src` (default: the trainer's own games).
 
     obs, mask: (n, OBS) / (n, A) of those roots; kinds: opponent kind per root (default: the
-    trainer's current ones). Returns ((n, A) target probabilities, stats)."""
+    trainer's current ones); root_h: (n, 2, memory) memories *before* the root decision, for a
+    network with memory. Returns ((n, A) target probabilities, stats)."""
     src = trainer.venv if src is None else src
     c = trainer.cfg
     model = trainer.model
     n, A = len(roots), mask.shape[-1]
     K, R, H = max(2, c.search_candidates), max(1, c.search_rollouts), max(1, c.search_horizon)
 
-    logits = model.logits(torch.from_numpy(obs), torch.from_numpy(mask)).numpy()
-    prior = torch.softmax(torch.from_numpy(logits), -1).numpy()
-    v_root = model.value(torch.from_numpy(obs)).numpy()
+    nh = model.recurrent
+    if nh and root_h is None:
+        root_h = torch.zeros(n, 2, nh)
+    me_root = None if not nh else root_h[torch.arange(n), torch.from_numpy(sides)]
+    lg_t, h1 = model.step(torch.from_numpy(obs), torch.from_numpy(mask), me_root)
+    logits = lg_t.numpy()
+    prior = torch.softmax(lg_t, -1).numpy()
+    v_root = model.value(torch.from_numpy(obs), h1).numpy()
 
     # candidates: "wait" plus K-1 valid moves drawn without replacement in proportion to the policy
     # (Gumbel top-k, as in Gumbel AlphaZero): likely moves usually get tried, unlikely ones sometimes
@@ -78,6 +87,7 @@ def search(trainer, roots: np.ndarray, sides: np.ndarray, obs: np.ndarray, mask:
     # the same uniforms for every candidate of a (root, rollout): differences come from the move only
     u = rng.random((n, R, H + 1, 2))
     so, sm = sv.observe()
+    sh = root_h[torch.from_numpy(ri)].clone() if nh else None  # (S, 2, memory) per copy
     phi = trainer._potential_parts(so)
     ret = np.zeros(S)
     disc = np.ones(S)
@@ -87,8 +97,12 @@ def search(trainer, roots: np.ndarray, sides: np.ndarray, obs: np.ndarray, mask:
         for p in (0, 1):
             idx = np.flatnonzero(net_side[:, p] & alive)
             if len(idx):
-                lg = model.logits(torch.from_numpy(so[idx, p]), torch.from_numpy(sm[idx, p])).numpy()
-                act[idx, p] = _sample(lg, u[ri[idx], rr[idx], t, p])
+                ti = torch.from_numpy(idx)
+                lg, h_new = model.step(torch.from_numpy(so[idx, p]), torch.from_numpy(sm[idx, p]),
+                                       sh[ti, p] if nh else None)
+                if nh:
+                    sh[ti, p] = h_new
+                act[idx, p] = _sample(lg.numpy(), u[ri[idx], rr[idx], t, p])
         if t == 0:  # the move being evaluated
             act[np.arange(S), me] = cand[ri, ki]
         so, sm, comp, done, winner, _ = sv.step(act)
@@ -96,7 +110,9 @@ def search(trainer, roots: np.ndarray, sides: np.ndarray, obs: np.ndarray, mask:
         ret += alive * disc * r[np.arange(S), me]
         disc *= c.gamma
         alive &= ~done
-    ret += alive * disc * model.value(torch.from_numpy(so[np.arange(S), me])).numpy()
+    o_end, m_end = torch.from_numpy(so[np.arange(S), me]), torch.from_numpy(sm[np.arange(S), me])
+    h_end = model.step(o_end, m_end, sh[torch.arange(S), torch.from_numpy(me)])[1] if nh else None
+    ret += alive * disc * model.value(o_end, h_end).numpy()
 
     sums = np.zeros((n, K))
     cnt = np.zeros((n, K))

@@ -188,6 +188,33 @@ Rules and tips:
   `rl/engine/src/obs.rs` *and* `UltimateBot` in `index.ts` identically, then
   `pip install ./rl/engine` and `python3 rl/parity/check.py --quick` to prove they match.
 
+### Memory (GRU)
+
+A plain network sees only the current moment: it can't tell that the opponent sent five
+Catapults a minute ago, or that its own last push failed. With
+`--recurrent 128` the actor gets a **memory**: its hidden layers feed a GRU cell holding 128
+numbers, which it updates at every decision and carries through the whole game (zeros at the
+start of each game). The action layer reads that memory. It learns by itself what is worth
+remembering (what the opponent has built, what failed, how the game has gone). The critic stays
+a plain network but also reads the memory, so its predictions can use it too.
+
+| flag | default | meaning |
+|------|---------|---------|
+| `--recurrent 128` | 0 (off) | memory size; 64–256 are sensible, 128 is a good start |
+| `--seq-len 64` | 64 | it learns from stretches of this many consecutive decisions (64 = 16 s of game time); can be changed live |
+
+```bash
+python -m wars_rl.train --run-dir runs/memory --recurrent 128
+```
+
+* It is a new architecture: start a new run (or a new run dir). Old checkpoints can't be
+  resumed with memory switched on.
+* Updates take about twice as long as without memory (the GRU goes decision by decision); the
+  games themselves cost about the same.
+* Memory models export with a `gru` layer (format version 2). The game's `UltimateBot` runs it,
+  and so do `evaluate.py`, the pool and the dashboard. Older copies of the game can't run them.
+* It doesn't remember *between* games: each game starts fresh, the same in training and in the browser.
+
 ---
 
 ## 4. Other settings worth tuning

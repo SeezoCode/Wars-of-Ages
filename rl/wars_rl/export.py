@@ -6,6 +6,11 @@
 
 Weights are stored as base64 little-endian float32. A NumPy re-implementation of
 the browser forward pass is checked against PyTorch before writing.
+
+A network with memory (TrainConfig.recurrent) has one "gru" layer between the hidden layers
+and the action layer: {"type": "gru", "in", "size", "weight_ih" (3*size x in), "weight_hh"
+(3*size x size), "bias_ih", "bias_hh"}, gates in PyTorch's order (reset, update, new). Its state
+starts at zeros each game and is carried from one decision to the next.
 """
 from __future__ import annotations
 
@@ -19,7 +24,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .model import ActorCritic, load_model
+from .model import ActorCritic, RecurrentActor, load_model
 
 FORMAT = "wars-ultimate-mlp"
 
@@ -29,8 +34,18 @@ def _b64(t: torch.Tensor) -> str:
 
 
 def actor_layers(model: ActorCritic) -> list:
+    actor = model.actor
+    if isinstance(actor, RecurrentActor):
+        g = actor.gru
+        return _layers(actor.enc) + [{"type": "gru", "in": g.input_size, "size": g.hidden_size,
+                                      "weight_ih": _b64(g.weight_ih), "weight_hh": _b64(g.weight_hh),
+                                      "bias_ih": _b64(g.bias_ih), "bias_hh": _b64(g.bias_hh)}] + _layers([actor.head])
+    return _layers(actor)
+
+
+def _layers(mods) -> list:
     layers = []
-    for m in model.actor:
+    for m in mods:
         if isinstance(m, nn.Linear):
             layers.append({"type": "linear", "in": m.in_features, "out": m.out_features,
                            "weight": _b64(m.weight), "bias": _b64(m.bias)})
@@ -48,12 +63,31 @@ def actor_layers(model: ActorCritic) -> list:
     return layers
 
 
-def numpy_forward(layers: list, x: np.ndarray) -> np.ndarray:
-    """Same math as UltimateBot.forward() in index.ts (float32 storage, float64 sums)."""
+def memory_size(layers: list) -> int:
+    return sum(l["size"] for l in layers if l["type"] == "gru")
+
+
+def _sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def numpy_forward(layers: list, x: np.ndarray, h: np.ndarray | None = None):
+    """Same math as UltimateBot.forward() in index.ts (float32 storage, float64 sums).
+
+    Returns the logits, or (logits, new memory) when h is given (networks with a gru layer)."""
     dec = lambda s: np.frombuffer(base64.b64decode(s), dtype="<f4")
     x = x.astype(np.float32)
+    h_new = None
     for l in layers:
-        if l["type"] == "linear":
+        if l["type"] == "gru":
+            n = l["size"]
+            gi = dec(l["weight_ih"]).reshape(3 * n, l["in"]).astype(np.float64) @ x.astype(np.float64) + dec(l["bias_ih"])
+            gh = dec(l["weight_hh"]).reshape(3 * n, n).astype(np.float64) @ h.astype(np.float64) + dec(l["bias_hh"])
+            r = _sigmoid(gi[:n] + gh[:n])
+            z = _sigmoid(gi[n:2 * n] + gh[n:2 * n])
+            c = np.tanh(gi[2 * n:] + r * gh[2 * n:])
+            x = h_new = ((1 - z) * c + z * h).astype(np.float32)
+        elif l["type"] == "linear":
             w = dec(l["weight"]).reshape(l["out"], l["in"]).astype(np.float64)
             x = (w @ x.astype(np.float64) + dec(l["bias"])).astype(np.float32)
         elif l["type"] == "layernorm":
@@ -67,26 +101,37 @@ def numpy_forward(layers: list, x: np.ndarray) -> np.ndarray:
             x = np.tanh(x)
         elif l["type"] == "silu":
             x = (x / (1 + np.exp(-x.astype(np.float64)))).astype(np.float32)
-    return x
+    return x if h is None else (x, h_new)
 
 
 def export(model: ActorCritic, out_path: str, decision_interval: int = 10, meta: dict | None = None):
     layers = actor_layers(model)
     payload = {
         "format": FORMAT,
-        "version": 1,
+        "version": 2 if model.cfg.recurrent else 1,  # 2: has a gru layer (needs a game version that knows it)
         "obs_size": model.cfg.obs_size,
         "num_actions": model.cfg.num_actions,
         "decision_interval": decision_interval,
         "meta": {"exported": time.strftime("%Y-%m-%d %H:%M"), **(meta or {})},
         "layers": layers,
     }
-    # sanity check against torch
+    # sanity check against torch (for a network with memory: one sequence of 8 decisions)
     x = torch.randn(8, model.cfg.obs_size)
+    n = model.cfg.recurrent
     with torch.no_grad():
-        ref = model.actor(x).numpy()
+        if n:
+            hs, ht = [], torch.zeros(1, n)
+            for i in range(len(x)):
+                lg, ht = model.actor(x[i:i + 1], ht)
+                hs.append(lg[0])
+            ref = torch.stack(hs).numpy()
+        else:
+            ref = model.actor(x).numpy()
+    h = np.zeros(n, dtype=np.float32) if n else None
     for i in range(len(x)):
-        got = numpy_forward(layers, x[i].numpy())
+        got = numpy_forward(layers, x[i].numpy(), h)
+        if n:
+            got, h = got
         err = np.abs(got - ref[i]).max()
         if err > 1e-3 * max(1.0, np.abs(ref[i]).max()):
             raise RuntimeError(f"export check failed: max abs error {err}")

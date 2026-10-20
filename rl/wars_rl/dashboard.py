@@ -167,6 +167,13 @@ FIELDS = {
     "critic_hidden": ("Network", "Critic layers", "Hidden layer widths of the value network (training only)."),
     "activation": ("Network", "Activation", "relu, tanh or silu (all supported by the browser)."),
     "layernorm": ("Network", "LayerNorm", "Normalises each layer; keeps training stable with raw game numbers."),
+    "recurrent": ("Network", "Memory size (GRU)",
+                  "0 = no memory. Otherwise the policy carries this many numbers from one decision to the next "
+                  "through each game (128 is a good size), so it can remember what the opponent did and "
+                  "counter it. Training is a bit slower. Needs a game version that knows memory models."),
+    "seq_len": ("Network", "Memory training stretch",
+                "Memory models learn from stretches of this many consecutive decisions (64 = 16 s of game time). "
+                "Longer lets it learn longer-lasting memories, at more cost per update."),
 
     "lr": ("Learning (PPO)", "Learning rate (start)", "Step size of each update. Too high = unstable, too low = slow."),
     "lr_final": ("Learning (PPO)", "Learning rate (end)", "The learning rate shrinks linearly to this by the end."),

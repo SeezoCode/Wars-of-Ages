@@ -29,23 +29,43 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 WAIT = wars_engine.NUM_ACTIONS - 1
 
 
-class TorchPolicy:
+class _Memory:
+    """Per-game memory for networks with a gru layer: logits() is called with one row per game
+    (always the same games, in order) and reset(i) starts game i's memory from zeros."""
+    recurrent = 0
+    mem = None
+
+    def reset(self, i):
+        if self.mem is not None:
+            self.mem[i] = 0.0
+
+    def _state(self, n):
+        if self.mem is None or len(self.mem) != n:
+            self.mem = np.zeros((n, self.recurrent), dtype=np.float32)
+        return self.mem
+
+
+class TorchPolicy(_Memory):
     def __init__(self, path: str):
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
         if "actor" in ckpt:  # actor-only file: a milestone or league snapshot
-            self.actor = FrozenActor(ModelConfig(**ckpt["model_config"]), ckpt["actor"]).actor
+            self.net = FrozenActor(ModelConfig(**ckpt["model_config"]), ckpt["actor"])
         else:
-            model, ckpt = load_model(path)
-            self.actor = model.actor
+            self.net, ckpt = load_model(path)
+        self.recurrent = self.net.recurrent
         self.decision_interval = ckpt.get("train_config", {}).get("decision_interval", 10)
         self.update, self.env_steps = ckpt.get("update"), ckpt.get("env_steps")
 
     def logits(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
         with torch.no_grad():
-            return self.actor(torch.from_numpy(obs)).masked_fill(~torch.from_numpy(mask), MASK_VALUE).numpy()
+            h = torch.from_numpy(self._state(len(obs))) if self.recurrent else None
+            lg, h = self.net.step(torch.from_numpy(obs), torch.from_numpy(mask), h)
+            if self.recurrent:
+                self.mem[:] = h.numpy()
+            return lg.numpy()
 
 
-class JsonPolicy:
+class JsonPolicy(_Memory):
     """Runs an exported browser model (same math as UltimateBot.forward)."""
 
     def __init__(self, path: str):
@@ -56,7 +76,13 @@ class JsonPolicy:
         self.layers = []
         for l in data["layers"]:
             l = dict(l)
-            if "weight" in l:
+            if l["type"] == "gru":
+                n = l["size"]
+                l["weight_ih"] = dec(l["weight_ih"]).reshape(3 * n, l["in"]).astype(np.float64)
+                l["weight_hh"] = dec(l["weight_hh"]).reshape(3 * n, n).astype(np.float64)
+                l["bias_ih"], l["bias_hh"] = dec(l["bias_ih"]), dec(l["bias_hh"])
+                self.recurrent = n
+            elif "weight" in l:
                 l["weight"] = dec(l["weight"])
                 l["bias"] = dec(l["bias"])
                 if l["type"] == "linear":
@@ -67,7 +93,18 @@ class JsonPolicy:
         x = obs.astype(np.float32)
         for l in self.layers:
             t = l["type"]
-            if t == "linear":
+            if t == "gru":
+                h = self._state(len(obs))
+                n = l["size"]
+                gi = x.astype(np.float64) @ l["weight_ih"].T + l["bias_ih"]
+                gh = h.astype(np.float64) @ l["weight_hh"].T + l["bias_hh"]
+                sig = lambda v: 1.0 / (1.0 + np.exp(-v))
+                r = sig(gi[:, :n] + gh[:, :n])
+                z = sig(gi[:, n:2 * n] + gh[:, n:2 * n])
+                cand = np.tanh(gi[:, 2 * n:] + r * gh[:, 2 * n:])
+                x = ((1 - z) * cand + z * h).astype(np.float32)
+                self.mem[:] = x
+            elif t == "linear":
                 x = (x.astype(np.float64) @ l["weight"].T.astype(np.float64) + l["bias"]).astype(np.float32)
             elif t == "layernorm":
                 xd = x.astype(np.float64)
@@ -165,8 +202,9 @@ def evaluate(policy, opponent: str, games: int, envs: int, greedy: bool, seed: i
         if builtin:
             kinds[1 - s] = opponent
         venv.reset(i, kinds[0], kinds[1], seed * 100_003 + started)
-        if hasattr(opp_policy, "reset"):
-            opp_policy.reset(i)
+        for pol in (policy, opp_policy):
+            if hasattr(pol, "reset"):
+                pol.reset(i)
         side[i] = s
         active[i] = True
         started += 1

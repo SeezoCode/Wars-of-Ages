@@ -45,7 +45,7 @@ from .pool import Pool
 from .scripted import shield_push
 from .search import search as search_moves
 from .league import League
-from .model import ActorCritic, ModelConfig, save_checkpoint
+from .model import ActorCritic, ModelConfig, same_architecture, save_checkpoint
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -91,6 +91,10 @@ class TrainConfig:
     critic_hidden: List[int] = field(default_factory=lambda: [512, 512, 256])
     activation: str = "relu"
     layernorm: bool = True
+    # memory: a GRU with this many numbers of state between the actor's hidden layers and its action
+    # layer, carried through each game, so the network can remember what happened (0 = no memory)
+    recurrent: int = 0
+    seq_len: int = 64                   # memory networks learn from stretches of this many consecutive decisions
 
     # PPO
     lr: float = 3e-4
@@ -182,12 +186,12 @@ LIVE_FIELDS = {
     "p_self", "p_past", "p_classic", "p_dqn", "p_random", "p_script", "p_pool", "pool_models", "pool_target", "pool_window",
     "pool_min_games", "pool_use_score", "pool_auto", "pool_marinate", "random_activity_power", "snapshot_every", "milestone_every",
     "search_frac", "search_candidates", "search_rollouts", "search_horizon", "search_strength", "search_coef",
-    "search_every", "review_frac",
+    "search_every", "review_frac", "seq_len",
     "max_snapshots",
     "save_every", "export_every", "torch_threads", "rollout_torch_threads",
 }
 POSITIVE_INT = {"total_env_steps", "epochs", "minibatch_size", "snapshot_every", "milestone_every", "max_snapshots",
-                "search_candidates", "search_rollouts", "search_horizon", "search_every", "save_every",
+                "search_candidates", "search_rollouts", "search_horizon", "search_every", "save_every", "seq_len",
                 "export_every", "torch_threads", "rollout_torch_threads"}
 
 
@@ -242,8 +246,12 @@ class Trainer:
             classic_max_units=cfg.classic_max_units, dqn_max_units=cfg.dqn_max_units,
             worker_latency=cfg.worker_latency, dqn_model=dqn_path, threads=cfg.env_threads)
         mcfg = ModelConfig(wars_engine.OBS_SIZE, wars_engine.NUM_ACTIONS, list(cfg.actor_hidden),
-                           list(cfg.critic_hidden), cfg.activation, cfg.layernorm)
+                           list(cfg.critic_hidden), cfg.activation, cfg.layernorm, cfg.recurrent)
         self.model = ActorCritic(mcfg)
+        # memories (before the next decision) of the learner per (game, side), and of each memory
+        # network among the opponents (league snapshot id / pool code -> (N, 2, size)); zeroed at each new game
+        self.h = torch.zeros(self.N, 2, cfg.recurrent)
+        self.opp_h: dict = {}
         self.opt = torch.optim.Adam(self.model.parameters(), lr=cfg.lr, eps=1e-5)
         self.league = League(os.path.join(cfg.run_dir, "league"), mcfg, cfg.max_snapshots)
         self.pool = Pool(cfg, cfg.run_dir)
@@ -356,13 +364,13 @@ class Trainer:
         if not (self.cfg.resume and os.path.exists(path)):
             if self.cfg.init_from:
                 ckpt = torch.load(self.cfg.init_from, map_location="cpu", weights_only=False)
-                if ckpt["model_config"] != self.model.cfg.to_dict():
+                if not same_architecture(ckpt["model_config"], self.model.cfg.to_dict()):
                     raise SystemExit(f"{self.cfg.init_from} has a different architecture than this config")
                 self.model.load_state_dict(ckpt["state_dict"])
                 print(f"initialized weights from {self.cfg.init_from} (update {ckpt.get('update')})")
             return
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
-        if ckpt["model_config"] != self.model.cfg.to_dict():
+        if not same_architecture(ckpt["model_config"], self.model.cfg.to_dict()):
             raise SystemExit(f"{path} has a different architecture; use another --run-dir or --no-resume")
         self.model.load_state_dict(ckpt["state_dict"])
         self.opt.load_state_dict(ckpt["optimizer"])
@@ -402,6 +410,9 @@ class Trainer:
         elif kind == "pool":
             ctrl[1 - side] = CTRL_POOL - self.pool.sample(self.rng).id
         self.venv.reset(i, kinds[0], kinds[1], self._next_seed())
+        self.h[i] = 0.0
+        for mem in self.opp_h.values():
+            mem[i] = 0.0
         self.ctrl[i] = ctrl
         self.kind[i] = kind
 
@@ -507,7 +518,7 @@ class Trainer:
             self.ep_state[i].append(self.venv.snapshot(int(i)))
             self.ep_sample[i] = sample[i]
 
-    def _review(self, adv, learn, b_obs, b_mask, b_act, hist_kinds, shaping):
+    def _review(self, adv, learn, b_obs, b_mask, b_act, b_h, hist_kinds, shaping):
         """Hindsight: search again at the learner's decisions with the most negative advantage."""
         c = self.cfg
         T, N = adv.shape[:2]
@@ -517,17 +528,20 @@ class Trainer:
         t_idx, e_idx, s_idx = t_idx[worst], e_idx[worst], s_idx[worst]
         obs = b_obs.numpy()[t_idx, e_idx, s_idx]
         mask = b_mask.numpy()[t_idx, e_idx, s_idx]
+        root_h = b_h[torch.from_numpy(t_idx), torch.from_numpy(e_idx)] if b_h is not None else None
         t0 = time.time()
         torch.set_num_threads(c.torch_threads)
         target, stats = search_moves(self, t_idx * N + e_idx, s_idx, obs, mask, shaping, self.rng,
-                                     src=self.hist, kinds=[hist_kinds[t][e] for t, e in zip(t_idx, e_idx)])
+                                     src=self.hist, kinds=[hist_kinds[t][e] for t, e in zip(t_idx, e_idx)],
+                                     root_h=root_h)
         torch.set_num_threads(c.rollout_torch_threads)
         played = b_act.numpy()[t_idx, e_idx, s_idx]
         best = stats["_cand"][np.arange(n), np.nan_to_num(stats["_q"], nan=-np.inf).argmax(1)]
         self.review_stats = dict(review_n=n, review_s=time.time() - t0,
                                  review_changed=float(np.mean(best != played)),  # a better move was found
                                  review_adv=float(adv[t_idx, e_idx, s_idx].mean()))
-        self.search_data.append((obs, mask, target))
+        self.search_data.append((obs, mask, target,
+                                 None if root_h is None else root_h[torch.arange(n), torch.from_numpy(s_idx)]))
 
     def _pool_step(self):
         """Automatic peaks: once every pool member has been mastered for pool_marinate updates, freeze the
@@ -571,10 +585,14 @@ class Trainer:
         roots, sides = li[0][pick], li[1][pick]
         t0 = time.time()
         torch.set_num_threads(c.torch_threads)
-        target, stats = search_moves(self, roots, sides, obs[roots, sides], mask[roots, sides], shaping, self.rng)
+        rec = self.cfg.recurrent
+        root_h = self.h[torch.from_numpy(roots)].clone() if rec else None
+        target, stats = search_moves(self, roots, sides, obs[roots, sides], mask[roots, sides], shaping, self.rng,
+                                     root_h=root_h)
         torch.set_num_threads(c.rollout_torch_threads)
         stats["search_s"] = time.time() - t0
-        self.search_data.append((obs[roots, sides].copy(), mask[roots, sides].copy(), target))
+        self.search_data.append((obs[roots, sides].copy(), mask[roots, sides].copy(), target,
+                                 root_h[torch.arange(n), torch.from_numpy(sides)] if rec else None))
         self.search_stats.append(stats)
 
     def _shaped_reward(self, comp, done, winner, shaping, phi, obs_next):
@@ -617,15 +635,32 @@ class Trainer:
         return np.stack([self.cfg.shaping_front * (own_front - en_depth), self.cfg.shaping_siege * siege, siege], -1)
 
     # --------------------------------------------------------------- rollout
+    @torch.no_grad()
+    def _net_actions(self, code: int, net, obs: np.ndarray, mask: np.ndarray, actions: np.ndarray):
+        """Sample the moves of opponent network `net` (league snapshot or pool member) wherever it plays."""
+        idx = np.nonzero(self.ctrl == code)
+        ti = tuple(torch.from_numpy(x) for x in idx)
+        n = getattr(net, "recurrent", 0)
+        mem = None
+        if n:
+            mem = self.opp_h.get(code)
+            if mem is None or mem.shape[-1] != n:
+                mem = self.opp_h[code] = torch.zeros(self.N, 2, n)
+        logits, h = net.step(torch.from_numpy(obs[idx]), torch.from_numpy(mask[idx]), mem[ti] if n else None)
+        if n:
+            mem[ti] = h
+        actions[idx] = torch.distributions.Categorical(logits=logits).sample().numpy()
+
     def _opponent_actions(self, obs: np.ndarray, mask: np.ndarray, actions: np.ndarray):
+        codes = set()
         for sid in np.unique(self.ctrl[self.ctrl > 0]):
-            idx = np.nonzero(self.ctrl == sid)
-            a, _, _ = self.league.model(int(sid)).act(torch.from_numpy(obs[idx]), torch.from_numpy(mask[idx]),
-                                                      with_value=False)
-            actions[idx] = a.numpy()
+            self._net_actions(int(sid), self.league.model(int(sid)), obs, mask, actions)
+            codes.add(int(sid))
         for code in np.unique(self.ctrl[self.ctrl <= CTRL_POOL]):
-            idx = np.nonzero(self.ctrl == code)
-            actions[idx] = self.pool.members[int(CTRL_POOL - code)].act(obs[idx], mask[idx])
+            self._net_actions(int(code), self.pool.members[int(CTRL_POOL - code)], obs, mask, actions)
+            codes.add(int(code))
+        for k in set(self.opp_h) - codes:  # nobody plays as that network any more
+            del self.opp_h[k]
         for e, s in zip(*np.nonzero(self.ctrl == CTRL_SCRIPT)):
             actions[e, s] = shield_push(obs[e, s], mask[e, s], self.script_state[e])
         ridx = np.nonzero(self.ctrl == CTRL_RANDOM)
@@ -634,8 +669,10 @@ class Trainer:
                 actions[e, s] = self.rng.choice(np.flatnonzero(mask[e, s]))
 
     @torch.no_grad()
-    def _explore(self, obs: torch.Tensor, mask: torch.Tensor, a: torch.Tensor, lp: torch.Tensor, eps: float):
-        """Replace a random eps-fraction of actions by uniform valid non-wait actions (in place)."""
+    def _explore(self, logits: torch.Tensor, mask: torch.Tensor, a: torch.Tensor, lp: torch.Tensor, eps: float):
+        """Replace a random eps-fraction of actions by uniform valid non-wait actions (in place).
+
+        logits: the policy's masked logits for these decisions."""
         m = mask.clone()
         m[:, WAIT] = False
         pick = (torch.rand(len(a)) < eps) & m.any(1)
@@ -643,7 +680,7 @@ class Trainer:
             return
         idx = pick.nonzero().squeeze(1)
         new = torch.multinomial(m[idx].float(), 1).squeeze(1)
-        logp = torch.log_softmax(self.model.logits(obs[idx], mask[idx]), -1)
+        logp = torch.log_softmax(logits[idx], -1)
         a[idx] = new
         lp[idx] = logp.gather(1, new[:, None]).squeeze(1)
 
@@ -660,6 +697,8 @@ class Trainer:
         b_rew = np.zeros((T, N, 2), dtype=np.float32)
         b_done = np.zeros((T, N), dtype=np.float32)
         b_learn = np.zeros((T, N, 2), dtype=bool)
+        rec = c.recurrent
+        b_h = torch.zeros(T, N, 2, rec) if rec else None  # memory before each decision
         obs, mask = self.venv.observe()
         phi = self._potential_parts(obs)  # (N, 2, 3): front line, Trebuchets, raw Trebuchet score
         self.idle = [0, 0]  # learner decisions that waited although something was affordable / all decisions
@@ -679,9 +718,13 @@ class Trainer:
             lt = tuple(torch.from_numpy(x) for x in li)
             actions = np.full((N, 2), WAIT, dtype=np.int64)
             o_t, m_t = torch.from_numpy(obs), torch.from_numpy(mask)
-            a, lp, v = self.model.act(o_t[lt], m_t[lt])
+            if rec:
+                b_h[t] = self.h
+            a, lp, v, h_new, logits = self.model.act(o_t[lt], m_t[lt], h=self.h[lt] if rec else None)
+            if rec:
+                self.h[lt] = h_new
             if eps > 0:
-                self._explore(o_t[lt], m_t[lt], a, lp, eps)
+                self._explore(logits, m_t[lt], a, lp, eps)
             actions[li] = a.numpy()
             could_act = mask[li][:, :WAIT].any(axis=1)
             self.idle[0] += int(((actions[li] == WAIT) & could_act).sum())
@@ -708,7 +751,13 @@ class Trainer:
             phi = self._potential_parts(obs)
         self.env_steps += N * T
         with torch.no_grad():
-            last_v = self.model.value(torch.from_numpy(obs)).numpy() * (self.ctrl == CTRL_LEARNER)
+            o_t, m_t = torch.from_numpy(obs), torch.from_numpy(mask)
+            if rec:  # the memory after seeing the last observation (the next rollout recomputes it the same way)
+                h_last = self.model.step(o_t.reshape(N * 2, O), m_t.reshape(N * 2, A), self.h.reshape(N * 2, rec))[1]
+                last_v = self.model.value(o_t.reshape(N * 2, O), h_last).reshape(N, 2).numpy()
+            else:
+                last_v = self.model.value(o_t).numpy()
+            last_v = last_v * (self.ctrl == CTRL_LEARNER)
 
         # GAE per (env, side) slot; controllers only change at episode boundaries
         vals = b_val.numpy()
@@ -722,11 +771,39 @@ class Trainer:
             adv[t] = gae
         ret = adv + vals
         if review:
-            self._review(adv, b_learn, b_obs, b_mask, b_act, hist_kinds, shaping)
+            self._review(adv, b_learn, b_obs, b_mask, b_act, b_h, hist_kinds, shaping)
+        if rec:
+            return self._sequences(b_obs, b_mask, b_act, b_logp, b_val, adv, ret, b_learn, b_done, b_h)
         sel = torch.from_numpy(b_learn.reshape(-1))
         flat = lambda x, *shape: x.reshape(T * N * 2, *shape)[sel]
         return dict(obs=flat(b_obs, O), mask=flat(b_mask, A), act=flat(b_act), logp=flat(b_logp),
                     val=flat(b_val), adv=flat(torch.from_numpy(adv)), ret=flat(torch.from_numpy(ret)))
+
+    def _sequences(self, b_obs, b_mask, b_act, b_logp, b_val, adv, ret, b_learn, b_done, b_h) -> dict:
+        """Cut the rollout into stretches of seq_len consecutive decisions per (game, side) for a memory
+        network: (L, S, ...) tensors, the memory at the start of each stretch (S, memory), where a new
+        game starts inside it, and which steps are the learner's (only those count in the losses)."""
+        T, N = b_learn.shape[:2]
+        L = min(self.cfg.seq_len, T)
+        pad = (-T) % L
+        reset = np.zeros((T, N), dtype=bool)
+        reset[1:] = b_done[:-1] > 0
+        def seq(x):
+            x = torch.as_tensor(x)
+            if pad:
+                x = torch.cat([x, torch.zeros(pad, *x.shape[1:], dtype=x.dtype)])
+            x = x.reshape(-1, L, *x.shape[1:]).transpose(0, 1)  # (L, chunks, N, ...)
+            if x.dim() == 3:  # per game (reset): the same for both sides
+                x = x[..., None].expand(-1, -1, -1, 2)
+            return x.reshape(L, -1, *x.shape[4:])  # (L, chunks * N * 2, ...)
+        learn = seq(b_learn)
+        keep = learn.any(0)
+        out = {k: seq(v)[:, keep] for k, v in dict(obs=b_obs, mask=b_mask, act=b_act, logp=b_logp, val=b_val,
+                                                   adv=adv, ret=ret, reset=reset).items()}
+        out["learn"] = learn[:, keep]
+        out["h0"] = b_h[::L].reshape(-1, b_h.shape[-1])[keep]
+        out["reset"][0] = False  # h0 already is the memory at the stretch's first decision
+        return out
 
     # ---------------------------------------------------------------- update
     def ppo_update(self, batch: dict, progress: float) -> dict:
@@ -735,10 +812,16 @@ class Trainer:
         ent_coef = c.ent_coef + (c.ent_coef_final - c.ent_coef) * progress
         for g in self.opt.param_groups:
             g["lr"] = lr
-        n = batch["obs"].shape[0]
+        seqs = "h0" in batch  # memory network: minibatches of whole stretches (see _sequences)
+        if seqs:
+            n = batch["obs"].shape[1]
+            n_samples = int(batch["learn"].sum())
+            n_mb = max(1, min(n, round(n_samples / c.minibatch_size)))
+        else:
+            n = n_samples = batch["obs"].shape[0]
+            n_mb = max(1, round(n / c.minibatch_size))
         stats = defaultdict(list)
         stop = False
-        n_mb = max(1, round(n / c.minibatch_size))
         skipped = 0
         # AlphaZero-style targets from the search: spread over the minibatches, once per epoch
         sd = getattr(self, "search_data", []) if c.search_coef > 0 else []
@@ -746,20 +829,31 @@ class Trainer:
             s_obs = torch.from_numpy(np.concatenate([x[0] for x in sd]))
             s_mask = torch.from_numpy(np.concatenate([x[1] for x in sd]))
             s_tgt = torch.from_numpy(np.concatenate([x[2] for x in sd]))
+            s_h = torch.cat([x[3] for x in sd]) if self.model.recurrent else None
             t_ent = float(-(s_tgt * torch.log(s_tgt.clamp_min(1e-12))).sum(-1).mean())
         for _ in range(c.epochs):
             s_chunks = torch.randperm(len(s_obs)).tensor_split(n_mb) if sd else [None] * n_mb
             # near-equal minibatches: a 1-sample remainder would make adv.std() NaN
             for mb, sc in zip(torch.randperm(n).tensor_split(n_mb), s_chunks):
-                logp, ent, v = self.model.evaluate(batch["obs"][mb], batch["mask"][mb], batch["act"][mb])
-                ratio = (logp - batch["logp"][mb]).exp()
-                adv = batch["adv"][mb]
+                if seqs:
+                    w = batch["learn"][:, mb]
+                    logp, ent, v = self.model.evaluate_seq(batch["obs"][:, mb], batch["mask"][:, mb],
+                                                           batch["act"][:, mb], batch["h0"][mb], batch["reset"][:, mb])
+                    logp, ent, v = logp[w], ent[w], v[w]
+                    old_logp, adv, ret = (batch[k][:, mb][w] for k in ("logp", "adv", "ret"))
+                    if len(logp) < 2:
+                        continue
+                else:
+                    logp, ent, v = self.model.evaluate(batch["obs"][mb], batch["mask"][mb], batch["act"][mb])
+                    old_logp, adv, ret = batch["logp"][mb], batch["adv"][mb], batch["ret"][mb]
+                ratio = (logp - old_logp).exp()
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
                 pg = -torch.min(ratio * adv, ratio.clamp(1 - c.clip, 1 + c.clip) * adv).mean()
-                vf = 0.5 * (v - batch["ret"][mb]).pow(2).mean()
+                vf = 0.5 * (v - ret).pow(2).mean()
                 loss = pg + c.vf_coef * vf - ent_coef * ent.mean()
                 if sc is not None and len(sc):
-                    lp_all = torch.log_softmax(self.model.logits(s_obs[sc], s_mask[sc]), -1).masked_fill(~s_mask[sc], 0.0)
+                    lp_all = torch.log_softmax(self.model.logits(s_obs[sc], s_mask[sc], s_h[sc] if s_h is not None else None),
+                                               -1).masked_fill(~s_mask[sc], 0.0)
                     ce = -(s_tgt[sc] * lp_all).sum(-1).mean()
                     loss = loss + c.search_coef * ce
                     stats["search_kl"].append(ce.item() - t_ent)  # KL(search target || policy)
@@ -771,7 +865,7 @@ class Trainer:
                     continue
                 self.opt.step()
                 with torch.no_grad():
-                    kl = ((ratio - 1) - (logp - batch["logp"][mb])).mean().item()
+                    kl = ((ratio - 1) - (logp - old_logp)).mean().item()
                 stats["pg_loss"].append(pg.item())
                 stats["vf_loss"].append(vf.item())
                 stats["entropy"].append(ent.mean().item())
@@ -783,9 +877,12 @@ class Trainer:
             if stop:
                 break
         out = {k: float(np.mean(v)) for k, v in stats.items()}
-        y, p = batch["ret"].numpy(), batch["val"].numpy()
+        y, p = batch["ret"], batch["val"]
+        if seqs:
+            y, p = y[batch["learn"]], p[batch["learn"]]
+        y, p = y.numpy(), p.numpy()
         out["explained_var"] = float(1 - np.var(y - p) / (np.var(y) + 1e-8))
-        out.update(lr=lr, ent_coef=ent_coef, samples=n, early_stop=stop, skipped_minibatches=skipped)
+        out.update(lr=lr, ent_coef=ent_coef, samples=n_samples, early_stop=stop, skipped_minibatches=skipped)
         for k in ("search_roots", "search_copies", "search_s"):
             if getattr(self, "search_stats", None):
                 out[k] = float(sum(s[k] for s in self.search_stats))
